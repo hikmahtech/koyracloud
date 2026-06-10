@@ -278,6 +278,20 @@ def create_app(
             s.commit()
             return _app_out(obj)
 
+    @app.get("/api/apps/status")
+    def apps_status(login: str = Auth):
+        # One docker call for the whole list; mapped to each app by service name.
+        overview = docker.services_overview()
+        with db.session() as s:
+            apps = s.query(App).all()
+            result = {}
+            for a in apps:
+                svc = f"koyra-{a.name}_{a.name}"
+                st = overview.get(svc)
+                result[str(a.id)] = ({"exists": True, **st} if st
+                                     else {"exists": False, "running": 0, "desired": 0})
+        return result
+
     @app.get("/api/apps/{app_id}", response_model=AppOut)
     def get_app(app_id: int, login: str = Auth):
         with db.session() as s:

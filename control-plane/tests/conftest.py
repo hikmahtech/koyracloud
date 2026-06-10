@@ -59,6 +59,14 @@ class FakeDocker:
                 "tasks": [{"state": "Running 2 minutes ago", "desired": "Running",
                            "error": "", "node": "node1"}]}
 
+    def services_overview(self):
+        # Every deployed stack's service shows running 1/1.
+        out = {}
+        for stack, sd in self.deployed:
+            for svc in (sd.get("services") or {}):
+                out[f"{stack}_{svc}"] = {"running": 1, "desired": 1}
+        return out
+
 
 def make_fake_cloner(manifest_text=LENS_MANIFEST):
     def cloner(repo_url, ref, token, dest: Path) -> str:

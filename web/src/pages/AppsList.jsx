@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { listApps } from "../api";
+import { listApps, getAppsStatus } from "../api";
 
 const STATUS = {
   live: ["var(--color-acid)", "live"],
@@ -21,8 +21,24 @@ export function StatusBadge({ status }) {
   );
 }
 
+export function RunningDot({ st }) {
+  if (!st || !st.exists)
+    return <span className="mono text-xs text-[var(--color-muted)]">offline</span>;
+  const healthy = st.running >= st.desired && st.desired > 0;
+  const c = healthy ? "var(--color-acid)" : st.running > 0 ? "#febc2e" : "var(--color-danger)";
+  return (
+    <span className="inline-flex items-center gap-2 mono text-xs text-[var(--color-muted)]" title="live replicas">
+      <span className="dot" style={{ background: c, boxShadow: `0 0 8px ${c}66` }} />
+      {st.running}/{st.desired}
+    </span>
+  );
+}
+
 export default function AppsList() {
   const { data: apps = [], isLoading } = useQuery({ queryKey: ["apps"], queryFn: listApps });
+  const { data: status = {} } = useQuery({
+    queryKey: ["apps-status"], queryFn: getAppsStatus, refetchInterval: 30000,
+  });
 
   if (isLoading) return <p className="mono text-[var(--color-muted)]">loading apps…</p>;
 
@@ -56,6 +72,7 @@ export default function AppsList() {
               </div>
               <div className="flex items-center gap-5 shrink-0">
                 <span className="mono text-xs text-[var(--color-muted)] hidden sm:inline">{app.branch}</span>
+                <RunningDot st={status[String(app.id)]} />
                 <StatusBadge status={app.latest_status} />
               </div>
             </Link>

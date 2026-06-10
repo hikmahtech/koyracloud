@@ -28,6 +28,9 @@ class DockerControl(Protocol):
     def service_status(self, service: str) -> dict:
         """Live swarm status: running/desired replicas + per-task state."""
 
+    def services_overview(self) -> dict:
+        """One-shot {service_name: {running, desired}} for all services."""
+
 
 class CLIDockerControl:
     def __init__(self, docker_bin: str = "docker", context: str | None = None,
@@ -104,3 +107,20 @@ class CLIDockerControl:
                     running += 1
         return {"exists": True, "running": running, "desired": desired_n,
                 "tasks": tasks[:6]}
+
+    def services_overview(self) -> dict:
+        r = subprocess.run(
+            [*self._base, "service", "ls", "--format", "{{.Name}}\t{{.Replicas}}"],
+            capture_output=True, text=True, timeout=15)
+        out: dict = {}
+        for line in r.stdout.splitlines():
+            if "\t" not in line:
+                continue
+            name, rep = line.split("\t", 1)
+            token = rep.strip().split(" ")[0]  # "1/1" (ignore "(max N per node)")
+            try:
+                run_s, des_s = token.split("/")
+                out[name] = {"running": int(run_s), "desired": int(des_s)}
+            except ValueError:
+                continue
+        return out

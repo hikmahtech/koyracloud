@@ -197,6 +197,18 @@ def test_domain_change_skips_redeploy_when_not_live(client, env):
     assert env["docker"].deployed == []
 
 
+def test_apps_status_bulk(client, env):
+    aid = client.post("/api/apps", json={"name": "lens-inventory",
+                      "repo_url": "https://github.com/example/app"}).json()["id"]
+    # before deploy: not running
+    before = client.get("/api/apps/status").json()
+    assert before[str(aid)]["exists"] is False
+    # after a deploy: running 1/1
+    client.post(f"/api/apps/{aid}/deploys", json={})
+    after = client.get("/api/apps/status").json()
+    assert after[str(aid)] == {"exists": True, "running": 1, "desired": 1}
+
+
 def test_runtime_status_and_logs(client):
     aid = client.post("/api/apps", json={"name": "rt",
                       "repo_url": "https://github.com/o/r"}).json()["id"]

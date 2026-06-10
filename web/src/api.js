@@ -10,6 +10,7 @@ export const listAllowedUsers = () => api.get("/allowed-users").then((r) => r.da
 export const addAllowedUser = (login) => api.post("/allowed-users", { login }).then((r) => r.data);
 export const removeAllowedUser = (login) => api.delete(`/allowed-users/${login}`);
 export const listApps = () => api.get("/apps").then((r) => r.data);
+export const getAppsStatus = () => api.get("/apps/status").then((r) => r.data);
 export const getApp = (id) => api.get(`/apps/${id}`).then((r) => r.data);
 export const createApp = (body) => api.post("/apps", body).then((r) => r.data);
 export const updateApp = (id, body) => api.patch(`/apps/${id}`, body).then((r) => r.data);
