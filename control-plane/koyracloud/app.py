@@ -255,6 +255,18 @@ def create_app(
     def me(login: str = Auth):
         return {"login": login, "is_admin": is_admin(login)}
 
+    @app.post("/api/test-email")
+    def test_email(body: dict, login: str = AdminAuth):
+        to = (body.get("to") or "").strip()
+        if not to:
+            raise HTTPException(status_code=400, detail="to is required")
+        if not settings.resend_api_key:
+            return {"sent": False, "reason": "RESEND_API_KEY not configured"}
+        ok = notifier.send_email(
+            settings, to, "koyracloud test email",
+            notifier._wrap("Test email", "If you got this, email alerts work. 🎉"))
+        return {"sent": ok, "from": settings.email_from}
+
     # ----- team / access (admin-managed invite list) ----------------------
     @app.get("/api/allowed-users")
     def list_allowed_users(login: str = AdminAuth):

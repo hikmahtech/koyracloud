@@ -245,6 +245,13 @@ def test_runtime_status_and_logs(client):
     assert "log line for koyra-rt_rt" in logs["logs"]
 
 
+def test_test_email_inert_without_key(client):
+    # dev login is admin; no resend key in tests → reports not configured
+    r = client.post("/api/test-email", json={"to": "me@x.com"})
+    assert r.status_code == 200 and r.json()["sent"] is False
+    assert client.post("/api/test-email", json={"to": ""}).status_code == 400
+
+
 def test_notify_get_set(client):
     aid = client.post("/api/apps", json={"name": "n", "repo_url": "https://github.com/o/r"}).json()["id"]
     g = client.get(f"/api/apps/{aid}/notify").json()
