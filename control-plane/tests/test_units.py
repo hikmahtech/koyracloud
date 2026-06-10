@@ -134,6 +134,48 @@ def test_webhook_branch_from_ref():
     assert webhooks.branch_from_ref("refs/tags/v1") is None
 
 
+# --- notifier ---------------------------------------------------------------
+def test_render_event():
+    from koyracloud import notifier
+    subj, html = notifier.render_event("deploy_failed", "myapp", "boom", "myapp.example.com")
+    assert "myapp" in subj and "failed" in subj.lower()
+    assert "boom" in html
+    subj2, _ = notifier.render_event("down", "myapp", host="myapp.example.com")
+    assert "down" in subj2.lower()
+
+
+def test_send_email_inert_without_key():
+    from koyracloud import notifier
+    s = Settings(resend_api_key="")
+    assert notifier.send_email(s, "to@x.com", "s", "<b>") is False
+
+
+def test_send_email_posts_with_key():
+    from koyracloud import notifier
+
+    class FakeResp:
+        status_code = 200
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        def post(self, url, headers=None, json=None):
+            self.calls.append((url, headers, json))
+            return FakeResp()
+
+        def close(self):
+            pass
+
+    fc = FakeClient()
+    s = Settings(resend_api_key="re_test", email_from="koyracloud <d@k.com>")
+    assert notifier.send_email(s, "to@x.com", "subj", "<b>hi</b>", client=fc) is True
+    url, headers, payload = fc.calls[0]
+    assert url.endswith("/emails")
+    assert headers["Authorization"] == "Bearer re_test"
+    assert payload["to"] == ["to@x.com"] and payload["from"] == "koyracloud <d@k.com>"
+
+
 # --- analytics --------------------------------------------------------------
 def test_visitor_hash_stable_and_daily_rotation():
     from koyracloud import analytics

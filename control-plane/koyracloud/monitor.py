@@ -57,9 +57,11 @@ def check_once(db: Database, prober: Prober, *, now: dt.datetime | None = None,
             if ok:
                 st.consecutive_fail = 0
                 if st.up is not True:
+                    was_down = st.up is False  # recovery only alerts after a down
                     st.up = True
                     st.up_since = now
-                    transitions.append((app.id, "up"))
+                    if was_down:
+                        transitions.append((app.id, "up"))
             else:
                 st.consecutive_fail += 1
                 if st.consecutive_fail >= down_threshold and st.up is not False:

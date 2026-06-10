@@ -39,6 +39,8 @@ class App(Base):
         order_by="Domain.is_primary.desc(), Domain.id")
     analytics: Mapped["AppAnalytics | None"] = relationship(
         cascade="all, delete-orphan", uselist=False)
+    notify: Mapped["AppNotify | None"] = relationship(
+        cascade="all, delete-orphan", uselist=False)
 
 
 class Domain(Base):
@@ -126,6 +128,15 @@ class AppAnalytics(Base):
     app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), primary_key=True)
     token: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     enabled: Mapped[bool] = mapped_column(default=True)
+
+
+class AppNotify(Base):
+    """Per-app notification recipient + recorded owner (own table; no apps ALTER)."""
+    __tablename__ = "app_notify"
+
+    app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), primary_key=True)
+    owner_login: Mapped[str] = mapped_column(String(128), default="")
+    notify_email: Mapped[str] = mapped_column(String(255), default="")
 
 
 class Hit(Base):

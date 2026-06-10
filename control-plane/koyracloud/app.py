@@ -12,14 +12,14 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
-from koyracloud import analytics, auth, monitor, webhooks
+from koyracloud import analytics, auth, monitor, notifier, webhooks
 from koyracloud.config import Settings, get_settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.deployer import Deployer
 from koyracloud.docker_ctl import CLIDockerControl, DockerControl
-from koyracloud.models import (AllowedUser, App, AppAnalytics, Deploy, Domain,
-                                EnvVar, Hit, Secret, User)
+from koyracloud.models import (AllowedUser, App, AppAnalytics, AppNotify,
+                                Deploy, Domain, EnvVar, Hit, Secret, User)
 from koyracloud.schemas import (AllowedUserIn, AppCreate, AppOut, AppUpdate,
                                 DeployOut, DeployTrigger, DomainIn, DomainOut,
                                 EnvVarIn, RollbackRequest, SecretIn)
@@ -62,6 +62,26 @@ def create_app(
                              daemon=True).start()
         else:
             deployer.run_deploy(db, deploy_id)
+
+    def notify_event(app_id: int, event: str, detail: str = "") -> None:
+        """Resolve recipient + app info and send an email (fire-and-forget)."""
+        with db.session() as s:
+            obj = s.get(App, app_id)
+            if obj is None:
+                return
+            n = obj.notify
+            to = (n.notify_email if n and n.notify_email else "") or settings.default_notify_email
+            name = obj.name
+            primary = next((d for d in obj.domains if d.is_primary), None) \
+                or (obj.domains[0] if obj.domains else None)
+            host = primary.host if primary else ""
+        if not to:
+            return
+        threading.Thread(target=notifier.notify,
+                         args=(settings, to, event, name, detail, host), daemon=True).start()
+
+    if deployer.on_event is None:
+        deployer.on_event = lambda aid, ev, detail, host: notify_event(aid, ev, detail)
 
     def _redeploy_if_live(s, obj: App) -> int | None:
         """Queue a redeploy when routing changes so Traefik re-renders the
@@ -301,6 +321,7 @@ def create_app(
             s.add(Domain(app_id=obj.id, host=f"{obj.name}.{settings.apps_domain}",
                          is_primary=True))
             s.add(AppAnalytics(app_id=obj.id, token=analytics.new_token(), enabled=True))
+            s.add(AppNotify(app_id=obj.id, owner_login=login, notify_email=""))
             s.commit()
             return _app_out(obj)
 
@@ -480,6 +501,25 @@ def create_app(
             get_app_or_404(app_id, s)
         return monitor.uptime_summary(db, app_id)
 
+    @app.get("/api/apps/{app_id}/notify")
+    def get_notify(app_id: int, login: str = Auth):
+        with db.session() as s:
+            obj = get_app_or_404(app_id, s)
+            n = obj.notify
+            return {"owner_login": n.owner_login if n else "",
+                    "notify_email": n.notify_email if n else "",
+                    "email_configured": bool(settings.resend_api_key)}
+
+    @app.put("/api/apps/{app_id}/notify", status_code=204)
+    def set_notify(app_id: int, body: dict, login: str = Auth):
+        with db.session() as s:
+            obj = get_app_or_404(app_id, s)
+            n = obj.notify or AppNotify(app_id=obj.id)
+            n.notify_email = (body.get("notify_email") or "").strip()
+            s.add(n)
+            s.commit()
+        return Response(status_code=204)
+
     @app.get("/api/apps/{app_id}/analytics")
     def app_analytics(app_id: int, days: int = 7, login: str = Auth):
         with db.session() as s:
@@ -591,6 +631,7 @@ def create_app(
     if run_async and settings.uptime_enabled:
         def _on_transition(app_id: int, state: str) -> None:
             print(f"[koyra:uptime] app {app_id} -> {state}", flush=True)
+            notify_event(app_id, "recovered" if state == "up" else "down")
         monitor.UptimeMonitor(db, settings.uptime_interval,
                               on_transition=_on_transition).start()
 

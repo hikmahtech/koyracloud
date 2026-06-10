@@ -14,6 +14,8 @@ export const getAppsStatus = () => api.get("/apps/status").then((r) => r.data);
 export const getApp = (id) => api.get(`/apps/${id}`).then((r) => r.data);
 export const createApp = (body) => api.post("/apps", body).then((r) => r.data);
 export const updateApp = (id, body) => api.patch(`/apps/${id}`, body).then((r) => r.data);
+export const getNotify = (id) => api.get(`/apps/${id}/notify`).then((r) => r.data);
+export const setNotify = (id, notify_email) => api.put(`/apps/${id}/notify`, { notify_email });
 export const deleteApp = (id) => api.delete(`/apps/${id}`);
 
 export const listDomains = (id) => api.get(`/apps/${id}/domains`).then((r) => r.data);

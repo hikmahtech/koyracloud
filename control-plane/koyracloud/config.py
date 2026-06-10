@@ -78,6 +78,12 @@ class Settings:
     github_pat: str = field(default_factory=lambda: _secret("GITHUB_PAT", ""))
     # Shared secret for verifying GitHub push webhooks (push-to-deploy).
     webhook_secret: str = field(default_factory=lambda: _secret("KOYRA_WEBHOOK_SECRET", ""))
+    # Email alerts via Resend (inert until an API key is set).
+    resend_api_key: str = field(default_factory=lambda: _secret("RESEND_API_KEY", ""))
+    email_from: str = field(default_factory=lambda: os.environ.get(
+        "KOYRA_EMAIL_FROM", "koyracloud <deploys@koyracloud.com>"))
+    default_notify_email: str = field(
+        default_factory=lambda: os.environ.get("KOYRA_DEFAULT_NOTIFY_EMAIL", ""))
     # Admin logins (always allowed; can manage the invite list). Invited members
     # live in the allowed_users table.
     allowed_logins: list[str] = field(default_factory=lambda: _csv("KOYRA_ALLOWED_LOGINS"))

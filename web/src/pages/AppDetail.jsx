@@ -6,6 +6,7 @@ import {
   getEnv, putEnv, listSecretKeys, putSecret, deleteSecret,
   listDomains, addDomain, setPrimaryDomain, deleteDomain, getConfig,
   getStatus, getRuntimeLogs, getUptime, getAnalytics, setAnalytics,
+  getNotify, setNotify,
 } from "../api";
 import { StatusBadge } from "./AppsList";
 
@@ -389,6 +390,36 @@ function SecretsEditor({ id }) {
   );
 }
 
+function NotifyCard({ id }) {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["notify", id], queryFn: () => getNotify(id) });
+  const [email, setEmail] = useState(null);
+  const val = email ?? data?.notify_email ?? "";
+  const save = useMutation({
+    mutationFn: () => setNotify(id, val),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["notify", id] }); setEmail(null); },
+  });
+  return (
+    <div className="card p-6 space-y-3">
+      <div className="text-sm font-medium">Email alerts</div>
+      <p className="text-xs text-[var(--color-muted)]">
+        Get emailed on deploy success/failure and down/recovered.
+        {data && !data.email_configured && (
+          <span className="text-[#febc2e]"> Sending isn't configured on this instance yet (no Resend key).</span>
+        )}
+      </p>
+      <div className="flex gap-2">
+        <input className="input mono" type="email" placeholder="you@example.com" value={val}
+               onChange={(e) => setEmail(e.target.value)} />
+        <button onClick={() => save.mutate()} className="btn btn-primary text-sm shrink-0">
+          {save.isPending ? "Saving…" : "Save"}
+        </button>
+      </div>
+      {data?.owner_login && <p className="mono text-[11px] text-[var(--color-muted)]">owner: @{data.owner_login}</p>}
+    </div>
+  );
+}
+
 function SettingsTab({ id, app }) {
   const qc = useQueryClient();
   const nav = useNavigate();
@@ -425,6 +456,8 @@ function SettingsTab({ id, app }) {
           {window.location.origin}/api/webhooks/github
         </div>
       </div>
+
+      <NotifyCard id={id} />
 
       <div className="card p-6 border-[rgba(255,107,107,0.3)]">
         <div className="text-sm font-medium mb-1">Danger zone</div>

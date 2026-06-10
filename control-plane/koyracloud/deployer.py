@@ -80,6 +80,15 @@ class Deployer:
     docker: DockerControl
     crypto: CryptoBox
     cloner: Callable[[str, str, str, Path], str] = git_clone
+    # on_event(app_id, event, detail, host) — fired on deploy_live / deploy_failed.
+    on_event: Callable[[int, str, str, str], None] | None = None
+
+    def _fire(self, app_id: int, event: str, detail: str, host: str) -> None:
+        if self.on_event:
+            try:
+                self.on_event(app_id, event, detail, host)
+            except Exception:  # noqa: BLE001
+                pass
 
     def run_deploy(self, db: Database, deploy_id: int) -> None:
         """Execute a deploy end-to-end, updating the Deploy row as it goes."""
@@ -88,6 +97,7 @@ class Deployer:
             if deploy is None:
                 return
             app = deploy.app
+            app_id = app.id
             app_name, repo_url, ref = app.name, app.repo_url, deploy.ref
             env_overrides = {e.key: e.value for e in app.env_vars}
             secret_values = {sec.key: self.crypto.decrypt(sec.value_encrypted)
@@ -153,6 +163,7 @@ class Deployer:
             for line in self.docker.deploy(f"koyra-{app_name}", stack):
                 emit(line)
             emit("[koyra] deploy complete — live", "live")
+            self._fire(app_id, "deploy_live", "", hosts[0] if hosts else "")
         except Exception as exc:  # noqa: BLE001 — surface a scrubbed error
             msg = str(exc)
             if self.settings.github_pat:
@@ -160,6 +171,7 @@ class Deployer:
             emit(f"[koyra] FAILED: {msg}", "failed")
             # Full traceback goes to the server's stderr only, never the UI log.
             print(traceback.format_exc(), file=sys.stderr)
+            self._fire(app_id, "deploy_failed", msg, hosts[0] if hosts else "")
         finally:
             with db.session() as s:
                 d = s.get(Deploy, deploy_id)

@@ -208,11 +208,11 @@ def test_uptime_monitor_debounce_and_transitions(client, env):
     up = lambda url: True       # noqa: E731
     down = lambda url: False    # noqa: E731
 
-    assert monitor.check_once(db, up) == [(aid, "up")]        # first success → up
+    assert monitor.check_once(db, up) == []                   # initial healthy → no alert
     assert monitor.check_once(db, up) == []                   # still up, no transition
     assert monitor.check_once(db, down) == []                 # 1 fail < threshold → no flip
     assert monitor.check_once(db, down) == [(aid, "down")]    # 2nd fail → down (debounce)
-    assert monitor.check_once(db, up) == [(aid, "up")]        # recovers
+    assert monitor.check_once(db, up) == [(aid, "up")]        # recovers (False→True)
 
     summ = client.get(f"/api/apps/{aid}/uptime").json()
     assert summ["up"] is True and summ["samples_24h"] >= 5
@@ -243,6 +243,14 @@ def test_runtime_status_and_logs(client):
     assert st["running"] == 1 and st["desired"] == 1 and st["tasks"][0]["node"] == "node1"
     logs = client.get(f"/api/apps/{aid}/runtime-logs?tail=50").json()
     assert "log line for koyra-rt_rt" in logs["logs"]
+
+
+def test_notify_get_set(client):
+    aid = client.post("/api/apps", json={"name": "n", "repo_url": "https://github.com/o/r"}).json()["id"]
+    g = client.get(f"/api/apps/{aid}/notify").json()
+    assert g["owner_login"] == "tester" and g["notify_email"] == ""
+    assert client.put(f"/api/apps/{aid}/notify", json={"notify_email": "me@x.com"}).status_code == 204
+    assert client.get(f"/api/apps/{aid}/notify").json()["notify_email"] == "me@x.com"
 
 
 def test_patch_app(client):
