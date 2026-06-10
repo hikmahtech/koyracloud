@@ -51,6 +51,14 @@ class FakeDocker:
         self.removed.append(stack)
         yield f"fake-rm {stack}"
 
+    def service_logs(self, service, tail=200):
+        return f"log line for {service} (tail={tail})"
+
+    def service_status(self, service):
+        return {"exists": True, "running": 1, "desired": 1,
+                "tasks": [{"state": "Running 2 minutes ago", "desired": "Running",
+                           "error": "", "node": "node1"}]}
+
 
 def make_fake_cloner(manifest_text=LENS_MANIFEST):
     def cloner(repo_url, ref, token, dest: Path) -> str:

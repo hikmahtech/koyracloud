@@ -156,6 +156,15 @@ def test_deploy_uses_configured_domains(client, env):
     assert "shop.apps.koyracloud.com" in rule and "shop.example.com" in rule
 
 
+def test_runtime_status_and_logs(client):
+    aid = client.post("/api/apps", json={"name": "rt",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    st = client.get(f"/api/apps/{aid}/status").json()
+    assert st["running"] == 1 and st["desired"] == 1 and st["tasks"][0]["node"] == "node1"
+    logs = client.get(f"/api/apps/{aid}/runtime-logs?tail=50").json()
+    assert "log line for koyra-rt_rt" in logs["logs"]
+
+
 def test_patch_app(client):
     aid = client.post("/api/apps", json={"name": "p",
                       "repo_url": "https://github.com/o/r"}).json()["id"]

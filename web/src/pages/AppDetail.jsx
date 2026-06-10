@@ -5,10 +5,11 @@ import {
   getApp, listDeploys, triggerDeploy, rollback, updateApp, deleteApp,
   getEnv, putEnv, listSecretKeys, putSecret, deleteSecret,
   listDomains, addDomain, setPrimaryDomain, deleteDomain, getConfig,
+  getStatus, getRuntimeLogs,
 } from "../api";
 import { StatusBadge } from "./AppsList";
 
-const TABS = ["deploys", "domains", "env", "secrets", "settings"];
+const TABS = ["deploys", "logs", "domains", "env", "secrets", "settings"];
 
 export default function AppDetail() {
   const { id } = useParams();
@@ -17,6 +18,9 @@ export default function AppDetail() {
   const [liveId, setLiveId] = useState(null);
 
   const { data: app } = useQuery({ queryKey: ["app", id], queryFn: () => getApp(id) });
+  const { data: status } = useQuery({
+    queryKey: ["status", id], queryFn: () => getStatus(id), refetchInterval: 30000,
+  });
   const { data: deploys = [] } = useQuery({
     queryKey: ["deploys", id], queryFn: () => listDeploys(id),
     refetchInterval: liveId ? 2000 : false,
@@ -40,9 +44,10 @@ export default function AppDetail() {
 
       <div className="flex items-start justify-between flex-wrap gap-4 mt-4 mb-7">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="font-display text-3xl">{app.name}</h1>
             <StatusBadge status={app.latest_status} />
+            <RuntimePill status={status} />
           </div>
           <div className="flex items-center gap-4 mt-2 text-sm">
             {url && (
@@ -72,10 +77,53 @@ export default function AppDetail() {
       </div>
 
       {tab === "deploys" && <DeployHistory deploys={deploys} onRollback={(d) => rollbackMut.mutate(d)} />}
+      {tab === "logs" && <RuntimeLogs id={id} />}
       {tab === "domains" && <DomainsTab id={id} />}
       {tab === "env" && <EnvEditor id={id} />}
       {tab === "secrets" && <SecretsEditor id={id} />}
       {tab === "settings" && <SettingsTab id={id} app={app} />}
+    </div>
+  );
+}
+
+function RuntimePill({ status }) {
+  if (!status) return null;
+  if (!status.exists)
+    return <span className="mono text-xs text-[var(--color-muted)]">· not deployed</span>;
+  const healthy = status.running >= status.desired && status.desired > 0;
+  const c = healthy ? "var(--color-acid)" : status.running > 0 ? "#febc2e" : "var(--color-danger)";
+  return (
+    <span className="inline-flex items-center gap-2 mono text-xs text-[var(--color-muted)]"
+          title={status.tasks?.[0]?.state || ""}>
+      <span className="dot" style={{ background: c, boxShadow: `0 0 8px ${c}66` }} />
+      {status.running}/{status.desired} running
+    </span>
+  );
+}
+
+function RuntimeLogs({ id }) {
+  const { data, isFetching, dataUpdatedAt, refetch } = useQuery({
+    queryKey: ["runtime-logs", id],
+    queryFn: () => getRuntimeLogs(id, 400),
+    refetchInterval: 5 * 60 * 1000,   // auto-refresh every 5 minutes
+  });
+  const box = useRef(null);
+  useEffect(() => { if (box.current) box.current.scrollTop = box.current.scrollHeight; }, [data]);
+  const updated = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "—";
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-[var(--color-line)] flex items-center justify-between">
+        <span className="mono text-xs text-[var(--color-muted)]">
+          runtime logs · auto-refresh 5m · updated {updated}
+        </span>
+        <button onClick={() => refetch()} disabled={isFetching}
+                className="mono text-xs text-acid hover:underline bg-transparent border-0 cursor-pointer disabled:opacity-50">
+          {isFetching ? "refreshing…" : "refresh"}
+        </button>
+      </div>
+      <pre ref={box} className="mono text-[12px] leading-relaxed p-4 h-[28rem] overflow-auto text-[#cdd3dd] m-0">
+        {data?.logs || "loading…"}
+      </pre>
     </div>
   );
 }

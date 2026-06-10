@@ -303,6 +303,24 @@ def create_app(
             s.commit()
         return Response(status_code=204)
 
+    # ----- runtime (live service) ----------------------------------------
+    def _service_name(name: str) -> str:
+        return f"koyra-{name}_{name}"
+
+    @app.get("/api/apps/{app_id}/status")
+    def runtime_status(app_id: int, login: str = Auth):
+        with db.session() as s:
+            obj = get_app_or_404(app_id, s)
+            name = obj.name
+        return docker.service_status(_service_name(name))
+
+    @app.get("/api/apps/{app_id}/runtime-logs")
+    def runtime_logs(app_id: int, tail: int = 200, login: str = Auth):
+        with db.session() as s:
+            obj = get_app_or_404(app_id, s)
+            name = obj.name
+        return {"logs": docker.service_logs(_service_name(name), min(max(tail, 10), 1000))}
+
     # ----- deploys --------------------------------------------------------
     @app.get("/api/apps/{app_id}/deploys", response_model=list[DeployOut])
     def list_deploys(app_id: int, login: str = Auth):

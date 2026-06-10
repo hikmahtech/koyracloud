@@ -22,6 +22,12 @@ class DockerControl(Protocol):
     def remove(self, stack: str) -> Iterator[str]:
         """Remove a stack; yields output lines."""
 
+    def service_logs(self, service: str, tail: int = 200) -> str:
+        """Recent runtime logs of a running service."""
+
+    def service_status(self, service: str) -> dict:
+        """Live swarm status: running/desired replicas + per-task state."""
+
 
 class CLIDockerControl:
     def __init__(self, docker_bin: str = "docker", context: str | None = None,
@@ -63,3 +69,38 @@ class CLIDockerControl:
 
     def remove(self, stack: str) -> Iterator[str]:
         yield from self._stream(["stack", "rm", stack])
+
+    def service_logs(self, service: str, tail: int = 200) -> str:
+        r = subprocess.run(
+            [*self._base, "service", "logs", "--no-task-ids", "--timestamps",
+             "--tail", str(tail), service],
+            capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            return (r.stderr or "").strip() or "(no logs yet — service not running)"
+        return (r.stdout or "") + (r.stderr or "")
+
+    def service_status(self, service: str) -> dict:
+        desired = subprocess.run(
+            [*self._base, "service", "inspect", service,
+             "--format", "{{.Spec.Mode.Replicated.Replicas}}"],
+            capture_output=True, text=True, timeout=15)
+        if desired.returncode != 0:
+            return {"exists": False, "running": 0, "desired": 0, "tasks": []}
+        try:
+            desired_n = int((desired.stdout or "0").strip() or 0)
+        except ValueError:
+            desired_n = 0
+        ps = subprocess.run(
+            [*self._base, "service", "ps", service, "--no-trunc",
+             "--format", "{{.CurrentState}}||{{.DesiredState}}||{{.Error}}||{{.Node}}"],
+            capture_output=True, text=True, timeout=15)
+        tasks, running = [], 0
+        for line in ps.stdout.splitlines():
+            parts = (line.split("||") + ["", "", "", ""])[:4]
+            cur, des, err, node = parts
+            if des == "Running":  # current desired-state tasks only (skip history)
+                tasks.append({"state": cur, "desired": des, "error": err, "node": node})
+                if cur.startswith("Running"):
+                    running += 1
+        return {"exists": True, "running": running, "desired": desired_n,
+                "tasks": tasks[:6]}
