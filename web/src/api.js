@@ -5,6 +5,10 @@ export const api = axios.create({ baseURL: "/api" });
 export const getConfig = () => api.get("/config").then((r) => r.data);
 export const getMe = () => api.get("/me").then((r) => r.data);
 export const logout = () => api.post("/auth/logout");
+
+export const listAllowedUsers = () => api.get("/allowed-users").then((r) => r.data);
+export const addAllowedUser = (login) => api.post("/allowed-users", { login }).then((r) => r.data);
+export const removeAllowedUser = (login) => api.delete(`/allowed-users/${login}`);
 export const listApps = () => api.get("/apps").then((r) => r.data);
 export const getApp = (id) => api.get(`/apps/${id}`).then((r) => r.data);
 export const createApp = (body) => api.post("/apps", body).then((r) => r.data);

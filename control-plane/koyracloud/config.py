@@ -71,6 +71,10 @@ class Settings:
     github_client_secret: str = field(
         default_factory=lambda: _secret("GITHUB_CLIENT_SECRET", ""))
     github_pat: str = field(default_factory=lambda: _secret("GITHUB_PAT", ""))
+    # Shared secret for verifying GitHub push webhooks (push-to-deploy).
+    webhook_secret: str = field(default_factory=lambda: _secret("KOYRA_WEBHOOK_SECRET", ""))
+    # Admin logins (always allowed; can manage the invite list). Invited members
+    # live in the allowed_users table.
     allowed_logins: list[str] = field(default_factory=lambda: _csv("KOYRA_ALLOWED_LOGINS"))
     # Local-dev login bypass: set to a github login to skip OAuth entirely.
     dev_login: str = field(default_factory=lambda: os.environ.get("KOYRA_DEV_LOGIN", ""))

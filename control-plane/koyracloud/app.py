@@ -1,6 +1,7 @@
 """FastAPI application factory for the koyracloud control plane."""
 from __future__ import annotations
 
+import json
 import os
 import secrets as _secrets
 import socket
@@ -11,16 +12,17 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
-from koyracloud import auth
+from koyracloud import auth, webhooks
 from koyracloud.config import Settings, get_settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.deployer import Deployer
 from koyracloud.docker_ctl import CLIDockerControl, DockerControl
-from koyracloud.models import App, Deploy, Domain, EnvVar, Secret, User
-from koyracloud.schemas import (AppCreate, AppOut, AppUpdate, DeployOut,
-                                DeployTrigger, DomainIn, DomainOut, EnvVarIn,
-                                RollbackRequest, SecretIn)
+from koyracloud.models import (AllowedUser, App, Deploy, Domain, EnvVar,
+                                Secret, User)
+from koyracloud.schemas import (AllowedUserIn, AppCreate, AppOut, AppUpdate,
+                                DeployOut, DeployTrigger, DomainIn, DomainOut,
+                                EnvVarIn, RollbackRequest, SecretIn)
 
 WEB_DIST = Path(os.environ.get(
     "KOYRA_WEB_DIST", str(Path(__file__).resolve().parents[2] / "web" / "dist")))
@@ -62,16 +64,36 @@ def create_app(
             deployer.run_deploy(db, deploy_id)
 
     # ----- auth -----------------------------------------------------------
+    def is_admin(login: str) -> bool:
+        if settings.dev_login and login == settings.dev_login:
+            return True
+        return auth.is_allowed(login, settings.allowed_logins)
+
+    def is_member(login: str) -> bool:
+        with db.session() as s:
+            return s.query(AllowedUser).filter_by(login=login.lower()).first() is not None
+
+    def access_allowed(login: str) -> bool:
+        return is_admin(login) or is_member(login)
+
     def current_login(request: Request) -> str:
         if settings.dev_login:
             return settings.dev_login
         token = request.cookies.get(auth.SESSION_COOKIE)
         login = auth.read_session(token, settings.session_secret) if token else None
-        if not login or not auth.is_allowed(login, settings.allowed_logins):
+        if not login:
             raise HTTPException(status_code=401, detail="not authenticated")
+        if not access_allowed(login):
+            raise HTTPException(status_code=403, detail="not allowed")
+        return login
+
+    def current_admin(login: str = Depends(current_login)) -> str:
+        if not is_admin(login):
+            raise HTTPException(status_code=403, detail="admin only")
         return login
 
     Auth = Depends(current_login)
+    AdminAuth = Depends(current_admin)
 
     def get_app_or_404(app_id: int, s) -> App:
         obj = s.get(App, app_id)
@@ -88,6 +110,37 @@ def create_app(
     def public_config():
         # Non-sensitive instance config for the UI (e.g. the DNS hint).
         return {"apps_domain": settings.apps_domain, "public_ip": settings.public_ip}
+
+    @app.post("/api/webhooks/github")
+    async def github_webhook(request: Request):
+        # Unauthenticated but HMAC-verified: GitHub push → auto-deploy matching apps.
+        body = await request.body()
+        if not webhooks.verify_signature(settings.webhook_secret, body,
+                                         request.headers.get("X-Hub-Signature-256")):
+            raise HTTPException(status_code=401, detail="invalid signature")
+        event = request.headers.get("X-GitHub-Event", "")
+        if event == "ping":
+            return {"ok": True}
+        if event != "push":
+            return {"ignored": event}
+        try:
+            payload = json.loads(body)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="invalid payload")
+        full = (payload.get("repository") or {}).get("full_name", "").lower()
+        branch = webhooks.branch_from_ref(payload.get("ref", ""))
+        triggered = []
+        if full and branch:
+            with db.session() as s:
+                for a in s.query(App).filter_by(auto_deploy=True).all():
+                    if webhooks.repo_slug(a.repo_url) == full and a.branch == branch:
+                        d = Deploy(app_id=a.id, ref=a.branch, status="pending")
+                        s.add(d)
+                        s.commit()
+                        triggered.append((d.id, a.name))
+        for did, _ in triggered:
+            schedule(did)
+        return {"triggered": [n for _, n in triggered]}
 
     @app.get("/api/auth/login")
     def login():
@@ -109,7 +162,7 @@ def create_app(
             raise HTTPException(status_code=400, detail="invalid oauth state")
         login = auth.exchange_code(code, settings.github_client_id,
                                    settings.github_client_secret)
-        if not auth.is_allowed(login, settings.allowed_logins):
+        if not access_allowed(login):
             raise HTTPException(status_code=403, detail=f"{login} is not allowed")
         with db.session() as s:
             if not s.query(User).filter_by(github_login=login).first():
@@ -130,7 +183,36 @@ def create_app(
 
     @app.get("/api/me")
     def me(login: str = Auth):
-        return {"login": login}
+        return {"login": login, "is_admin": is_admin(login)}
+
+    # ----- team / access (admin-managed invite list) ----------------------
+    @app.get("/api/allowed-users")
+    def list_allowed_users(login: str = AdminAuth):
+        with db.session() as s:
+            members = [{"login": u.login, "added_by": u.added_by}
+                       for u in s.query(AllowedUser).order_by(AllowedUser.login).all()]
+        return {"admins": sorted(settings.allowed_logins), "members": members}
+
+    @app.post("/api/allowed-users", status_code=201)
+    def add_allowed_user(body: AllowedUserIn, login: str = AdminAuth):
+        target = body.login.lower()
+        if auth.is_allowed(target, settings.allowed_logins):
+            raise HTTPException(status_code=409, detail="already an admin")
+        with db.session() as s:
+            if s.query(AllowedUser).filter_by(login=target).first():
+                raise HTTPException(status_code=409, detail="already invited")
+            s.add(AllowedUser(login=target, added_by=login))
+            s.commit()
+        return {"login": target, "added_by": login}
+
+    @app.delete("/api/allowed-users/{member}", status_code=204)
+    def remove_allowed_user(member: str, login: str = AdminAuth):
+        with db.session() as s:
+            u = s.query(AllowedUser).filter_by(login=member.lower()).first()
+            if u:
+                s.delete(u)
+                s.commit()
+        return Response(status_code=204)
 
     # ----- apps -----------------------------------------------------------
     def _app_out(obj: App) -> AppOut:

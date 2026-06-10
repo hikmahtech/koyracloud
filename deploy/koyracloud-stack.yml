@@ -13,6 +13,7 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
       GITHUB_CLIENT_SECRET_FILE: /run/secrets/koyra_github_client_secret
       GITHUB_PAT_FILE: /run/secrets/koyra_github_pat
+      KOYRA_WEBHOOK_SECRET_FILE: /run/secrets/koyra_webhook_secret
       KOYRA_ALLOWED_LOGINS: ${KOYRA_ALLOWED_LOGINS}
       KOYRA_RUNTIME_IMAGE: ${KOYRA_RUNTIME_IMAGE:-koyracloud-runtime:latest}
       KOYRA_NFS_BASE: ${KOYRA_NFS_BASE:-/mnt/koyracloud}
@@ -34,6 +35,7 @@ services:
       - koyra_session_secret
       - koyra_github_client_secret
       - koyra_github_pat
+      - koyra_webhook_secret
     deploy:
       replicas: 1
       placement:
@@ -70,4 +72,6 @@ secrets:
   koyra_github_client_secret:
     external: true
   koyra_github_pat:
+    external: true
+  koyra_webhook_secret:
     external: true

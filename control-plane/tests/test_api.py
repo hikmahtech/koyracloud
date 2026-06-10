@@ -1,4 +1,5 @@
 """End-to-end API tests with injected fake docker + cloner and synchronous deploy."""
+import json
 
 
 def test_health_unauthenticated(client):
@@ -6,7 +7,7 @@ def test_health_unauthenticated(client):
 
 
 def test_me_dev_login(client):
-    assert client.get("/api/me").json() == {"login": "tester"}
+    assert client.get("/api/me").json()["login"] == "tester"
 
 
 def test_public_config(client):
@@ -172,6 +173,50 @@ def test_patch_app(client):
     assert r.status_code == 200
     body = r.json()
     assert body["branch"] == "dev" and body["auto_deploy"] is True
+
+
+def test_me_reports_admin(client):
+    # dev_login is treated as admin
+    assert client.get("/api/me").json() == {"login": "tester", "is_admin": True}
+
+
+def test_invite_member_flow(client):
+    # add an invited member
+    r = client.post("/api/allowed-users", json={"login": "Octocat"})
+    assert r.status_code == 201
+    listing = client.get("/api/allowed-users").json()
+    assert "octocat" in [m["login"] for m in listing["members"]]
+    # idempotent-ish: duplicate rejected
+    assert client.post("/api/allowed-users", json={"login": "octocat"}).status_code == 409
+    # invalid login rejected
+    assert client.post("/api/allowed-users", json={"login": "bad login!"}).status_code == 422
+    # remove
+    assert client.delete("/api/allowed-users/octocat").status_code == 204
+    assert "octocat" not in [m["login"] for m in client.get("/api/allowed-users").json()["members"]]
+
+
+def test_webhook_push_triggers_autodeploy(client, env):
+    import hashlib
+    import hmac
+    aid = client.post("/api/apps", json={"name": "hooky",
+                      "repo_url": "https://github.com/acme/hooky", "branch": "main",
+                      "auto_deploy": True}).json()["id"]
+    body = json.dumps({"ref": "refs/heads/main",
+                       "repository": {"full_name": "acme/hooky"}}).encode()
+    sig = "sha256=" + hmac.new(env["settings"].webhook_secret.encode(), body,
+                               hashlib.sha256).hexdigest()
+    r = client.post("/api/webhooks/github", content=body,
+                    headers={"X-Hub-Signature-256": sig, "X-GitHub-Event": "push",
+                             "content-type": "application/json"})
+    assert r.status_code == 200 and r.json()["triggered"] == ["hooky"]
+    # a deploy was created + ran (fake docker)
+    assert client.get(f"/api/apps/{aid}/deploys").json()[0]["status"] == "live"
+
+
+def test_webhook_bad_signature_rejected(client):
+    r = client.post("/api/webhooks/github", content=b"{}",
+                    headers={"X-Hub-Signature-256": "sha256=nope", "X-GitHub-Event": "push"})
+    assert r.status_code == 401
 
 
 def test_oauth_callback_rejects_missing_state(client):

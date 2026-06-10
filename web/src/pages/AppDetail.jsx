@@ -312,6 +312,18 @@ function SettingsTab({ id, app }) {
         <button onClick={() => save.mutate()} className="btn btn-primary text-sm">{save.isPending ? "Saving…" : "Save"}</button>
       </div>
 
+      <div className="card p-6 space-y-2">
+        <div className="text-sm font-medium">Push-to-deploy</div>
+        <p className="text-xs text-[var(--color-muted)]">
+          With auto-deploy on, a push to <span className="mono">{app.branch}</span> redeploys this app.
+          Point a GitHub webhook (or your GitHub App's webhook) at this URL, content-type
+          <span className="mono"> application/json</span>, secret = your <span className="mono">KOYRA_WEBHOOK_SECRET</span>:
+        </p>
+        <div className="mono text-xs bg-[var(--color-ink)] border border-[var(--color-line)] rounded px-3 py-2 break-all">
+          {window.location.origin}/api/webhooks/github
+        </div>
+      </div>
+
       <div className="card p-6 border-[rgba(255,107,107,0.3)]">
         <div className="text-sm font-medium mb-1">Danger zone</div>
         <p className="text-xs text-[var(--color-muted)] mb-4">Deletes the app, its env/secrets/domains and tears down the swarm stack.</p>

@@ -93,3 +93,14 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     github_login: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AllowedUser(Base):
+    """An invited member (in addition to the env-configured admins). Admins
+    manage this list from the UI; members may sign in and use the platform."""
+    __tablename__ = "allowed_users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    login: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    added_by: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)

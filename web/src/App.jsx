@@ -6,6 +6,7 @@ import Landing from "./pages/Landing.jsx";
 import AppsList from "./pages/AppsList.jsx";
 import NewApp from "./pages/NewApp.jsx";
 import AppDetail from "./pages/AppDetail.jsx";
+import Team from "./pages/Team.jsx";
 
 function AppShell({ me, children }) {
   const nav = useNavigate();
@@ -16,6 +17,9 @@ function AppShell({ me, children }) {
           <Link to="/" className="text-[var(--color-fg)] no-underline"><Logo /></Link>
           <div className="flex items-center gap-6 text-sm">
             <Link to="/docs" className="text-[var(--color-muted)] hover:text-[var(--color-fg)] no-underline">Docs</Link>
+            {me.is_admin && (
+              <Link to="/team" className="text-[var(--color-muted)] hover:text-[var(--color-fg)] no-underline">Team</Link>
+            )}
             <Link to="/apps/new" className="btn btn-primary">New App</Link>
             <div className="flex items-center gap-2 mono text-xs text-[var(--color-muted)]">
               <span className="dot" style={{ background: "var(--color-acid)" }} />@{me.login}
@@ -45,6 +49,7 @@ export default function Dashboard() {
         <Route path="/" element={<AppsList />} />
         <Route path="/apps/new" element={<NewApp />} />
         <Route path="/apps/:id" element={<AppDetail />} />
+        <Route path="/team" element={<Team />} />
       </Routes>
     </AppShell>
   );

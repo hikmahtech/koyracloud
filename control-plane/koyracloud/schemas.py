@@ -84,6 +84,18 @@ class AppUpdate(BaseModel):
         return _check_ref(v) if v is not None else v
 
 
+class AllowedUserIn(BaseModel):
+    login: str
+
+    @field_validator("login")
+    @classmethod
+    def _vl(cls, v: str) -> str:
+        v = v.strip().lstrip("@")
+        if not v or not all(c.isalnum() or c == "-" for c in v):
+            raise ValueError("invalid GitHub login")
+        return v
+
+
 class DomainIn(BaseModel):
     host: str
 

@@ -101,6 +101,33 @@ def test_authorize_url():
     assert "client_id=cid" in url and "state=st" in url
 
 
+# --- webhooks ---------------------------------------------------------------
+def test_webhook_signature_roundtrip():
+    import hashlib
+    import hmac
+
+    from koyracloud import webhooks
+    body = b'{"ref":"refs/heads/main"}'
+    sig = "sha256=" + hmac.new(b"shh", body, hashlib.sha256).hexdigest()
+    assert webhooks.verify_signature("shh", body, sig) is True
+    assert webhooks.verify_signature("shh", body, "sha256=deadbeef") is False
+    assert webhooks.verify_signature("", body, sig) is False
+    assert webhooks.verify_signature("shh", body, None) is False
+
+
+def test_webhook_repo_slug():
+    from koyracloud import webhooks
+    for url in ["https://github.com/Owner/Repo", "https://github.com/Owner/Repo.git",
+                "git@github.com:Owner/Repo.git", "https://github.com/Owner/Repo/"]:
+        assert webhooks.repo_slug(url) == "owner/repo"
+
+
+def test_webhook_branch_from_ref():
+    from koyracloud import webhooks
+    assert webhooks.branch_from_ref("refs/heads/main") == "main"
+    assert webhooks.branch_from_ref("refs/tags/v1") is None
+
+
 # --- stack_render -----------------------------------------------------------
 def _settings():
     return Settings(apps_domain="apps.koyracloud.com", nfs_base="/nfs/koyracloud",

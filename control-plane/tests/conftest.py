@@ -76,6 +76,7 @@ def settings(tmp_path):
         nfs_base=str(tmp_path / "nfs"),
         dev_login="tester",
         github_pat="",
+        webhook_secret="testhooksecret",
     )
 
 
