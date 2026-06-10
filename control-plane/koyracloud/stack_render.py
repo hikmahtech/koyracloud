@@ -78,6 +78,12 @@ def render_stack(
                 "max_attempts": 3,
                 "window": "120s",
             },
+            "resources": {
+                "limits": {
+                    "cpus": manifest.cpu or settings.default_cpu,
+                    "memory": manifest.memory or settings.default_memory,
+                },
+            },
         },
     }
 

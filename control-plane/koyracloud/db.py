@@ -1,7 +1,7 @@
 """SQLAlchemy engine/session wiring. SQLite by default, Postgres via DB_URL."""
 from __future__ import annotations
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
@@ -20,6 +20,25 @@ class Database:
         # Import models so they register on Base.metadata before create_all.
         from koyracloud import models  # noqa: F401
         Base.metadata.create_all(self.engine)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Idempotent lightweight migrations for columns added after release
+        (create_all only creates missing tables, never alters existing ones)."""
+        insp = inspect(self.engine)
+        if "apps" not in insp.get_table_names():
+            return
+        cols = {c["name"] for c in insp.get_columns("apps")}
+        if "owner_login" not in cols:
+            with self.engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE apps ADD COLUMN owner_login VARCHAR(128) DEFAULT ''"))
+                # backfill ownership from the recorded notify owner where known
+                if "app_notify" in insp.get_table_names():
+                    conn.execute(text(
+                        "UPDATE apps SET owner_login = COALESCE("
+                        "(SELECT owner_login FROM app_notify WHERE app_notify.app_id = apps.id), '')"
+                        " WHERE owner_login = '' OR owner_login IS NULL"))
 
     def session(self) -> Session:
         return self._factory()

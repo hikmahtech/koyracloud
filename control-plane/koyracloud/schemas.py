@@ -7,6 +7,16 @@ import re
 from pydantic import BaseModel, field_validator
 
 _SAFE_REF = re.compile(r"^[A-Za-z0-9._/-]+$")
+# App name becomes a DNS label, a Traefik router/service name, and an NFS path
+# segment — keep it strictly lowercase-alnum + hyphen, no dots/slashes/underscores.
+_DNS_LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$")
+
+
+def _check_name(v: str) -> str:
+    if not _DNS_LABEL.match(v):
+        raise ValueError("name must be lowercase letters/digits/hyphens "
+                         "(1-40 chars, no leading/trailing hyphen)")
+    return v
 
 
 def _check_repo_url(v: str) -> str:
@@ -27,6 +37,7 @@ class AppCreate(BaseModel):
     branch: str = "main"
     auto_deploy: bool = False
 
+    _v_name = field_validator("name")(_check_name)
     _v_repo = field_validator("repo_url")(_check_repo_url)
     _v_branch = field_validator("branch")(_check_ref)
 

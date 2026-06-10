@@ -25,6 +25,7 @@ class App(Base):
     repo_url: Mapped[str] = mapped_column(String(512))
     branch: Mapped[str] = mapped_column(String(128), default="main")
     auto_deploy: Mapped[bool] = mapped_column(default=False)
+    owner_login: Mapped[str] = mapped_column(String(128), default="", index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     env_vars: Mapped[list["EnvVar"]] = relationship(

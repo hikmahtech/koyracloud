@@ -21,6 +21,8 @@ class Manifest(BaseModel):
     start: str = ""                   # required except for static sites
     static_dir: str = ""              # static runtime: dir to serve (auto-detected if blank)
     persist: list[str] = Field(default_factory=list)
+    cpu: str = ""                     # e.g. "0.5"; falls back to the instance default
+    memory: str = ""                  # e.g. "256M"; falls back to the instance default
     healthcheck: str = ""             # path, e.g. /health
     env: dict[str, str] = Field(default_factory=dict)
     secrets: list[str] = Field(default_factory=list)

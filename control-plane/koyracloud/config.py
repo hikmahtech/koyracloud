@@ -54,9 +54,17 @@ class Settings:
         "KOYRA_HEALTHCHECK_START_PERIOD", "600s"))
     apps_domain: str = field(default_factory=lambda: os.environ.get(
         "KOYRA_APPS_DOMAIN", "apps.koyracloud.com"))
+    # Default per-app resource limits (a manifest may lower; capped so one app
+    # can't starve a node).
+    default_cpu: str = field(default_factory=lambda: os.environ.get("KOYRA_DEFAULT_CPU", "1.0"))
+    default_memory: str = field(
+        default_factory=lambda: os.environ.get("KOYRA_DEFAULT_MEMORY", "512M"))
     # Public IP the homelab edge answers on — shown as the DNS hint for custom
     # domains and used to check whether a domain already points here.
     public_ip: str = field(default_factory=lambda: os.environ.get("KOYRA_PUBLIC_IP", ""))
+    # Hosts a user may never attach (control-plane host + apps apex are reserved
+    # automatically; this adds extras).
+    reserved_hosts: list[str] = field(default_factory=lambda: _csv("KOYRA_RESERVED_HOSTS"))
     # Uptime monitor
     uptime_enabled: bool = field(
         default_factory=lambda: os.environ.get("KOYRA_UPTIME_ENABLED", "1") != "0")

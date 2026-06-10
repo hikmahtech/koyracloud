@@ -350,6 +350,66 @@ def test_webhook_bad_signature_rejected(client):
     assert r.status_code == 401
 
 
+def _hdr(login, secret="sek"):
+    from koyracloud import auth
+    return {"Cookie": f"koyra_session={auth.make_session(login, secret)}"}
+
+
+def test_ownership_isolation(env):
+    """A member cannot see or touch another member's app (CRITICAL-1)."""
+    from dataclasses import replace
+
+    from fastapi.testclient import TestClient
+    from koyracloud.app import create_app
+    from koyracloud.models import AllowedUser
+    s = replace(env["settings"], dev_login="", session_secret="sek", allowed_logins=[])
+    with env["db"].session() as sess:
+        sess.add(AllowedUser(login="alice"))
+        sess.add(AllowedUser(login="bob"))
+        sess.commit()
+    app = create_app(settings=s, db=env["db"], docker=env["docker"],
+                     deployer=env["deployer"], run_async=False)
+    c = TestClient(app)
+    aid = c.post("/api/apps", json={"name": "alice-app", "repo_url": "https://github.com/o/r"},
+                 headers=_hdr("alice")).json()["id"]
+    # bob is blind to it
+    assert c.get("/api/apps", headers=_hdr("bob")).json() == []
+    for path, method in [(f"/api/apps/{aid}", "get"), (f"/api/apps/{aid}", "delete"),
+                         (f"/api/apps/{aid}/secrets", "get"),
+                         (f"/api/apps/{aid}/env", "get"),
+                         (f"/api/apps/{aid}/deploys", "get")]:
+        r = getattr(c, method)(path, headers=_hdr("bob"))
+        assert r.status_code == 404, f"{method} {path} -> {r.status_code}"
+    # bob can't trigger a deploy on alice's app either
+    assert c.post(f"/api/apps/{aid}/deploys", json={}, headers=_hdr("bob")).status_code == 404
+    # alice still can
+    assert c.get(f"/api/apps/{aid}", headers=_hdr("alice")).status_code == 200
+
+
+def test_create_app_rejects_bad_name(client):
+    for bad in ["Bad_Name", "UPPER", "-lead", "has.dot", "a/b", "x" * 41]:
+        r = client.post("/api/apps", json={"name": bad, "repo_url": "https://github.com/o/r"})
+        assert r.status_code == 422, f"{bad} accepted"
+
+
+def test_add_domain_rejects_reserved(client):
+    aid = client.post("/api/apps", json={"name": "site",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    # apps-domain apex and a *.apps subdomain that isn't this app's own are reserved
+    for host in ["apps.koyracloud.com", "foreign.apps.koyracloud.com"]:
+        r = client.post(f"/api/apps/{aid}/domains", json={"host": host})
+        assert r.status_code == 400, f"{host} -> {r.status_code}"
+    # a normal custom domain is fine
+    assert client.post(f"/api/apps/{aid}/domains", json={"host": "site.example.com"}).status_code == 201
+
+
+def test_set_notify_validates_email(client):
+    aid = client.post("/api/apps", json={"name": "n", "repo_url": "https://github.com/o/r"}).json()["id"]
+    assert client.put(f"/api/apps/{aid}/notify", json={"notify_email": "nope"}).status_code == 422
+    assert client.put(f"/api/apps/{aid}/notify", json={"notify_email": "a@b.com"}).status_code == 204
+    assert client.put(f"/api/apps/{aid}/notify", json={"notify_email": ""}).status_code == 204
+
+
 def test_oauth_callback_rejects_missing_state(client):
     # No state cookie set → CSRF check must reject before any token exchange
     r = client.get("/api/auth/callback?code=abc&state=xyz", follow_redirects=False)

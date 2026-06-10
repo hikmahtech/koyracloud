@@ -13,6 +13,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
 from koyracloud import analytics, auth, monitor, notifier, webhooks
+from koyracloud.ratelimit import RateLimiter
 from koyracloud.config import Settings, get_settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
@@ -24,9 +25,12 @@ from koyracloud.schemas import (AllowedUserIn, AppCreate, AppOut, AppUpdate,
                                 DeployOut, DeployTrigger, DomainIn, DomainOut,
                                 EnvVarIn, RollbackRequest, SecretIn)
 
+import re as _re
+
 WEB_DIST = Path(os.environ.get(
     "KOYRA_WEB_DIST", str(Path(__file__).resolve().parents[2] / "web" / "dist")))
 TERMINAL = {"live", "failed", "rolled_back"}
+_EMAIL_RE = _re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _ensure_sqlite_dir(db_url: str) -> None:
@@ -129,11 +133,28 @@ def create_app(
     Auth = Depends(current_login)
     AdminAuth = Depends(current_admin)
 
-    def get_app_or_404(app_id: int, s) -> App:
+    def get_app_or_404(app_id: int, s, login: str) -> App:
         obj = s.get(App, app_id)
-        if obj is None:
+        # 404 (not 403) when not owned, to avoid leaking app existence.
+        if obj is None or (obj.owner_login != login and not is_admin(login)):
             raise HTTPException(status_code=404, detail="app not found")
         return obj
+
+    def owned_deploy_or_404(deploy_id: int, s, login: str) -> Deploy:
+        d = s.get(Deploy, deploy_id)
+        if d is None:
+            raise HTTPException(status_code=404, detail="deploy not found")
+        app = s.get(App, d.app_id)
+        if app is None or (app.owner_login != login and not is_admin(login)):
+            raise HTTPException(status_code=404, detail="deploy not found")
+        return d
+
+    _collect_rl = RateLimiter(limit=600, window=60)   # per IP/min for /_k/e
+    _webhook_rl = RateLimiter(limit=60, window=60)     # per IP/min for the webhook
+
+    def _client_ip(request: Request) -> str:
+        fwd = request.headers.get("x-forwarded-for", "")
+        return (fwd or (request.client.host if request.client else "")).split(",")[0].strip() or "?"
 
     def get_or_create_analytics(s, app_id: int) -> AppAnalytics:
         a = s.get(AppAnalytics, app_id)
@@ -161,6 +182,10 @@ def create_app(
     @app.post("/_k/e")
     async def analytics_collect(request: Request):
         cors = {"Access-Control-Allow-Origin": "*"}
+        ip = _client_ip(request)
+        cl = request.headers.get("content-length")
+        if (cl and cl.isdigit() and int(cl) > 4096) or not _collect_rl.allow(ip):
+            return Response(status_code=204, headers=cors)  # drop oversized/abusive silently
         try:
             payload = json.loads(await request.body())
         except ValueError:
@@ -169,8 +194,6 @@ def create_app(
         with db.session() as s:
             rec = s.query(AppAnalytics).filter_by(token=site, enabled=True).first()
             if rec:
-                ip = (request.headers.get("x-forwarded-for", "")
-                      or (request.client.host if request.client else "")).split(",")[0].strip()
                 ua = request.headers.get("user-agent", "")
                 s.add(Hit(
                     app_id=rec.app_id,
@@ -184,6 +207,11 @@ def create_app(
     @app.post("/api/webhooks/github")
     async def github_webhook(request: Request):
         # Unauthenticated but HMAC-verified: GitHub push → auto-deploy matching apps.
+        if not _webhook_rl.allow(_client_ip(request)):
+            raise HTTPException(status_code=429, detail="rate limited")
+        cl = request.headers.get("content-length")
+        if cl and cl.isdigit() and int(cl) > 1_000_000:
+            raise HTTPException(status_code=413, detail="payload too large")
         body = await request.body()
         if not webhooks.verify_signature(settings.webhook_secret, body,
                                          request.headers.get("X-Hub-Signature-256")):
@@ -305,6 +333,21 @@ def create_app(
         out.primary_host = primary.host if primary else None
         return out
 
+    from urllib.parse import urlparse
+    _control_host = urlparse(settings.base_url).netloc.lower().split(":")[0]
+
+    def _is_reserved_host(host: str, app_name: str) -> bool:
+        """Block claiming the control-plane host, the apps-domain apex, or any
+        *.apps-domain subdomain other than this app's own auto-subdomain."""
+        host = host.lower()
+        apps = settings.apps_domain.lower()
+        reserved = {apps, _control_host, *(h.lower() for h in settings.reserved_hosts)}
+        if host in reserved:
+            return True
+        if host.endswith("." + apps):
+            return host != f"{app_name}.{apps}"
+        return False
+
     def _dns_ok(host: str) -> bool | None:
         """True if host resolves to the homelab IP, False if it resolves
         elsewhere, None if unknown (no configured IP or resolution failed)."""
@@ -318,7 +361,10 @@ def create_app(
     @app.get("/api/apps", response_model=list[AppOut])
     def list_apps(login: str = Auth):
         with db.session() as s:
-            return [_app_out(a) for a in s.query(App).order_by(App.name).all()]
+            q = s.query(App).order_by(App.name)
+            if not is_admin(login):
+                q = q.filter(App.owner_login == login)
+            return [_app_out(a) for a in q.all()]
 
     @app.post("/api/apps", response_model=AppOut, status_code=201)
     def create_app_route(body: AppCreate, login: str = Auth):
@@ -326,7 +372,7 @@ def create_app(
             if s.query(App).filter_by(name=body.name).first():
                 raise HTTPException(status_code=409, detail="app name already exists")
             obj = App(name=body.name, repo_url=body.repo_url, branch=body.branch,
-                      auto_deploy=body.auto_deploy)
+                      auto_deploy=body.auto_deploy, owner_login=login)
             s.add(obj)
             s.flush()
             # Seed the default auto-subdomain as the primary domain.
@@ -340,7 +386,7 @@ def create_app(
     @app.patch("/api/apps/{app_id}", response_model=AppOut)
     def update_app(app_id: int, body: AppUpdate, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             if body.branch is not None:
                 obj.branch = body.branch
             if body.auto_deploy is not None:
@@ -353,7 +399,10 @@ def create_app(
         # One docker call for the whole list; mapped to each app by service name.
         overview = docker.services_overview()
         with db.session() as s:
-            apps = s.query(App).all()
+            q = s.query(App)
+            if not is_admin(login):
+                q = q.filter(App.owner_login == login)
+            apps = q.all()
             result = {}
             for a in apps:
                 svc = f"koyra-{a.name}_{a.name}"
@@ -365,12 +414,12 @@ def create_app(
     @app.get("/api/apps/{app_id}", response_model=AppOut)
     def get_app(app_id: int, login: str = Auth):
         with db.session() as s:
-            return _app_out(get_app_or_404(app_id, s))
+            return _app_out(get_app_or_404(app_id, s, login))
 
     @app.delete("/api/apps/{app_id}", status_code=204)
     def delete_app(app_id: int, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             name = obj.name
             s.delete(obj)
             s.commit()
@@ -385,13 +434,13 @@ def create_app(
     @app.get("/api/apps/{app_id}/env", response_model=list[EnvVarIn])
     def get_env(app_id: int, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             return [EnvVarIn(key=e.key, value=e.value) for e in obj.env_vars]
 
     @app.put("/api/apps/{app_id}/env", response_model=list[EnvVarIn])
     def put_env(app_id: int, body: list[EnvVarIn], login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             obj.env_vars.clear()
             s.flush()
             for item in body:
@@ -403,13 +452,13 @@ def create_app(
     @app.get("/api/apps/{app_id}/secrets", response_model=list[str])
     def list_secret_keys(app_id: int, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             return [sec.key for sec in obj.secrets]
 
     @app.put("/api/apps/{app_id}/secrets", status_code=204)
     def put_secret(app_id: int, body: SecretIn, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             existing = next((x for x in obj.secrets if x.key == body.key), None)
             token = crypto.encrypt(body.value)
             if existing:
@@ -422,7 +471,7 @@ def create_app(
     @app.delete("/api/apps/{app_id}/secrets/{key}", status_code=204)
     def delete_secret(app_id: int, key: str, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             sec = next((x for x in obj.secrets if x.key == key), None)
             if sec:
                 s.delete(sec)
@@ -433,7 +482,7 @@ def create_app(
     @app.get("/api/apps/{app_id}/domains", response_model=list[DomainOut])
     def list_domains(app_id: int, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             out = []
             for d in obj.domains:
                 item = DomainOut.model_validate(d)
@@ -444,7 +493,9 @@ def create_app(
     @app.post("/api/apps/{app_id}/domains", response_model=DomainOut, status_code=201)
     def add_domain(app_id: int, body: DomainIn, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
+            if _is_reserved_host(body.host, obj.name):
+                raise HTTPException(status_code=400, detail="that host is reserved")
             if s.query(Domain).filter_by(host=body.host).first():
                 raise HTTPException(status_code=409, detail="domain already in use")
             d = Domain(app_id=obj.id, host=body.host,
@@ -461,7 +512,7 @@ def create_app(
     @app.post("/api/apps/{app_id}/domains/{domain_id}/primary", response_model=DomainOut)
     def set_primary_domain(app_id: int, domain_id: int, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             target = next((d for d in obj.domains if d.id == domain_id), None)
             if target is None:
                 raise HTTPException(status_code=404, detail="domain not found")
@@ -473,7 +524,7 @@ def create_app(
     @app.delete("/api/apps/{app_id}/domains/{domain_id}", status_code=204)
     def delete_domain(app_id: int, domain_id: int, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             target = next((d for d in obj.domains if d.id == domain_id), None)
             if target is None:
                 raise HTTPException(status_code=404, detail="domain not found")
@@ -496,27 +547,27 @@ def create_app(
     @app.get("/api/apps/{app_id}/status")
     def runtime_status(app_id: int, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             name = obj.name
         return docker.service_status(_service_name(name))
 
     @app.get("/api/apps/{app_id}/runtime-logs")
     def runtime_logs(app_id: int, tail: int = 200, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             name = obj.name
         return {"logs": docker.service_logs(_service_name(name), min(max(tail, 10), 1000))}
 
     @app.get("/api/apps/{app_id}/uptime")
     def app_uptime(app_id: int, login: str = Auth):
         with db.session() as s:
-            get_app_or_404(app_id, s)
+            get_app_or_404(app_id, s, login)
         return monitor.uptime_summary(db, app_id)
 
     @app.get("/api/apps/{app_id}/notify")
     def get_notify(app_id: int, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             n = obj.notify
             return {"owner_login": n.owner_login if n else "",
                     "notify_email": n.notify_email if n else "",
@@ -524,10 +575,13 @@ def create_app(
 
     @app.put("/api/apps/{app_id}/notify", status_code=204)
     def set_notify(app_id: int, body: dict, login: str = Auth):
+        email = (body.get("notify_email") or "").strip()
+        if email and not _EMAIL_RE.match(email):
+            raise HTTPException(status_code=422, detail="invalid email")
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             n = obj.notify or AppNotify(app_id=obj.id)
-            n.notify_email = (body.get("notify_email") or "").strip()
+            n.notify_email = email
             s.add(n)
             s.commit()
         return Response(status_code=204)
@@ -535,7 +589,7 @@ def create_app(
     @app.get("/api/apps/{app_id}/analytics")
     def app_analytics(app_id: int, days: int = 7, login: str = Auth):
         with db.session() as s:
-            get_app_or_404(app_id, s)
+            get_app_or_404(app_id, s, login)
             rec = get_or_create_analytics(s, app_id)
             token, enabled = rec.token, rec.enabled
         data = analytics.aggregate(db, app_id, days=min(max(days, 1), 30))
@@ -546,7 +600,7 @@ def create_app(
     @app.put("/api/apps/{app_id}/analytics", status_code=204)
     def set_analytics(app_id: int, body: dict, login: str = Auth):
         with db.session() as s:
-            get_app_or_404(app_id, s)
+            get_app_or_404(app_id, s, login)
             rec = get_or_create_analytics(s, app_id)
             rec.enabled = bool(body.get("enabled", True))
             s.commit()
@@ -556,13 +610,13 @@ def create_app(
     @app.get("/api/apps/{app_id}/deploys", response_model=list[DeployOut])
     def list_deploys(app_id: int, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             return [DeployOut.model_validate(d) for d in obj.deploys]
 
     @app.post("/api/apps/{app_id}/deploys", response_model=DeployOut, status_code=201)
     def trigger_deploy(app_id: int, body: DeployTrigger | None = None, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             ref = (body.ref if body and body.ref else None) or obj.branch
             d = Deploy(app_id=obj.id, ref=ref, status="pending")
             s.add(d)
@@ -575,21 +629,19 @@ def create_app(
     @app.get("/api/deploys/{deploy_id}", response_model=DeployOut)
     def get_deploy(deploy_id: int, login: str = Auth):
         with db.session() as s:
-            d = s.get(Deploy, deploy_id)
-            if d is None:
-                raise HTTPException(status_code=404, detail="deploy not found")
-            return DeployOut.model_validate(d)
+            return DeployOut.model_validate(owned_deploy_or_404(deploy_id, s, login))
 
     @app.get("/api/deploys/{deploy_id}/log")
     def get_deploy_log(deploy_id: int, login: str = Auth):
         with db.session() as s:
-            d = s.get(Deploy, deploy_id)
-            if d is None:
-                raise HTTPException(status_code=404, detail="deploy not found")
+            d = owned_deploy_or_404(deploy_id, s, login)
             return {"status": d.status, "log": d.log or ""}
 
     @app.get("/api/deploys/{deploy_id}/logs")
     def stream_deploy_logs(deploy_id: int, login: str = Auth):
+        with db.session() as s:  # authorize once before streaming
+            owned_deploy_or_404(deploy_id, s, login)
+
         def gen():
             sent = 0
             while True:
@@ -611,7 +663,7 @@ def create_app(
     @app.post("/api/apps/{app_id}/rollback", response_model=DeployOut, status_code=201)
     def rollback(app_id: int, body: RollbackRequest, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s)
+            obj = get_app_or_404(app_id, s, login)
             target = s.get(Deploy, body.deploy_id)
             if target is None or target.app_id != obj.id or not target.commit:
                 raise HTTPException(status_code=400, detail="invalid rollback target")

@@ -10,8 +10,9 @@ import re
 import secrets
 import subprocess
 import sys
+import threading
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -110,6 +111,27 @@ class Deployer:
     cloner: Callable[[str, str, str, Path], str] = git_clone
     # on_event(app_id, event, detail, host) — fired on deploy_live / deploy_failed.
     on_event: Callable[[int, str, str, str], None] | None = None
+    _locks: dict = field(default_factory=dict)
+    _locks_guard: threading.Lock = field(default_factory=threading.Lock)
+
+    def _lock_for(self, app_id: int) -> threading.Lock:
+        with self._locks_guard:
+            lk = self._locks.get(app_id)
+            if lk is None:
+                lk = threading.Lock()
+                self._locks[app_id] = lk
+            return lk
+
+    def run_deploy(self, db: Database, deploy_id: int) -> None:
+        """Serialize deploys per app so concurrent deploys can't race the shared
+        volume; different apps still deploy in parallel."""
+        with db.session() as s:
+            d = s.get(Deploy, deploy_id)
+            if d is None:
+                return
+            app_id = d.app_id
+        with self._lock_for(app_id):
+            self._run_deploy(db, deploy_id)
 
     def _fire(self, app_id: int, event: str, detail: str, host: str) -> None:
         if self.on_event:
@@ -118,7 +140,7 @@ class Deployer:
             except Exception:  # noqa: BLE001
                 pass
 
-    def run_deploy(self, db: Database, deploy_id: int) -> None:
+    def _run_deploy(self, db: Database, deploy_id: int) -> None:
         """Execute a deploy end-to-end, updating the Deploy row as it goes."""
         with db.session() as s:
             deploy = s.get(Deploy, deploy_id)

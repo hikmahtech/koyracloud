@@ -317,6 +317,37 @@ def test_render_stack_multi_host_rule():
     assert "Host(`a.example.com`) || Host(`b.example.com`)" in rule
 
 
+def test_render_stack_resource_limits_default_and_override():
+    s = _settings()
+    m = parse_manifest(VALID)
+    lim = render_stack(m, app_name="demo", repo_url="r", ref="a", git_token="",
+                       env_overrides={}, secret_values={}, settings=s
+                       )["services"]["demo"]["deploy"]["resources"]["limits"]
+    assert lim == {"cpus": s.default_cpu, "memory": s.default_memory}
+    m2 = parse_manifest("name: x\nstart: y\nport: 8000\ncpu: '0.25'\nmemory: 128M\n")
+    lim2 = render_stack(m2, app_name="x", repo_url="r", ref="a", git_token="",
+                        env_overrides={}, secret_values={}, settings=s
+                        )["services"]["x"]["deploy"]["resources"]["limits"]
+    assert lim2 == {"cpus": "0.25", "memory": "128M"}
+
+
+def test_rate_limiter():
+    from koyracloud.ratelimit import RateLimiter
+    rl = RateLimiter(limit=2, window=60)
+    assert rl.allow("ip", now=0) and rl.allow("ip", now=1)  # 2 allowed
+    assert not rl.allow("ip", now=2)                        # 3rd blocked
+    assert rl.allow("other", now=2)                         # different key ok
+    assert rl.allow("ip", now=61)                           # next window resets
+
+
+def test_deployer_lock_per_app():
+    from koyracloud.config import Settings
+    from koyracloud.deployer import Deployer
+    d = Deployer(settings=Settings(), docker=None, crypto=None)
+    assert d._lock_for(1) is d._lock_for(1)      # same app → same lock
+    assert d._lock_for(1) is not d._lock_for(2)  # different app → different lock
+
+
 def test_render_stack_healthcheck_optional():
     m = parse_manifest("name: x\nstart: y\nport: 9000\n")  # no healthcheck
     stack = render_stack(m, app_name="x", repo_url="r", ref="s", git_token="",
