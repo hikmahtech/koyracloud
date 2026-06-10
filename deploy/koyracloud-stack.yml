@@ -23,8 +23,8 @@ services:
       KOYRA_WEB_DIST: /app/web/dist
       KOYRA_APP_NODE: ${KOYRA_APP_NODE:-}
       KOYRA_RESOLVE_IMAGE_NEVER: ${KOYRA_RESOLVE_IMAGE_NEVER:-}
-      # Email alerts (Resend) — inert until RESEND_API_KEY is set.
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      # Email alerts (Resend) — key from a Docker secret.
+      RESEND_API_KEY_FILE: /run/secrets/koyra_resend_api_key
       KOYRA_EMAIL_FROM: ${KOYRA_EMAIL_FROM:-koyracloud <alerts@koyracloud.com>}
       KOYRA_DEFAULT_NOTIFY_EMAIL: ${KOYRA_DEFAULT_NOTIFY_EMAIL:-}
     volumes:
@@ -40,6 +40,7 @@ services:
       - koyra_github_client_secret
       - koyra_github_pat
       - koyra_webhook_secret
+      - koyra_resend_api_key
     deploy:
       replicas: 1
       placement:
@@ -78,4 +79,6 @@ secrets:
   koyra_github_pat:
     external: true
   koyra_webhook_secret:
+    external: true
+  koyra_resend_api_key:
     external: true
