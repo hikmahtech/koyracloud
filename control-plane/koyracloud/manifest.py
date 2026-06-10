@@ -8,7 +8,7 @@ to render the Docker stack.
 from __future__ import annotations
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Manifest(BaseModel):
@@ -18,7 +18,8 @@ class Manifest(BaseModel):
     port: int = 8000
     build: list[str] = Field(default_factory=list)
     predeploy: list[str] = Field(default_factory=list)
-    start: str
+    start: str = ""                   # required except for static sites
+    static_dir: str = ""              # static runtime: dir to serve (auto-detected if blank)
     persist: list[str] = Field(default_factory=list)
     healthcheck: str = ""             # path, e.g. /health
     env: dict[str, str] = Field(default_factory=dict)
@@ -27,9 +28,17 @@ class Manifest(BaseModel):
     @field_validator("runtime")
     @classmethod
     def _runtime_valid(cls, v: str) -> str:
-        if v not in {"python", "node", "python+node"}:
-            raise ValueError(f"runtime must be python|node|python+node, got {v!r}")
+        if v not in {"python", "node", "python+node", "static"}:
+            raise ValueError(f"runtime must be python|node|python+node|static, got {v!r}")
         return v
+
+    @model_validator(mode="after")
+    def _static_defaults(self):
+        if self.runtime != "static" and not self.start:
+            raise ValueError("start is required (except for runtime: static)")
+        if self.runtime == "static" and not self.healthcheck:
+            self.healthcheck = "/"   # the static server answers / with 200
+        return self
 
     @field_validator("name")
     @classmethod

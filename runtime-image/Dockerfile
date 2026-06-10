@@ -13,6 +13,7 @@ RUN apt-get update \
 RUN pip install --no-cache-dir pyyaml==6.0.2
 
 COPY entrypoint.py /entrypoint.py
+COPY koyra_static.py /koyra_static.py
 
 WORKDIR /workspace
 ENTRYPOINT ["python3", "/entrypoint.py"]

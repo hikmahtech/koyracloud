@@ -65,10 +65,21 @@ def read_manifest(path: Path) -> dict:
     data = yaml.safe_load(path.read_text()) or {}
     if not isinstance(data, dict):
         raise ValueError("manifest must be a YAML mapping")
-    for required in ("name", "start"):
-        if not data.get(required):
-            raise ValueError(f"manifest missing required field: {required}")
+    if not data.get("name"):
+        raise ValueError("manifest missing required field: name")
+    # static sites are served by koyracloud, so 'start' is optional for them.
+    if data.get("runtime") != "static" and not data.get("start"):
+        raise ValueError("manifest missing required field: start")
     return data
+
+
+def detect_static_dir(repo_dir: Path) -> str:
+    """Pick the directory to serve for a static site: a build output if present,
+    else the repo root."""
+    for candidate in ("dist", "build", "public", "out", "_site"):
+        if (repo_dir / candidate).is_dir():
+            return candidate
+    return "."
 
 
 def build_path(venv_dir: Path, base_path: str | None) -> str:
@@ -188,9 +199,18 @@ def main() -> None:
     for step in manifest.get("predeploy", []):
         run(step, REPO_DIR, env)
 
+    os.chdir(REPO_DIR)
+    if runtime == "static":
+        static_dir = manifest.get("static_dir") or detect_static_dir(REPO_DIR)
+        port = str(manifest.get("port", 8000))
+        log("static", f"serving {static_dir} on :{port}")
+        os.execve(sys.executable,
+                  [sys.executable, "/koyra_static.py",
+                   "--dir", str(REPO_DIR / static_dir), "--port", port], env)
+        return
+
     start = manifest["start"]
     log("start", start)
-    os.chdir(REPO_DIR)
     os.execve("/bin/sh", ["/bin/sh", "-c", start], env)
 
 

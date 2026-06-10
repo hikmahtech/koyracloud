@@ -27,6 +27,12 @@ def test_parse_manifest_ok():
     assert m.secrets == ["SECRET_KEY"]
 
 
+def test_parse_manifest_static_ok():
+    m = parse_manifest("name: site\nruntime: static\n")  # no start needed
+    assert m.runtime == "static"
+    assert m.healthcheck == "/"   # defaulted
+
+
 def test_parse_manifest_bad_runtime():
     with pytest.raises(Exception):
         parse_manifest("name: x\nstart: y\nruntime: ruby\n")

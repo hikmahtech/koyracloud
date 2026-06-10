@@ -52,9 +52,22 @@ def test_read_manifest_missing_file(tmp_path):
 
 def test_read_manifest_missing_required(tmp_path):
     m = tmp_path / "app.yaml"
-    m.write_text("name: demo\n")  # no start
+    m.write_text("name: demo\n")  # no start, non-static
     with pytest.raises(ValueError):
         ep.read_manifest(m)
+
+
+def test_read_manifest_static_no_start_ok(tmp_path):
+    m = tmp_path / "app.yaml"
+    m.write_text("name: site\nruntime: static\n")  # start optional for static
+    data = ep.read_manifest(m)
+    assert data["runtime"] == "static"
+
+
+def test_detect_static_dir(tmp_path):
+    assert ep.detect_static_dir(tmp_path) == "."        # nothing built → repo root
+    (tmp_path / "dist").mkdir()
+    assert ep.detect_static_dir(tmp_path) == "dist"     # build output preferred
 
 
 def test_read_manifest_not_mapping(tmp_path):
