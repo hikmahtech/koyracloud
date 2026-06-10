@@ -12,14 +12,14 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
-from koyracloud import auth, monitor, webhooks
+from koyracloud import analytics, auth, monitor, webhooks
 from koyracloud.config import Settings, get_settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.deployer import Deployer
 from koyracloud.docker_ctl import CLIDockerControl, DockerControl
-from koyracloud.models import (AllowedUser, App, Deploy, Domain, EnvVar,
-                                Secret, User)
+from koyracloud.models import (AllowedUser, App, AppAnalytics, Deploy, Domain,
+                                EnvVar, Hit, Secret, User)
 from koyracloud.schemas import (AllowedUserIn, AppCreate, AppOut, AppUpdate,
                                 DeployOut, DeployTrigger, DomainIn, DomainOut,
                                 EnvVarIn, RollbackRequest, SecretIn)
@@ -115,6 +115,14 @@ def create_app(
             raise HTTPException(status_code=404, detail="app not found")
         return obj
 
+    def get_or_create_analytics(s, app_id: int) -> AppAnalytics:
+        a = s.get(AppAnalytics, app_id)
+        if a is None:
+            a = AppAnalytics(app_id=app_id, token=analytics.new_token(), enabled=True)
+            s.add(a)
+            s.commit()
+        return a
+
     # ----- health / auth routes ------------------------------------------
     @app.get("/api/health")
     def health():
@@ -124,6 +132,34 @@ def create_app(
     def public_config():
         # Non-sensitive instance config for the UI (e.g. the DNS hint).
         return {"apps_domain": settings.apps_domain, "public_ip": settings.public_ip}
+
+    @app.get("/_k/a.js")
+    def analytics_beacon():
+        return Response(analytics.BEACON_JS, media_type="application/javascript",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+    @app.post("/_k/e")
+    async def analytics_collect(request: Request):
+        cors = {"Access-Control-Allow-Origin": "*"}
+        try:
+            payload = json.loads(await request.body())
+        except ValueError:
+            return Response(status_code=204, headers=cors)
+        site = (payload.get("site") or "")[:32]
+        with db.session() as s:
+            rec = s.query(AppAnalytics).filter_by(token=site, enabled=True).first()
+            if rec:
+                ip = (request.headers.get("x-forwarded-for", "")
+                      or (request.client.host if request.client else "")).split(",")[0].strip()
+                ua = request.headers.get("user-agent", "")
+                s.add(Hit(
+                    app_id=rec.app_id,
+                    path=(payload.get("path") or "/")[:512],
+                    referrer=(payload.get("ref") or "")[:512],
+                    visitor=analytics.visitor_hash(settings.session_secret, site, ip, ua),
+                ))
+                s.commit()
+        return Response(status_code=204, headers=cors)
 
     @app.post("/api/webhooks/github")
     async def github_webhook(request: Request):
@@ -264,6 +300,7 @@ def create_app(
             # Seed the default auto-subdomain as the primary domain.
             s.add(Domain(app_id=obj.id, host=f"{obj.name}.{settings.apps_domain}",
                          is_primary=True))
+            s.add(AppAnalytics(app_id=obj.id, token=analytics.new_token(), enabled=True))
             s.commit()
             return _app_out(obj)
 
@@ -442,6 +479,26 @@ def create_app(
         with db.session() as s:
             get_app_or_404(app_id, s)
         return monitor.uptime_summary(db, app_id)
+
+    @app.get("/api/apps/{app_id}/analytics")
+    def app_analytics(app_id: int, days: int = 7, login: str = Auth):
+        with db.session() as s:
+            get_app_or_404(app_id, s)
+            rec = get_or_create_analytics(s, app_id)
+            token, enabled = rec.token, rec.enabled
+        data = analytics.aggregate(db, app_id, days=min(max(days, 1), 30))
+        snippet = (f'<script defer src="{settings.base_url}/_k/a.js" '
+                   f'data-site="{token}"></script>')
+        return {**data, "enabled": enabled, "snippet": snippet}
+
+    @app.put("/api/apps/{app_id}/analytics", status_code=204)
+    def set_analytics(app_id: int, body: dict, login: str = Auth):
+        with db.session() as s:
+            get_app_or_404(app_id, s)
+            rec = get_or_create_analytics(s, app_id)
+            rec.enabled = bool(body.get("enabled", True))
+            s.commit()
+        return Response(status_code=204)
 
     # ----- deploys --------------------------------------------------------
     @app.get("/api/apps/{app_id}/deploys", response_model=list[DeployOut])

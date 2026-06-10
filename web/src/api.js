@@ -33,6 +33,10 @@ export const deleteSecret = (id, key) => api.delete(`/apps/${id}/secrets/${key}`
 
 export const getStatus = (id) => api.get(`/apps/${id}/status`).then((r) => r.data);
 export const getUptime = (id) => api.get(`/apps/${id}/uptime`).then((r) => r.data);
+export const getAnalytics = (id, days = 7) =>
+  api.get(`/apps/${id}/analytics`, { params: { days } }).then((r) => r.data);
+export const setAnalytics = (id, enabled) =>
+  api.put(`/apps/${id}/analytics`, { enabled });
 export const getRuntimeLogs = (id, tail = 300) =>
   api.get(`/apps/${id}/runtime-logs`, { params: { tail } }).then((r) => r.data);
 

@@ -5,11 +5,11 @@ import {
   getApp, listDeploys, triggerDeploy, rollback, updateApp, deleteApp,
   getEnv, putEnv, listSecretKeys, putSecret, deleteSecret,
   listDomains, addDomain, setPrimaryDomain, deleteDomain, getConfig,
-  getStatus, getRuntimeLogs, getUptime,
+  getStatus, getRuntimeLogs, getUptime, getAnalytics, setAnalytics,
 } from "../api";
 import { StatusBadge } from "./AppsList";
 
-const TABS = ["deploys", "logs", "domains", "env", "secrets", "settings"];
+const TABS = ["deploys", "analytics", "logs", "domains", "env", "secrets", "settings"];
 
 export default function AppDetail() {
   const { id } = useParams();
@@ -81,6 +81,7 @@ export default function AppDetail() {
       </div>
 
       {tab === "deploys" && <DeployHistory deploys={deploys} onRollback={(d) => rollbackMut.mutate(d)} />}
+      {tab === "analytics" && <AnalyticsTab id={id} />}
       {tab === "logs" && <RuntimeLogs id={id} />}
       {tab === "domains" && <DomainsTab id={id} />}
       {tab === "env" && <EnvEditor id={id} />}
@@ -115,6 +116,90 @@ function UptimePill({ uptime }) {
       <span className="dot" style={{ background: c, boxShadow: `0 0 8px ${c}66` }} />
       {uptime.up ? "up" : "down"}{pct}
     </span>
+  );
+}
+
+function AnalyticsTab({ id }) {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["analytics", id], queryFn: () => getAnalytics(id, 7) });
+  const toggle = useMutation({
+    mutationFn: (enabled) => setAnalytics(id, enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["analytics", id] }),
+  });
+  if (!data) return <p className="mono text-[var(--color-muted)]">loading…</p>;
+  const max = Math.max(1, ...data.series.map((d) => d.views));
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <div className="flex gap-4">
+        <Stat label="Pageviews · 7d" value={data.views} />
+        <Stat label="Unique visitors · 7d" value={data.visitors} />
+      </div>
+
+      {/* tiny bar series */}
+      <div className="card p-5">
+        <div className="eyebrow mb-4">Views per day</div>
+        <div className="flex items-end gap-1.5 h-28">
+          {data.series.map((d) => (
+            <div key={d.date} className="flex-1 flex flex-col items-center gap-1" title={`${d.date}: ${d.views}`}>
+              <div className="w-full rounded-t" style={{
+                height: `${Math.max(2, (d.views / max) * 100)}%`,
+                background: d.views ? "var(--color-acid)" : "var(--color-line)",
+              }} />
+              <span className="mono text-[9px] text-[var(--color-muted)]">{d.date.slice(5)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-4">
+        <TopList title="Top pages" rows={data.top_paths} keyName="path" />
+        <TopList title="Top referrers" rows={data.top_referrers} keyName="source" />
+      </div>
+
+      <div className="card p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-medium">Tracking</div>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={data.enabled} className="accent-[var(--color-acid)]"
+                   onChange={(e) => toggle.mutate(e.target.checked)} />
+            <span className="text-[var(--color-muted)]">{data.enabled ? "enabled" : "disabled"}</span>
+          </label>
+        </div>
+        <p className="text-xs text-[var(--color-muted)]">
+          Cookieless, first-party analytics. <b className="text-[var(--color-fg)]">Static sites</b> get
+          the beacon auto-injected. <b className="text-[var(--color-fg)]">Dynamic apps</b>: paste this once:
+        </p>
+        <div className="mono text-xs bg-[var(--color-ink)] border border-[var(--color-line)] rounded px-3 py-2 break-all">
+          {data.snippet}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div className="card p-5 flex-1">
+      <div className="font-display text-4xl">{value}</div>
+      <div className="eyebrow mt-1">{label}</div>
+    </div>
+  );
+}
+
+function TopList({ title, rows, keyName }) {
+  return (
+    <div className="card p-5">
+      <div className="eyebrow mb-3">{title}</div>
+      {rows.length === 0 && <div className="mono text-xs text-[var(--color-muted)]">no data yet</div>}
+      <ul className="space-y-1.5">
+        {rows.map((r) => (
+          <li key={r[keyName]} className="flex justify-between text-sm">
+            <span className="mono text-[var(--color-fg)] truncate mr-3">{r[keyName]}</span>
+            <span className="mono text-[var(--color-muted)]">{r.views}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

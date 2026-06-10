@@ -95,6 +95,8 @@ class Deployer:
             # Primary host first, so it's the canonical one in the router rule.
             hosts = [d.host for d in sorted(
                 app.domains, key=lambda d: (not d.is_primary, d.id))]
+            an = app.analytics
+            analytics_site = an.token if (an and an.enabled) else ""
 
         def emit(line: str, status: str | None = None) -> None:
             with db.session() as s:
@@ -145,6 +147,7 @@ class Deployer:
                 secret_values=secret_values,
                 settings=self.settings,
                 hosts=hosts or None,
+                analytics_site=analytics_site,
             )
             emit("[koyra] build ok; deploying service to swarm", "deploying")
             for line in self.docker.deploy(f"koyra-{app_name}", stack):

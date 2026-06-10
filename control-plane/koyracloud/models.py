@@ -37,6 +37,8 @@ class App(Base):
     domains: Mapped[list["Domain"]] = relationship(
         back_populates="app", cascade="all, delete-orphan",
         order_by="Domain.is_primary.desc(), Domain.id")
+    analytics: Mapped["AppAnalytics | None"] = relationship(
+        cascade="all, delete-orphan", uselist=False)
 
 
 class Domain(Base):
@@ -115,6 +117,27 @@ class UptimeSample(Base):
     app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), index=True)
     ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
     ok: Mapped[bool] = mapped_column()
+
+
+class AppAnalytics(Base):
+    """Per-app analytics site token + opt-out flag (own table; no apps ALTER)."""
+    __tablename__ = "app_analytics"
+
+    app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), primary_key=True)
+    token: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    enabled: Mapped[bool] = mapped_column(default=True)
+
+
+class Hit(Base):
+    """A single pageview recorded by the first-party beacon."""
+    __tablename__ = "hits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), index=True)
+    ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    path: Mapped[str] = mapped_column(String(512), default="/")
+    referrer: Mapped[str] = mapped_column(String(512), default="")
+    visitor: Mapped[str] = mapped_column(String(32), index=True)  # daily-rotated hash
 
 
 class AllowedUser(Base):

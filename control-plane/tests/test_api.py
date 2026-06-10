@@ -254,6 +254,43 @@ def test_patch_app(client):
     assert body["branch"] == "dev" and body["auto_deploy"] is True
 
 
+def test_analytics_beacon_served(client):
+    r = client.get("/_k/a.js")
+    assert r.status_code == 200 and "data-site" in r.text
+    assert "javascript" in r.headers["content-type"]
+
+
+def _site_token(client, aid):
+    snip = client.get(f"/api/apps/{aid}/analytics").json()["snippet"]
+    return snip.split('data-site="', 1)[1].split('"', 1)[0]
+
+
+def test_analytics_collect_and_dashboard(client):
+    aid = client.post("/api/apps", json={"name": "site",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    token = _site_token(client, aid)
+    for path in ["/", "/", "/about"]:
+        client.post("/_k/e", content=json.dumps({"site": token, "path": path, "ref": "https://google.com/x"}))
+    data = client.get(f"/api/apps/{aid}/analytics").json()
+    assert data["views"] == 3
+    assert data["top_paths"][0]["path"] == "/" and data["top_paths"][0]["views"] == 2
+    assert any(r["source"] == "google.com" for r in data["top_referrers"])
+
+
+def test_analytics_optout_ignores_hits(client):
+    aid = client.post("/api/apps", json={"name": "site",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    token = _site_token(client, aid)
+    client.put(f"/api/apps/{aid}/analytics", json={"enabled": False})
+    client.post("/_k/e", content=json.dumps({"site": token, "path": "/"}))
+    assert client.get(f"/api/apps/{aid}/analytics").json()["views"] == 0
+
+
+def test_analytics_collect_unknown_token_noop(client):
+    r = client.post("/_k/e", content=json.dumps({"site": "nope", "path": "/"}))
+    assert r.status_code == 204
+
+
 def test_me_reports_admin(client):
     # dev_login is treated as admin
     assert client.get("/api/me").json() == {"login": "tester", "is_admin": True}

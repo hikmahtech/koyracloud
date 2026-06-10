@@ -24,6 +24,7 @@ def render_stack(
     secret_values: dict[str, str],
     settings: Settings,
     hosts: list[str] | None = None,
+    analytics_site: str = "",
 ) -> dict:
     # Control-plane-managed domains take precedence; fall back to the manifest
     # subdomain (or a derived default) when none are configured.
@@ -42,6 +43,11 @@ def render_stack(
     environment["KOYRA_WORKSPACE"] = "/workspace"
     if git_token:
         environment["KOYRA_GIT_TOKEN"] = git_token
+    # Native analytics: the static server auto-injects the beacon when these are
+    # set (only meaningful for runtime: static; dynamic apps paste the snippet).
+    if analytics_site:
+        environment["KOYRA_ANALYTICS_URL"] = settings.base_url
+        environment["KOYRA_ANALYTICS_SITE"] = analytics_site
 
     labels = [
         "traefik.enable=true",

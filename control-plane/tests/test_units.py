@@ -134,6 +134,31 @@ def test_webhook_branch_from_ref():
     assert webhooks.branch_from_ref("refs/tags/v1") is None
 
 
+# --- analytics --------------------------------------------------------------
+def test_visitor_hash_stable_and_daily_rotation():
+    from koyracloud import analytics
+    a = analytics.visitor_hash("sec", "site", "1.2.3.4", "ua", day="2026-06-11")
+    b = analytics.visitor_hash("sec", "site", "1.2.3.4", "ua", day="2026-06-11")
+    c = analytics.visitor_hash("sec", "site", "1.2.3.4", "ua", day="2026-06-12")
+    assert a == b and a != c and len(a) == 16
+
+
+def test_visitor_hash_differs_by_visitor():
+    from koyracloud import analytics
+    a = analytics.visitor_hash("sec", "site", "1.2.3.4", "ua", day="d")
+    b = analytics.visitor_hash("sec", "site", "9.9.9.9", "ua", day="d")
+    assert a != b
+
+
+def test_analytics_render_injects_env():
+    m = parse_manifest("name: site\nruntime: static\n")
+    stack = render_stack(m, app_name="site", repo_url="https://github.com/o/r",
+                         ref="abc", git_token="", env_overrides={}, secret_values={},
+                         settings=_settings(), analytics_site="tok123")
+    env = stack["services"]["site"]["environment"]
+    assert env["KOYRA_ANALYTICS_SITE"] == "tok123" and "KOYRA_ANALYTICS_URL" in env
+
+
 # --- stack_render -----------------------------------------------------------
 def _settings():
     return Settings(apps_domain="apps.koyracloud.com", nfs_base="/nfs/koyracloud",
