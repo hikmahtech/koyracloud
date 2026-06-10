@@ -699,6 +699,14 @@ def create_app(
         monitor.UptimeMonitor(db, settings.uptime_interval,
                               on_transition=_on_transition).start()
 
+    if run_async and settings.backup_enabled:
+        from koyracloud import backup
+        dbf = backup.sqlite_file(settings.db_url)
+        if dbf:
+            backup.BackupLoop(dbf, dbf.parent / "backups",
+                              settings.backup_interval_hours * 3600,
+                              settings.backup_keep).start()
+
     app.state.db = db
     app.state.settings = settings
     return app

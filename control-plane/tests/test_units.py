@@ -331,6 +331,26 @@ def test_render_stack_resource_limits_default_and_override():
     assert lim2 == {"cpus": "0.25", "memory": "128M"}
 
 
+def test_db_backup_once_and_prune(tmp_path):
+    import sqlite3
+
+    from koyracloud import backup
+    src = tmp_path / "koyracloud.db"
+    sqlite3.connect(str(src)).execute("create table t(x)")
+    bdir = tmp_path / "backups"
+    for i in range(5):
+        backup.backup_once(src, bdir, keep=3, stamp=f"2026010{i}-000000")
+    files = sorted(bdir.glob("koyracloud-*.db"))
+    assert len(files) == 3                       # pruned to keep=3
+    assert files[0].name == "koyracloud-20260102-000000.db"  # oldest kept
+
+
+def test_sqlite_file_parsing():
+    from koyracloud import backup
+    assert str(backup.sqlite_file("sqlite:////data/koyracloud.db")) == "/data/koyracloud.db"
+    assert backup.sqlite_file("postgresql://x/y") is None
+
+
 def test_rate_limiter():
     from koyracloud.ratelimit import RateLimiter
     rl = RateLimiter(limit=2, window=60)

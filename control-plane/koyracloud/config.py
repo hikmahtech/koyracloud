@@ -70,6 +70,13 @@ class Settings:
         default_factory=lambda: os.environ.get("KOYRA_UPTIME_ENABLED", "1") != "0")
     uptime_interval: int = field(
         default_factory=lambda: int(os.environ.get("KOYRA_UPTIME_INTERVAL", "120")))
+    # DB backup (SQLite only)
+    backup_enabled: bool = field(
+        default_factory=lambda: os.environ.get("KOYRA_BACKUP_ENABLED", "1") != "0")
+    backup_interval_hours: int = field(
+        default_factory=lambda: int(os.environ.get("KOYRA_BACKUP_INTERVAL_HOURS", "12")))
+    backup_keep: int = field(
+        default_factory=lambda: int(os.environ.get("KOYRA_BACKUP_KEEP", "14")))
     # Optional: pin deployed apps to a single node (e.g. "baa"). Needed when the
     # runtime image is only present locally on that node (no registry push).
     # Empty = no placement constraint (apps schedule anywhere; image must be
