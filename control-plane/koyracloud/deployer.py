@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import re
+import secrets
 import subprocess
 import sys
 import traceback
@@ -19,7 +20,7 @@ from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.docker_ctl import DockerControl
 from koyracloud.manifest import Manifest, parse_manifest
-from koyracloud.models import Deploy
+from koyracloud.models import AppAnalytics, Deploy
 from koyracloud.stack_render import render_stack
 
 
@@ -133,7 +134,11 @@ class Deployer:
             hosts = [d.host for d in sorted(
                 app.domains, key=lambda d: (not d.is_primary, d.id))]
             an = app.analytics
-            analytics_site = an.token if (an and an.enabled) else ""
+            if an is None:  # backfill for apps created before analytics existed
+                an = AppAnalytics(app_id=app.id, token=secrets.token_urlsafe(12), enabled=True)
+                s.add(an)
+                s.commit()
+            analytics_site = an.token if an.enabled else ""
 
         def emit(line: str, status: str | None = None) -> None:
             with db.session() as s:
