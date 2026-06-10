@@ -57,6 +57,11 @@ class Settings:
     # Public IP the homelab edge answers on — shown as the DNS hint for custom
     # domains and used to check whether a domain already points here.
     public_ip: str = field(default_factory=lambda: os.environ.get("KOYRA_PUBLIC_IP", ""))
+    # Uptime monitor
+    uptime_enabled: bool = field(
+        default_factory=lambda: os.environ.get("KOYRA_UPTIME_ENABLED", "1") != "0")
+    uptime_interval: int = field(
+        default_factory=lambda: int(os.environ.get("KOYRA_UPTIME_INTERVAL", "120")))
     # Optional: pin deployed apps to a single node (e.g. "baa"). Needed when the
     # runtime image is only present locally on that node (no registry push).
     # Empty = no placement constraint (apps schedule anywhere; image must be

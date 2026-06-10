@@ -197,6 +197,33 @@ def test_domain_change_skips_redeploy_when_not_live(client, env):
     assert env["docker"].deployed == []
 
 
+def test_uptime_monitor_debounce_and_transitions(client, env):
+    from koyracloud import monitor
+    db = env["db"]
+    # an app must be live to be probed
+    aid = client.post("/api/apps", json={"name": "mon",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    client.post(f"/api/apps/{aid}/deploys", json={})  # -> live (fake docker)
+
+    up = lambda url: True       # noqa: E731
+    down = lambda url: False    # noqa: E731
+
+    assert monitor.check_once(db, up) == [(aid, "up")]        # first success → up
+    assert monitor.check_once(db, up) == []                   # still up, no transition
+    assert monitor.check_once(db, down) == []                 # 1 fail < threshold → no flip
+    assert monitor.check_once(db, down) == [(aid, "down")]    # 2nd fail → down (debounce)
+    assert monitor.check_once(db, up) == [(aid, "up")]        # recovers
+
+    summ = client.get(f"/api/apps/{aid}/uptime").json()
+    assert summ["up"] is True and summ["samples_24h"] >= 5
+
+
+def test_uptime_skips_never_deployed(client, env):
+    from koyracloud import monitor
+    client.post("/api/apps", json={"name": "ndep", "repo_url": "https://github.com/o/r"})
+    assert monitor.check_once(env["db"], lambda url: False) == []  # not live → not probed
+
+
 def test_apps_status_bulk(client, env):
     aid = client.post("/api/apps", json={"name": "lens-inventory",
                       "repo_url": "https://github.com/example/app"}).json()["id"]

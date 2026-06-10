@@ -95,6 +95,28 @@ class User(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class UptimeState(Base):
+    """Current up/down state per app (kept in its own table so create_all can
+    add it without altering the apps table)."""
+    __tablename__ = "uptime_state"
+
+    app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), primary_key=True)
+    up: Mapped[bool | None] = mapped_column(default=None)   # None = unknown
+    up_since: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_checked: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    consecutive_fail: Mapped[int] = mapped_column(default=0)
+
+
+class UptimeSample(Base):
+    """Periodic probe results, for uptime % and a sparkline. Pruned over time."""
+    __tablename__ = "uptime_samples"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), index=True)
+    ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    ok: Mapped[bool] = mapped_column()
+
+
 class AllowedUser(Base):
     """An invited member (in addition to the env-configured admins). Admins
     manage this list from the UI; members may sign in and use the platform."""

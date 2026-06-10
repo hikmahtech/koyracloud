@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
-from koyracloud import auth, webhooks
+from koyracloud import auth, monitor, webhooks
 from koyracloud.config import Settings, get_settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
@@ -437,6 +437,12 @@ def create_app(
             name = obj.name
         return {"logs": docker.service_logs(_service_name(name), min(max(tail, 10), 1000))}
 
+    @app.get("/api/apps/{app_id}/uptime")
+    def app_uptime(app_id: int, login: str = Auth):
+        with db.session() as s:
+            get_app_or_404(app_id, s)
+        return monitor.uptime_summary(db, app_id)
+
     # ----- deploys --------------------------------------------------------
     @app.get("/api/apps/{app_id}/deploys", response_model=list[DeployOut])
     def list_deploys(app_id: int, login: str = Auth):
@@ -523,6 +529,13 @@ def create_app(
                         and candidate.is_file():
                     return FileResponse(candidate)
             return FileResponse(_web_root / "index.html")
+
+    # Background uptime monitor (production only; run_async gates real bg work).
+    if run_async and settings.uptime_enabled:
+        def _on_transition(app_id: int, state: str) -> None:
+            print(f"[koyra:uptime] app {app_id} -> {state}", flush=True)
+        monitor.UptimeMonitor(db, settings.uptime_interval,
+                              on_transition=_on_transition).start()
 
     app.state.db = db
     app.state.settings = settings

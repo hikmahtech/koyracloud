@@ -5,7 +5,7 @@ import {
   getApp, listDeploys, triggerDeploy, rollback, updateApp, deleteApp,
   getEnv, putEnv, listSecretKeys, putSecret, deleteSecret,
   listDomains, addDomain, setPrimaryDomain, deleteDomain, getConfig,
-  getStatus, getRuntimeLogs,
+  getStatus, getRuntimeLogs, getUptime,
 } from "../api";
 import { StatusBadge } from "./AppsList";
 
@@ -20,6 +20,9 @@ export default function AppDetail() {
   const { data: app } = useQuery({ queryKey: ["app", id], queryFn: () => getApp(id) });
   const { data: status } = useQuery({
     queryKey: ["status", id], queryFn: () => getStatus(id), refetchInterval: 30000,
+  });
+  const { data: uptime } = useQuery({
+    queryKey: ["uptime", id], queryFn: () => getUptime(id), refetchInterval: 60000,
   });
   const { data: deploys = [] } = useQuery({
     queryKey: ["deploys", id], queryFn: () => listDeploys(id),
@@ -48,6 +51,7 @@ export default function AppDetail() {
             <h1 className="font-display text-3xl">{app.name}</h1>
             <StatusBadge status={app.latest_status} />
             <RuntimePill status={status} />
+            <UptimePill uptime={uptime} />
           </div>
           <div className="flex items-center gap-4 mt-2 text-sm">
             {url && (
@@ -97,6 +101,19 @@ function RuntimePill({ status }) {
           title={status.tasks?.[0]?.state || ""}>
       <span className="dot" style={{ background: c, boxShadow: `0 0 8px ${c}66` }} />
       {status.running}/{status.desired} running
+    </span>
+  );
+}
+
+function UptimePill({ uptime }) {
+  if (!uptime || uptime.up === null) return null;
+  const c = uptime.up ? "var(--color-acid)" : "var(--color-danger)";
+  const pct = uptime.uptime_24h != null ? ` · ${uptime.uptime_24h}% 24h` : "";
+  return (
+    <span className="inline-flex items-center gap-2 mono text-xs text-[var(--color-muted)]"
+          title={uptime.since ? `since ${uptime.since}` : ""}>
+      <span className="dot" style={{ background: c, boxShadow: `0 0 8px ${c}66` }} />
+      {uptime.up ? "up" : "down"}{pct}
     </span>
   );
 }
