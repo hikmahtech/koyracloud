@@ -81,7 +81,7 @@ class Settings:
     # Email alerts via Resend (inert until an API key is set).
     resend_api_key: str = field(default_factory=lambda: _secret("RESEND_API_KEY", ""))
     email_from: str = field(default_factory=lambda: os.environ.get(
-        "KOYRA_EMAIL_FROM", "koyracloud <deploys@koyracloud.com>"))
+        "KOYRA_EMAIL_FROM", "koyracloud <alerts@koyracloud.com>"))
     default_notify_email: str = field(
         default_factory=lambda: os.environ.get("KOYRA_DEFAULT_NOTIFY_EMAIL", ""))
     # Admin logins (always allowed; can manage the invite list). Invited members

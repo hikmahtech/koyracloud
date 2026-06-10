@@ -25,7 +25,7 @@ services:
       KOYRA_RESOLVE_IMAGE_NEVER: ${KOYRA_RESOLVE_IMAGE_NEVER:-}
       # Email alerts (Resend) — inert until RESEND_API_KEY is set.
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      KOYRA_EMAIL_FROM: ${KOYRA_EMAIL_FROM:-koyracloud <deploys@koyracloud.com>}
+      KOYRA_EMAIL_FROM: ${KOYRA_EMAIL_FROM:-koyracloud <alerts@koyracloud.com>}
       KOYRA_DEFAULT_NOTIFY_EMAIL: ${KOYRA_DEFAULT_NOTIFY_EMAIL:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
