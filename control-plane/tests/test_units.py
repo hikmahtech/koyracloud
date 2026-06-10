@@ -144,6 +144,14 @@ def test_render_event():
     assert "down" in subj2.lower()
 
 
+def test_render_event_escapes_html():
+    from koyracloud import notifier
+    _, body = notifier.render_event("deploy_failed", "app",
+                                    detail="<script>alert(1)</script>", host="")
+    assert "<script>alert(1)</script>" not in body
+    assert "&lt;script&gt;" in body
+
+
 def test_send_email_inert_without_key():
     from koyracloud import notifier
     s = Settings(resend_api_key="")

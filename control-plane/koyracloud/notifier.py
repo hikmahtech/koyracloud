@@ -2,6 +2,8 @@
 it's safe to wire everywhere and switch on later."""
 from __future__ import annotations
 
+import html
+
 import httpx
 
 from koyracloud.config import Settings
@@ -22,21 +24,27 @@ def _wrap(title: str, body_html: str) -> str:
 
 # event -> (subject template, title, body) builders. Pure, unit-tested.
 def render_event(event: str, app_name: str, detail: str = "", host: str = "") -> tuple[str, str]:
-    link = f'<a href="https://{host}" style="color:#c8f04e">{host}</a>' if host else app_name
+    # Escape every dynamic value before embedding it in HTML. The subject is
+    # plain text; app_name there is fine unescaped.
+    name_e = html.escape(app_name)
+    host_e = html.escape(host, quote=True)
+    detail_e = html.escape(detail[:300])
+    link = (f'<a href="https://{host_e}" style="color:#c8f04e">{host_e}</a>'
+            if host else name_e)
     table = {
         "deploy_live": (f"✅ {app_name} deployed",
-                        _wrap("Deploy succeeded", f"{app_name} is live at {link}.")),
+                        _wrap("Deploy succeeded", f"{name_e} is live at {link}.")),
         "deploy_failed": (f"❌ {app_name} deploy failed",
-                          _wrap("Deploy failed", f"{app_name} failed to deploy.<br><br>"
-                                f"<code>{detail[:300]}</code>")),
+                          _wrap("Deploy failed", f"{name_e} failed to deploy.<br><br>"
+                                f"<code>{detail_e}</code>")),
         "deploy_rolled_back": (f"↩️ {app_name} rolled back",
-                               _wrap("Rolled back", f"{app_name} was rolled back to a previous commit.")),
+                               _wrap("Rolled back", f"{name_e} was rolled back to a previous commit.")),
         "down": (f"🔴 {app_name} is down",
-                 _wrap("Down alert", f"{app_name} ({link}) stopped responding.")),
+                 _wrap("Down alert", f"{name_e} ({link}) stopped responding.")),
         "recovered": (f"🟢 {app_name} recovered",
-                      _wrap("Recovered", f"{app_name} ({link}) is responding again.")),
+                      _wrap("Recovered", f"{name_e} ({link}) is responding again.")),
     }
-    return table.get(event, (f"{app_name}: {event}", _wrap(event, app_name)))
+    return table.get(event, (f"{app_name}: {event}", _wrap(html.escape(event), name_e)))
 
 
 def send_email(settings: Settings, to: str, subject: str, html: str,
