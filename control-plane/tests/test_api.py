@@ -156,6 +156,46 @@ def test_deploy_uses_configured_domains(client, env):
     assert "shop.apps.koyracloud.com" in rule and "shop.example.com" in rule
 
 
+def _rule_of(env, service):
+    _, stack = env["docker"].deployed[-1]
+    return next(lbl for lbl in stack["services"][service]["deploy"]["labels"]
+                if ".rule=" in lbl)
+
+
+def test_add_domain_redeploys_live_app(client, env):
+    # A live app must re-render its Traefik route when a domain is attached,
+    # otherwise the new host 404s until someone manually redeploys.
+    aid = client.post("/api/apps", json={"name": "shop",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    client.post(f"/api/apps/{aid}/deploys", json={})          # make it live
+    n = len(env["docker"].deployed)
+    client.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"})
+    assert len(env["docker"].deployed) == n + 1              # auto-redeployed
+    assert "shop.example.com" in _rule_of(env, "shop")
+
+
+def test_delete_domain_redeploys_live_app(client, env):
+    aid = client.post("/api/apps", json={"name": "shop",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    did = client.post(f"/api/apps/{aid}/domains",
+                      json={"host": "shop.example.com"}).json()["id"]
+    client.post(f"/api/apps/{aid}/deploys", json={})          # live with both hosts
+    n = len(env["docker"].deployed)
+    assert client.delete(f"/api/apps/{aid}/domains/{did}").status_code == 204
+    assert len(env["docker"].deployed) == n + 1              # auto-redeployed
+    rule = _rule_of(env, "shop")
+    assert "shop.example.com" not in rule and "shop.apps.koyracloud.com" in rule
+
+
+def test_domain_change_skips_redeploy_when_not_live(client, env):
+    # No running service yet → nothing to update; the first real deploy will
+    # pick the domain up. Don't surprise-deploy a never-deployed app.
+    aid = client.post("/api/apps", json={"name": "shop",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    client.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"})
+    assert env["docker"].deployed == []
+
+
 def test_runtime_status_and_logs(client):
     aid = client.post("/api/apps", json={"name": "rt",
                       "repo_url": "https://github.com/o/r"}).json()["id"]

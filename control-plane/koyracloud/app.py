@@ -61,6 +61,20 @@ def create_app(
         else:
             deployer.run_deploy(db, deploy_id)
 
+    def _redeploy_if_live(s, obj: App) -> int | None:
+        """Queue a redeploy when routing changes so Traefik re-renders the
+        Host(...) rule. Only when the app already has a live service — a
+        never-deployed app picks the change up on its first real deploy.
+
+        Returns the new deploy id (caller schedules it after commit) or None.
+        """
+        if not any(d.status == "live" for d in obj.deploys):
+            return None
+        dep = Deploy(app_id=obj.id, ref=obj.branch, status="pending")
+        s.add(dep)
+        s.flush()
+        return dep.id
+
     # ----- auth -----------------------------------------------------------
     def current_login(request: Request) -> str:
         if settings.dev_login:
@@ -270,9 +284,12 @@ def create_app(
             d = Domain(app_id=obj.id, host=body.host,
                        is_primary=len(obj.domains) == 0)
             s.add(d)
+            deploy_id = _redeploy_if_live(s, obj)
             s.commit()
             out = DomainOut.model_validate(d)
         out.dns_ok = _dns_ok(body.host)
+        if deploy_id is not None:
+            schedule(deploy_id)
         return out
 
     @app.post("/api/apps/{app_id}/domains/{domain_id}/primary", response_model=DomainOut)
@@ -300,7 +317,10 @@ def create_app(
             remaining = s.query(Domain).filter_by(app_id=obj.id).order_by(Domain.id).all()
             if was_primary and remaining:
                 remaining[0].is_primary = True
+            deploy_id = _redeploy_if_live(s, obj)
             s.commit()
+        if deploy_id is not None:
+            schedule(deploy_id)
         return Response(status_code=204)
 
     # ----- runtime (live service) ----------------------------------------
