@@ -134,6 +134,31 @@ def test_webhook_branch_from_ref():
     assert webhooks.branch_from_ref("refs/tags/v1") is None
 
 
+# --- static heuristic -------------------------------------------------------
+def test_resolve_manifest_synthesizes_static(tmp_path):
+    from koyracloud.deployer import resolve_manifest
+    (tmp_path / "index.html").write_text("<html></html>")   # static, no manifest
+    m, synthesized = resolve_manifest(tmp_path, "mysite")
+    assert synthesized is True and m.runtime == "static" and m.name == "mysite"
+    assert (tmp_path / ".paas" / "app.yaml").is_file()      # written to the volume
+
+
+def test_resolve_manifest_prefers_real(tmp_path):
+    from koyracloud.deployer import resolve_manifest
+    (tmp_path / ".paas").mkdir()
+    (tmp_path / ".paas" / "app.yaml").write_text("name: a\nruntime: python\nstart: x\n")
+    m, synthesized = resolve_manifest(tmp_path, "a")
+    assert synthesized is False and m.runtime == "python"
+
+
+def test_resolve_manifest_errors_when_not_static(tmp_path):
+    import pytest as _pytest
+    from koyracloud.deployer import resolve_manifest
+    (tmp_path / "server.py").write_text("print('hi')")       # no manifest, not static
+    with _pytest.raises(FileNotFoundError):
+        resolve_manifest(tmp_path, "a")
+
+
 # --- notifier ---------------------------------------------------------------
 def test_render_event():
     from koyracloud import notifier

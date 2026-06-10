@@ -18,7 +18,9 @@ const NAV = [
   ["manifest", "The manifest"],
   ["fields", "Manifest fields"],
   ["runtime", "Runtimes & build"],
+  ["static", "Static sites"],
   ["domains", "Custom domains"],
+  ["analytics", "Analytics & uptime"],
   ["secrets", "Secrets & env"],
   ["persistence", "Persistence"],
   ["architecture", "How it works"],
@@ -99,8 +101,9 @@ secrets:
               <table className="w-full text-left border-collapse">
                 <tbody>
                   <Field name="name" req>Stack + service identity. Alphanumeric, <span className="mono">-</span>, <span className="mono">_</span>.</Field>
-                  <Field name="runtime" req><span className="mono">python</span>, <span className="mono">node</span>, or <span className="mono">python+node</span>.</Field>
-                  <Field name="start" req>The command that starts your server (becomes PID 1). Must bind <span className="mono">0.0.0.0</span> on <span className="mono">port</span>.</Field>
+                  <Field name="runtime" req><span className="mono">python</span>, <span className="mono">node</span>, <span className="mono">python+node</span>, or <span className="mono">static</span>.</Field>
+                  <Field name="start">The command that starts your server (becomes PID 1). Must bind <span className="mono">0.0.0.0</span> on <span className="mono">port</span>. Not needed for <span className="mono">static</span>.</Field>
+                  <Field name="static_dir">For <span className="mono">runtime: static</span>: directory to serve. Auto-detected (<span className="mono">dist/build/public/out/_site</span> or repo root) if omitted.</Field>
                   <Field name="port" req>Container port Traefik routes to.</Field>
                   <Field name="build">Commands run once when dependencies change (hashed over <span className="mono">requirements.txt</span> + <span className="mono">package-lock.json</span>).</Field>
                   <Field name="predeploy">Commands run on every deploy before start — e.g. migrations. Must be idempotent.</Field>
@@ -128,6 +131,28 @@ secrets:
             </p>
           </Section>
 
+          <Section id="static" title="Static sites (Netlify-style)">
+            <p className="text-[var(--color-muted)]">
+              For frontend-only / static sites, koyracloud serves the files itself —
+              no server command needed. Use <span className="mono">runtime: static</span>:
+            </p>
+            <Code label=".paas/app.yaml">{`name: my-site
+runtime: static
+# optional: build a frontend first, then serve the output
+build:
+  - bash -c "npm ci && npm run build"
+static_dir: dist        # auto-detected if omitted`}</Code>
+            <p className="text-[var(--color-muted)]">
+              <b className="text-[var(--color-fg)]">Zero-config:</b> if a repo has
+              <span className="mono"> index.html</span> (at the root or in
+              <span className="mono"> dist/build/public/out/_site</span>) and <i>no</i>
+              manifest at all, koyracloud auto-detects it as a static site and serves
+              it — just connect the repo and deploy. SPA client-side routes fall back to
+              <span className="mono"> index.html</span>, and the analytics beacon is
+              injected automatically.
+            </p>
+          </Section>
+
           <Section id="domains" title="Custom domains">
             <p className="text-[var(--color-muted)]">
               Every app gets <span className="mono text-acid">&lt;name&gt;.apps.koyracloud.com</span> automatically.
@@ -147,6 +172,21 @@ A      yourdomain  <your server's public IP>`}</Code>
               List secret <i>names</i> in the manifest; set their <i>values</i> in the app's
               <b> Secrets</b> tab. They're encrypted at rest (Fernet) and injected as environment
               variables at deploy time. Non-sensitive config goes in <span className="mono">env:</span>.
+            </p>
+          </Section>
+
+          <Section id="analytics" title="Analytics & uptime">
+            <p className="text-[var(--color-muted)]">
+              Every app gets built-in, cookieless <b className="text-[var(--color-fg)]">analytics</b>
+              (pageviews, unique visitors, top pages/referrers) and an
+              <b className="text-[var(--color-fg)]"> uptime monitor</b> (koyracloud probes your
+              app and tracks up/down + 24h %). Both are on the app's tabs and header.
+            </p>
+            <p className="text-[var(--color-muted)] mt-3">
+              Static sites get the analytics beacon injected automatically. For dynamic
+              apps, paste the one-line snippet from the <b>Analytics</b> tab. Analytics is
+              opt-out per app. Set an email in <b>Settings → Email alerts</b> to be notified
+              on deploy success/failure and down/recovered (when the instance has email configured).
             </p>
           </Section>
 

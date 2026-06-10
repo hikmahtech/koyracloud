@@ -18,7 +18,7 @@ from koyracloud.config import Settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.docker_ctl import DockerControl
-from koyracloud.manifest import parse_manifest
+from koyracloud.manifest import Manifest, parse_manifest
 from koyracloud.models import Deploy
 from koyracloud.stack_render import render_stack
 
@@ -55,6 +55,33 @@ def _git(args: list[str], cwd: Path, check: bool = True) -> subprocess.Completed
                          for a in args)
         raise RuntimeError(f"git {shown} failed: {(r.stderr or r.stdout).strip()}")
     return r
+
+
+_STATIC_DIRS = ("dist", "build", "public", "out", "_site")
+
+
+def is_static_repo(repo: Path) -> bool:
+    """Heuristic: a repo with an index.html (at root or in a common build dir)
+    and no manifest is treated as a static site."""
+    if (repo / "index.html").is_file():
+        return True
+    return any((repo / d / "index.html").is_file() for d in _STATIC_DIRS)
+
+
+def resolve_manifest(dest: Path, app_name: str) -> tuple[Manifest, bool]:
+    """Read .paas/app.yaml, or — if absent and the repo looks static —
+    synthesize a static manifest on the volume. Returns (manifest, synthesized).
+    Raises FileNotFoundError with guidance if neither applies."""
+    mp = dest / ".paas" / "app.yaml"
+    if mp.is_file():
+        return parse_manifest(mp.read_text()), False
+    if is_static_repo(dest):
+        mp.parent.mkdir(parents=True, exist_ok=True)
+        mp.write_text(f"name: {app_name}\nruntime: static\n")
+        return parse_manifest(mp.read_text()), True
+    raise FileNotFoundError(
+        "No .paas/app.yaml in the repo, and it doesn't look like a static site "
+        "(no index.html found). Add a manifest — see the docs at /docs.")
 
 
 def git_clone(repo_url: str, ref: str, token: str, dest: Path) -> str:
@@ -128,7 +155,9 @@ class Deployer:
                 s.commit()
             emit(f"[koyra] checked out {commit[:12]}")
 
-            manifest = parse_manifest((dest / ".paas" / "app.yaml").read_text())
+            manifest, synthesized = resolve_manifest(dest, app_name)
+            if synthesized:
+                emit("[koyra] no manifest found; repo looks static → runtime: static")
             emit(f"[koyra] manifest ok: {manifest.name} (runtime={manifest.runtime})")
 
             # One-off build container: install deps + build frontend on the
