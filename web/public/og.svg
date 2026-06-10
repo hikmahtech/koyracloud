@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0a0b0d"/>
+  <defs>
+    <radialGradient id="g" cx="50%" cy="0%" r="70%">
+      <stop offset="0%" stop-color="#c8f04e" stop-opacity="0.16"/>
+      <stop offset="70%" stop-color="#0a0b0d" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="1.2" cy="1.2" r="1.2" fill="#ffffff" fill-opacity="0.05"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="url(#dots)"/>
+  <rect width="1200" height="630" fill="url(#g)"/>
+  <g transform="translate(90,250)">
+    <rect x="0" y="0" width="64" height="64" rx="16" fill="none" stroke="#c8f04e" stroke-width="6"/>
+    <circle cx="32" cy="32" r="11" fill="#c8f04e"/>
+    <text x="86" y="48" font-family="'Clash Display',sans-serif" font-size="52" font-weight="600" fill="#e9ecf1">koyracloud</text>
+  </g>
+  <text x="90" y="380" font-family="'Clash Display',sans-serif" font-size="66" font-weight="600" fill="#e9ecf1">Your own Vercel,</text>
+  <text x="90" y="452" font-family="'Clash Display',sans-serif" font-size="66" font-weight="600" fill="#e9ecf1">self-hosted on your <tspan fill="#c8f04e">swarm</tspan>.</text>
+  <text x="90" y="520" font-family="ui-sans-serif,sans-serif" font-size="28" fill="#8a909c">Connect a repo → it deploys. Builds, TLS, secrets, rollback.</text>
+</svg>

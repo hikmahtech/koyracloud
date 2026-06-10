@@ -1,0 +1,73 @@
+# koyracloud control-plane swarm stack. Instance values come from the shell env
+# (see deploy/koyracloud.env.example → deploy/koyracloud.env, sourced by deploy.sh).
+# Nothing instance-specific is hardcoded here.
+version: "3.8"
+
+services:
+  control-plane:
+    image: ${KOYRA_IMAGE:-koyracloud:local}
+    environment:
+      DB_URL: sqlite:////data/koyracloud.db
+      KOYRA_SECRET_KEY_FILE: /run/secrets/koyra_secret_key
+      KOYRA_SESSION_SECRET_FILE: /run/secrets/koyra_session_secret
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET_FILE: /run/secrets/koyra_github_client_secret
+      GITHUB_PAT_FILE: /run/secrets/koyra_github_pat
+      KOYRA_ALLOWED_LOGINS: ${KOYRA_ALLOWED_LOGINS}
+      KOYRA_RUNTIME_IMAGE: ${KOYRA_RUNTIME_IMAGE:-koyracloud-runtime:latest}
+      KOYRA_NFS_BASE: ${KOYRA_NFS_BASE:-/mnt/koyracloud}
+      KOYRA_APPS_DOMAIN: ${KOYRA_APPS_DOMAIN:-apps.example.com}
+      KOYRA_BASE_URL: ${KOYRA_BASE_URL}
+      KOYRA_PUBLIC_IP: ${KOYRA_PUBLIC_IP:-}
+      KOYRA_WEB_DIST: /app/web/dist
+      KOYRA_APP_NODE: ${KOYRA_APP_NODE:-}
+      KOYRA_RESOLVE_IMAGE_NEVER: ${KOYRA_RESOLVE_IMAGE_NEVER:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${KOYRA_NFS_BASE:-/mnt/koyracloud}/cp:/data
+      # builder writes app checkouts here; app containers mount the same tree
+      - ${KOYRA_NFS_BASE:-/mnt/koyracloud}:${KOYRA_NFS_BASE:-/mnt/koyracloud}
+    networks:
+      - traefik_public
+    secrets:
+      - koyra_secret_key
+      - koyra_session_secret
+      - koyra_github_client_secret
+      - koyra_github_pat
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+          # Pin to the node holding the control-plane image when not using a
+          # registry. Set KOYRA_CONTROL_NODE to a manager hostname.
+          - node.hostname == ${KOYRA_CONTROL_NODE}
+      labels:
+        - traefik.enable=true
+        - "traefik.http.routers.koyracloud.rule=Host(`${KOYRA_HOST}`)"
+        - traefik.http.routers.koyracloud.entrypoints=${KOYRA_HTTPS_ENTRYPOINT:-websecure}
+        - traefik.http.routers.koyracloud.tls.certresolver=${KOYRA_CERT_RESOLVER:-letsencrypt}
+        - traefik.http.services.koyracloud.loadbalancer.server.port=8000
+      update_config:
+        order: start-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+
+# The Traefik edge network. Convention name; change here if your swarm differs.
+networks:
+  traefik_public:
+    external: true
+
+secrets:
+  koyra_secret_key:
+    external: true
+  koyra_session_secret:
+    external: true
+  koyra_github_client_secret:
+    external: true
+  koyra_github_pat:
+    external: true

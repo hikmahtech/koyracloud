@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+data/
+*.db
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Env / secrets
+.env
+*.local
+
+# OS
+.DS_Store
+.playwright-mcp/
+
+# Instance deploy config (never commit)
+deploy/koyracloud.env

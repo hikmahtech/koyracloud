@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Entrypoint tests
+        run: uv run --with pytest --with pyyaml pytest runtime-image/tests -q
+      - name: Control-plane tests
+        working-directory: control-plane
+        run: uv run --with-editable . --with pytest pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build UI
+        working-directory: web
+        run: npm ci && npm run build

@@ -1,0 +1,11 @@
+{
+  "name": "koyracloud",
+  "short_name": "koyracloud",
+  "description": "Your own Vercel — self-hosted on your Docker Swarm.",
+  "theme_color": "#0a0b0d",
+  "background_color": "#0a0b0d",
+  "display": "standalone",
+  "icons": [
+    { "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any" }
+  ]
+}

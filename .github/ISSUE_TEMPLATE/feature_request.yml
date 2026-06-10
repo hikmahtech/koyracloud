@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest an idea (mind the project's non-goals)
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that's hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This fits a single-operator, trusted-code platform (not multi-tenant/untrusted).
+          required: true

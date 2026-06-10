@@ -1,0 +1,19 @@
+# Example .paas/app.yaml for a FastAPI backend that also serves a built Vite/React
+# SPA (single container, single origin). Drop this at .paas/app.yaml in your repo.
+name: my-app
+runtime: python+node
+subdomain: my-app.apps.example.com   # optional; defaults to <name>.<apps domain>
+port: 8000
+build:
+  - pip install -r requirements.txt
+  - bash -c "cd web && npm ci && npm run build"
+predeploy:
+  - alembic upgrade head
+start: uvicorn app.main:app --host 0.0.0.0 --port 8000
+persist:
+  - data
+healthcheck: /health
+env:
+  CORS_ORIGINS: https://my-app.apps.example.com
+secrets:
+  - SECRET_KEY
