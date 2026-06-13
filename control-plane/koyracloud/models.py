@@ -54,6 +54,8 @@ class Domain(Base):
     is_primary: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
     app: Mapped[App] = relationship(back_populates="domains")
+    cert: Mapped["DomainCert | None"] = relationship(
+        cascade="all, delete-orphan", uselist=False)
 
 
 class EnvVar(Base):
@@ -138,6 +140,21 @@ class AppNotify(Base):
     app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), primary_key=True)
     owner_login: Mapped[str] = mapped_column(String(128), default="")
     notify_email: Mapped[str] = mapped_column(String(255), default="")
+
+
+class DomainCert(Base):
+    """Cloudflare-for-SaaS custom-hostname state for a custom domain (own table
+    keyed by domain_id so create_all can add it without altering ``domains``).
+    Only created for domains registered with Cloudflare; the auto-subdomain and
+    domains added while Cloudflare is unconfigured have no row."""
+    __tablename__ = "domain_certs"
+
+    domain_id: Mapped[int] = mapped_column(ForeignKey("domains.id"), primary_key=True)
+    cf_hostname_id: Mapped[str] = mapped_column(String(64), default="")
+    ssl_status: Mapped[str] = mapped_column(String(32), default="")
+    ownership_status: Mapped[str] = mapped_column(String(32), default="")
+    dcv_target: Mapped[str] = mapped_column(String(255), default="")
+    last_checked: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Hit(Base):

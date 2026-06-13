@@ -106,6 +106,16 @@ class Settings:
     dev_login: str = field(default_factory=lambda: os.environ.get("KOYRA_DEV_LOGIN", ""))
     base_url: str = field(default_factory=lambda: os.environ.get(
         "KOYRA_BASE_URL", "http://localhost:8000"))
+    # Cloudflare for SaaS — registers user-supplied custom domains as custom
+    # hostnames so the edge mints/renews their certs. Active only when both
+    # token and zone_id are set; otherwise every Cloudflare call is a graceful
+    # no-op (local/dev + existing deploys keep working unchanged).
+    cloudflare_api_token: str = field(
+        default_factory=lambda: _secret("CLOUDFLARE_API_TOKEN", ""))
+    cloudflare_zone_id: str = field(
+        default_factory=lambda: os.environ.get("KOYRA_CLOUDFLARE_ZONE_ID", ""))
+    cloudflare_saas_origin: str = field(default_factory=lambda: os.environ.get(
+        "KOYRA_CLOUDFLARE_SAAS_ORIGIN", "origin.koyracloud.com"))
 
 
 def get_settings() -> Settings:

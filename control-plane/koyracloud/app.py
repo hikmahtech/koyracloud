@@ -1,6 +1,7 @@
 """FastAPI application factory for the koyracloud control plane."""
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import secrets as _secrets
@@ -14,16 +15,18 @@ from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
 from koyracloud import analytics, auth, monitor, notifier, webhooks
 from koyracloud.ratelimit import RateLimiter
+from koyracloud.cloudflare import Cloudflare
 from koyracloud.config import Settings, get_settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.deployer import Deployer
 from koyracloud.docker_ctl import CLIDockerControl, DockerControl
 from koyracloud.models import (AllowedUser, App, AppAnalytics, AppNotify,
-                                Deploy, Domain, EnvVar, Hit, Secret, User)
+                                Deploy, Domain, DomainCert, EnvVar, Hit, Secret,
+                                User)
 from koyracloud.schemas import (AllowedUserIn, AppCreate, AppOut, AppUpdate,
-                                DeployOut, DeployTrigger, DomainIn, DomainOut,
-                                EnvVarIn, RollbackRequest, SecretIn)
+                                DeployOut, DeployTrigger, DnsRecord, DomainIn,
+                                DomainOut, EnvVarIn, RollbackRequest, SecretIn)
 
 import re as _re
 
@@ -47,6 +50,7 @@ def create_app(
     db: Database | None = None,
     docker: DockerControl | None = None,
     deployer: Deployer | None = None,
+    cloudflare: Cloudflare | None = None,
     run_async: bool = True,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -56,6 +60,7 @@ def create_app(
     crypto = CryptoBox(settings.secret_key)
     docker = docker or CLIDockerControl(resolve_image_never=settings.resolve_image_never)
     deployer = deployer or Deployer(settings=settings, docker=docker, crypto=crypto)
+    cloudflare = cloudflare or Cloudflare(settings)
 
     # Disable FastAPI's built-in Swagger/OpenAPI routes so the SPA owns /docs.
     app = FastAPI(title="koyracloud", docs_url=None, redoc_url=None, openapi_url=None)
@@ -358,6 +363,25 @@ def create_app(
         except OSError:
             return False
 
+    def _in_apps_zone(host: str) -> bool:
+        """The app's own *.apps.koyracloud.com auto-subdomain is already in the
+        SaaS zone — no Cloudflare custom hostname is needed for it."""
+        apps = settings.apps_domain.lower()
+        h = host.lower()
+        return h == apps or h.endswith("." + apps)
+
+    def _domain_out(d: Domain) -> DomainOut:
+        """Serialize a Domain, layering in DNS + Cloudflare custom-hostname
+        state. The CNAME records + SSL status are only present for domains
+        Cloudflare is managing (i.e. those with a DomainCert row)."""
+        out = DomainOut.model_validate(d)
+        out.dns_ok = _dns_ok(d.host)
+        if d.cert is not None:
+            out.ssl_status = d.cert.ssl_status or None
+            out.verified = d.cert.ssl_status == "active"
+            out.records = [DnsRecord(**r) for r in cloudflare.records_for(d.host)]
+        return out
+
     @app.get("/api/apps", response_model=list[AppOut])
     def list_apps(login: str = Auth):
         with db.session() as s:
@@ -483,12 +507,7 @@ def create_app(
     def list_domains(app_id: int, login: str = Auth):
         with db.session() as s:
             obj = get_app_or_404(app_id, s, login)
-            out = []
-            for d in obj.domains:
-                item = DomainOut.model_validate(d)
-                item.dns_ok = _dns_ok(d.host)
-                out.append(item)
-            return out
+            return [_domain_out(d) for d in obj.domains]
 
     @app.post("/api/apps/{app_id}/domains", response_model=DomainOut, status_code=201)
     def add_domain(app_id: int, body: DomainIn, login: str = Auth):
@@ -501,10 +520,24 @@ def create_app(
             d = Domain(app_id=obj.id, host=body.host,
                        is_primary=len(obj.domains) == 0)
             s.add(d)
+            s.flush()
+            # Register external custom domains with Cloudflare for SaaS so the
+            # edge mints + renews their cert. The app's own in-zone
+            # auto-subdomain needs none. CF failures are non-fatal: the domain
+            # is still saved; records simply won't appear until verify succeeds.
+            if cloudflare.configured and not _in_apps_zone(body.host):
+                created = cloudflare.create_custom_hostname(body.host)
+                if created:
+                    dcv = cloudflare.dcv_uuid()
+                    s.add(DomainCert(
+                        domain_id=d.id, cf_hostname_id=created["id"],
+                        ssl_status=created["ssl_status"],
+                        ownership_status=created["status"],
+                        dcv_target=(f"{body.host}.{dcv}.dcv.cloudflare.com" if dcv else ""),
+                        last_checked=dt.datetime.now(dt.timezone.utc)))
             deploy_id = _redeploy_if_live(s, obj)
             s.commit()
-            out = DomainOut.model_validate(d)
-        out.dns_ok = _dns_ok(body.host)
+            out = _domain_out(d)
         if deploy_id is not None:
             schedule(deploy_id)
         return out
@@ -519,15 +552,18 @@ def create_app(
             for d in obj.domains:
                 d.is_primary = d.id == domain_id
             s.commit()
-            return DomainOut.model_validate(target)
+            return _domain_out(target)
 
     @app.delete("/api/apps/{app_id}/domains/{domain_id}", status_code=204)
     def delete_domain(app_id: int, domain_id: int, login: str = Auth):
+        cf_hostname_id = ""
         with db.session() as s:
             obj = get_app_or_404(app_id, s, login)
             target = next((d for d in obj.domains if d.id == domain_id), None)
             if target is None:
                 raise HTTPException(status_code=404, detail="domain not found")
+            if target.cert is not None:
+                cf_hostname_id = target.cert.cf_hostname_id
             was_primary = target.is_primary
             s.delete(target)
             s.flush()
@@ -536,9 +572,30 @@ def create_app(
                 remaining[0].is_primary = True
             deploy_id = _redeploy_if_live(s, obj)
             s.commit()
+        # Best-effort: drop the Cloudflare custom hostname (non-fatal).
+        if cf_hostname_id:
+            cloudflare.delete_custom_hostname(cf_hostname_id)
         if deploy_id is not None:
             schedule(deploy_id)
         return Response(status_code=204)
+
+    @app.post("/api/apps/{app_id}/domains/{domain_id}/verify", response_model=DomainOut)
+    def verify_domain(app_id: int, domain_id: int, login: str = Auth):
+        """Poll Cloudflare for the custom hostname's live status and persist it."""
+        with db.session() as s:
+            obj = get_app_or_404(app_id, s, login)
+            target = next((d for d in obj.domains if d.id == domain_id), None)
+            if target is None:
+                raise HTTPException(status_code=404, detail="domain not found")
+            cert = target.cert
+            if cert is not None and cert.cf_hostname_id:
+                info = cloudflare.get_custom_hostname(cert.cf_hostname_id)
+                if info:
+                    cert.ssl_status = info["ssl_status"]
+                    cert.ownership_status = info["status"]
+                    cert.last_checked = dt.datetime.now(dt.timezone.utc)
+                    s.commit()
+            return _domain_out(target)
 
     # ----- runtime (live service) ----------------------------------------
     def _service_name(name: str) -> str:
