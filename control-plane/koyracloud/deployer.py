@@ -191,7 +191,14 @@ class Deployer:
             # volume ONCE, before the long-running service starts. This avoids
             # the served container racing its own healthcheck/restart and
             # multiple npm builds corrupting the shared NFS node_modules.
+            # The build sees the same app env + secrets as the runtime service
+            # (same precedence: manifest env < overrides < secrets). Frameworks
+            # like Next.js/Vite inline NEXT_PUBLIC_*/VITE_* into the bundle at
+            # build time, so they must be present here, not just at runtime.
             build_env = {
+                **manifest.env,
+                **env_overrides,
+                **secret_values,
                 "KOYRA_REPO_URL": repo_url,
                 "KOYRA_REF": commit,
                 "KOYRA_WORKSPACE": "/workspace",

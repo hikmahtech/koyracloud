@@ -58,6 +58,7 @@ def test_deploy_flow_renders_and_calls_docker(client, env):
                          "repo_url": "https://github.com/example/app"}
                          ).json()["id"]
     client.put(f"/api/apps/{app_id}/secrets", json={"key": "SECRET_KEY", "value": "sk"})
+    client.put(f"/api/apps/{app_id}/env", json=[{"key": "NEXT_PUBLIC_FOO", "value": "bar"}])
 
     r = client.post(f"/api/apps/{app_id}/deploys", json={})
     assert r.status_code == 201
@@ -74,6 +75,10 @@ def test_deploy_flow_renders_and_calls_docker(client, env):
     assert build_image == env["settings"].runtime_image
     assert build_env["KOYRA_REF"].startswith("deadbeef")
     assert build_vol.endswith("/lens-inventory:/workspace")
+    # app env + secrets must reach the BUILD too (build-time-inlined vars like
+    # NEXT_PUBLIC_*/VITE_* are baked into the bundle at build, not runtime).
+    assert build_env["NEXT_PUBLIC_FOO"] == "bar"
+    assert build_env["SECRET_KEY"] == "sk"
 
     # fake docker received a rendered stack with the secret injected
     assert len(env["docker"].deployed) == 1
