@@ -92,13 +92,14 @@ class Cloudflare:
         existing = self.find_custom_hostname(host)
         if existing:
             return existing
-        # HTTP validation: once the proxied traffic CNAME (host → SaaS origin) is
-        # in place, Cloudflare auto-validates ownership + issues the cert at the
-        # edge with nothing for the customer to add. The DCV-delegation CNAME we
-        # also surface lets CF renew hands-off. (The one live custom hostname,
-        # lm.eyelookoptics.in, validated this way — ssl.method=http.)
+        # DNS (txt) validation via DCV delegation — the customer's
+        # `_acme-challenge.<host>` CNAME (which we surface) delegates challenge
+        # control to Cloudflare, so CF issues + auto-renews the cert over DNS.
+        # HTTP validation does NOT work here: the homelab tunnel catch-alls every
+        # path to the app, so CF's HTTP-01 challenge is proxied to the origin and
+        # 404s instead of being served — leaving the cert stuck pending_validation.
         body = {"hostname": host, "ssl": {
-            "method": "http", "type": "dv",
+            "method": "txt", "type": "dv",
             "settings": {"min_tls_version": "1.2"},
             "bundle_method": "ubiquitous", "wildcard": False}}
         result = self._request(
