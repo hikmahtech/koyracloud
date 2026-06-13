@@ -475,7 +475,7 @@ def test_cloudflare_create_custom_hostname():
     assert method == "POST" and url.endswith("/zones/zoneid/custom_hostnames")
     assert headers["Authorization"] == "Bearer tok"
     assert body["hostname"] == "shop.example.com"
-    assert body["ssl"]["method"] == "http" and body["ssl"]["type"] == "dv"
+    assert body["ssl"]["method"] == "txt" and body["ssl"]["type"] == "dv"
 
 
 def test_cloudflare_create_adopts_existing():
