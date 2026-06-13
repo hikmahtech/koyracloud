@@ -382,6 +382,11 @@ def create_app(
             out.ssl_status = d.cert.ssl_status or None
             out.verified = d.cert.ssl_status == "active"
             out.records = [DnsRecord(**r) for r in cloudflare.records_for(d.host)]
+            # Only when ownership hasn't auto-validated (rare with the proxied
+            # traffic CNAME) does the customer need the extra TXT record.
+            if d.cert.ownership_status != "active" and d.cert.ownership_name:
+                out.records.append(DnsRecord(
+                    type="TXT", name=d.cert.ownership_name, value=d.cert.ownership_value))
         else:
             out.dns_ok = _dns_ok(d.host)
         return out
@@ -397,13 +402,15 @@ def create_app(
         if not cloudflare.configured or _in_apps_zone(d.host):
             return None
         created = cloudflare.create_custom_hostname(d.host)
-        if not created:
+        if not created or not created.get("id"):  # guard against a malformed/empty result
             return None
         dcv = cloudflare.dcv_uuid()
+        own = created.get("ownership") or {}
         d.cert = DomainCert(
             cf_hostname_id=created["id"], ssl_status=created["ssl_status"],
             ownership_status=created["status"],
             dcv_target=(f"{d.host}.{dcv}.dcv.cloudflare.com" if dcv else ""),
+            ownership_name=own.get("name", ""), ownership_value=own.get("value", ""),
             last_checked=dt.datetime.now(dt.timezone.utc))
         s.flush()
         return d.cert
@@ -627,6 +634,9 @@ def create_app(
                 if info:
                     cert.ssl_status = info["ssl_status"]
                     cert.ownership_status = info["status"]
+                    own = info.get("ownership") or {}
+                    cert.ownership_name = own.get("name", "")
+                    cert.ownership_value = own.get("value", "")
                     cert.last_checked = dt.datetime.now(dt.timezone.utc)
             s.commit()
             return _domain_out(target)

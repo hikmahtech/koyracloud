@@ -40,5 +40,14 @@ class Database:
                         "(SELECT owner_login FROM app_notify WHERE app_notify.app_id = apps.id), '')"
                         " WHERE owner_login = '' OR owner_login IS NULL"))
 
+        # domain_certs gained ownership_verification columns after its release.
+        if "domain_certs" in insp.get_table_names():
+            dc_cols = {c["name"] for c in insp.get_columns("domain_certs")}
+            for col in ("ownership_name", "ownership_value"):
+                if col not in dc_cols:
+                    with self.engine.begin() as conn:
+                        conn.execute(text(
+                            f"ALTER TABLE domain_certs ADD COLUMN {col} VARCHAR(255) DEFAULT ''"))
+
     def session(self) -> Session:
         return self._factory()

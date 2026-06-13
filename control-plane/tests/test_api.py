@@ -152,15 +152,16 @@ def test_deploy_uses_configured_domains(client, env):
                       "repo_url": "https://github.com/o/r"}).json()["id"]
     client.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"})
     client.post(f"/api/apps/{aid}/deploys", json={})
-    _, stack = env["docker"].deployed[-1]
-    rule = next(l for l in stack["services"]["shop"]["deploy"]["labels"] if ".rule=" in l)
+    rule = _rule_of(env, "shop")  # union of all router rules (apps + saas split)
     assert "shop.apps.koyracloud.com" in rule and "shop.example.com" in rule
 
 
 def _rule_of(env, service):
+    # The host may be split across the apps router and the SaaS router, so join
+    # every router rule label to assert a host is routed somewhere.
     _, stack = env["docker"].deployed[-1]
-    return next(lbl for lbl in stack["services"][service]["deploy"]["labels"]
-                if ".rule=" in lbl)
+    return " ".join(lbl for lbl in stack["services"][service]["deploy"]["labels"]
+                    if ".rule=" in lbl)
 
 
 def test_add_domain_redeploys_live_app(client, env):
@@ -563,3 +564,38 @@ def test_cf_managed_domain_suppresses_ip_dns_check(env):
     body = c.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"}).json()
     assert body["dns_ok"] is None
     assert body["verified"] is False and body["ssl_status"] == "pending_validation"
+
+
+def test_pending_ownership_surfaces_txt_record(env):
+    # When Cloudflare can't auto-validate ownership over HTTP, the extra TXT
+    # record it returns must be surfaced so the customer can complete validation.
+    class _PendingCF(_FakeCF):
+        def create_custom_hostname(self, host):
+            self.created.append(host)
+            return {"id": f"ch_{host}", "status": "pending",
+                    "ssl_status": "pending_validation",
+                    "ownership": {"type": "txt",
+                                  "name": f"_cf-custom-hostname.{host}", "value": "tok123"}}
+
+    cf = _PendingCF()
+    c = _cf_client(env, cf)
+    aid = c.post("/api/apps", json={"name": "shop",
+                 "repo_url": "https://github.com/o/r"}).json()["id"]
+    body = c.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"}).json()
+    txts = [r for r in body["records"] if r["type"] == "TXT"]
+    assert len(txts) == 1
+    assert txts[0]["name"] == "_cf-custom-hostname.shop.example.com"
+    assert txts[0]["value"] == "tok123"
+    assert body["verified"] is False
+
+
+def test_active_ownership_hides_txt_record(env):
+    # Default _FakeCF auto-validates (get → active): no extra TXT once verified.
+    cf = _FakeCF()
+    c = _cf_client(env, cf)
+    aid = c.post("/api/apps", json={"name": "shop",
+                 "repo_url": "https://github.com/o/r"}).json()["id"]
+    did = c.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"}).json()["id"]
+    body = c.post(f"/api/apps/{aid}/domains/{did}/verify").json()
+    assert body["verified"] is True
+    assert not any(r["type"] == "TXT" for r in body["records"])

@@ -92,8 +92,13 @@ class Cloudflare:
         existing = self.find_custom_hostname(host)
         if existing:
             return existing
+        # HTTP validation: once the proxied traffic CNAME (host → SaaS origin) is
+        # in place, Cloudflare auto-validates ownership + issues the cert at the
+        # edge with nothing for the customer to add. The DCV-delegation CNAME we
+        # also surface lets CF renew hands-off. (The one live custom hostname,
+        # lm.eyelookoptics.in, validated this way — ssl.method=http.)
         body = {"hostname": host, "ssl": {
-            "method": "txt", "type": "dv",
+            "method": "http", "type": "dv",
             "settings": {"min_tls_version": "1.2"},
             "bundle_method": "ubiquitous", "wildcard": False}}
         result = self._request(

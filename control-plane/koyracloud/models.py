@@ -154,6 +154,11 @@ class DomainCert(Base):
     ssl_status: Mapped[str] = mapped_column(String(32), default="")
     ownership_status: Mapped[str] = mapped_column(String(32), default="")
     dcv_target: Mapped[str] = mapped_column(String(255), default="")
+    # Fallback TXT record Cloudflare returns when HTTP ownership validation
+    # doesn't auto-pass (rare with a proxied traffic CNAME). Surfaced to the
+    # customer only while ownership is still pending.
+    ownership_name: Mapped[str] = mapped_column(String(255), default="")
+    ownership_value: Mapped[str] = mapped_column(String(255), default="")
     last_checked: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
 

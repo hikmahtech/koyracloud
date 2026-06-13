@@ -317,6 +317,37 @@ def test_render_stack_multi_host_rule():
     assert "Host(`a.example.com`) || Host(`b.example.com`)" in rule
 
 
+def test_render_stack_splits_saas_and_apps_routers():
+    # The in-zone auto-subdomain keeps the Let's Encrypt resolver; a custom
+    # (Cloudflare-for-SaaS) host gets its OWN router with TLS but no resolver —
+    # CF terminates its TLS at the edge, so Traefik must not ACME-mint for it.
+    m = parse_manifest(VALID)
+    stack = render_stack(m, app_name="demo", repo_url="r", ref="s", git_token="",
+                         env_overrides={}, secret_values={}, settings=_settings(),
+                         hosts=["demo.apps.koyracloud.com", "shop.example.com"])
+    labels = stack["services"]["demo"]["deploy"]["labels"]
+    apps_rule = next(l for l in labels if l.startswith("traefik.http.routers.koyra-demo.rule="))
+    assert "Host(`demo.apps.koyracloud.com`)" in apps_rule and "shop.example.com" not in apps_rule
+    assert any("routers.koyra-demo.tls.certresolver=letsencrypt" in l for l in labels)
+    saas_rule = next(l for l in labels if l.startswith("traefik.http.routers.koyra-demo-saas.rule="))
+    assert "Host(`shop.example.com`)" in saas_rule and "apps.koyracloud.com" not in saas_rule
+    assert not any("koyra-demo-saas.tls.certresolver" in l for l in labels)
+    assert any("routers.koyra-demo-saas.tls=true" in l for l in labels)
+    # both routers share the one service definition carrying the app port
+    assert any("services.koyra-demo.loadbalancer.server.port=8000" in l for l in labels)
+    assert any("routers.koyra-demo-saas.service=koyra-demo" in l for l in labels)
+
+
+def test_render_stack_custom_only_host_has_no_certresolver():
+    m = parse_manifest(VALID)
+    stack = render_stack(m, app_name="demo", repo_url="r", ref="s", git_token="",
+                         env_overrides={}, secret_values={}, settings=_settings(),
+                         hosts=["shop.example.com"])
+    labels = stack["services"]["demo"]["deploy"]["labels"]
+    assert not any("certresolver" in l for l in labels)
+    assert any("Host(`shop.example.com`)" in l for l in labels)
+
+
 def test_render_stack_resource_limits_default_and_override():
     s = _settings()
     m = parse_manifest(VALID)
@@ -444,7 +475,7 @@ def test_cloudflare_create_custom_hostname():
     assert method == "POST" and url.endswith("/zones/zoneid/custom_hostnames")
     assert headers["Authorization"] == "Bearer tok"
     assert body["hostname"] == "shop.example.com"
-    assert body["ssl"]["method"] == "txt" and body["ssl"]["type"] == "dv"
+    assert body["ssl"]["method"] == "http" and body["ssl"]["type"] == "dv"
 
 
 def test_cloudflare_create_adopts_existing():
@@ -499,3 +530,23 @@ def test_cloudflare_dcv_uuid_cached():
     assert cf.dcv_uuid() == "bc21f3"
     assert cf.dcv_uuid() == "bc21f3"  # cached — no second API call
     assert len(fc.calls) == 1
+
+
+def test_migrate_adds_domain_cert_ownership_columns(tmp_path):
+    # Simulates the prod upgrade: an existing domain_certs table without the
+    # ownership columns must be ALTERed in place (create_all never alters).
+    from sqlalchemy import create_engine, inspect, text
+
+    from koyracloud.db import Database
+    url = f"sqlite:///{tmp_path / 'm.db'}"
+    seed = create_engine(url)
+    with seed.begin() as c:
+        c.execute(text("CREATE TABLE apps (id INTEGER PRIMARY KEY, owner_login VARCHAR)"))
+        c.execute(text("CREATE TABLE domain_certs (domain_id INTEGER PRIMARY KEY, "
+                       "cf_hostname_id VARCHAR, ssl_status VARCHAR, ownership_status VARCHAR, "
+                       "dcv_target VARCHAR, last_checked DATETIME)"))
+    db = Database(url)
+    db._migrate()
+    cols = {col["name"] for col in inspect(db.engine).get_columns("domain_certs")}
+    assert "ownership_name" in cols and "ownership_value" in cols
+    db._migrate()  # idempotent — second run is a no-op
