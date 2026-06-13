@@ -72,7 +72,10 @@ served app never races its own healthcheck.
 ## Features
 
 - **Bring a repo, not a Dockerfile** — one runtime image, dependency-hash caching.
-- **Auto-TLS subdomains** + **custom domains** (attach in a click; Traefik handles certs).
+- **Auto-TLS subdomains** + **custom domains** — attach in a click. Platform
+  subdomains get Traefik/Let's Encrypt; users' own domains are registered as
+  **Cloudflare for SaaS** custom hostnames (the edge mints + renews the cert, so
+  the user just adds two CNAMEs at their registrar — Vercel-style).
 - **Secrets encrypted at rest** (Fernet), injected at deploy.
 - **Live build/deploy logs** (SSE), deploy history, one-click rollback.
 - **Persistent storage** via manifest `persist:` dirs.

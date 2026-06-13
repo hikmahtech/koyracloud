@@ -61,6 +61,43 @@ printf '%s' '<cloudflare for saas api token>' | docker --context <ctx> secret cr
 Register an OAuth App with callback `https://<your host>/api/auth/callback`; put
 the Client ID in `koyracloud.env` and the Client Secret in the Docker secret above.
 
+### 7. Custom domains via Cloudflare for SaaS (optional)
+koyracloud serves users' *own* domains (DNS left at their registrar) by
+registering them as Cloudflare for SaaS **custom hostnames**: the Cloudflare edge
+mints + renews the TLS cert and routes to a fallback origin, so a user adds only
+CNAMEs and never moves nameservers. Adding a domain in the UI calls the Cloudflare
+API automatically and shows the records to add; `verify` polls the live cert
+status. Leave `KOYRA_CLOUDFLARE_ZONE_ID` blank to keep the feature off — custom
+domains then fall back to plain A-records → Traefik (section 2).
+
+One-time, on the Cloudflare zone you'll register custom hostnames under (the
+**SaaS zone**, e.g. `koyracloud.com`):
+
+1. **SSL/TLS → Custom Hostnames → Enable Cloudflare for SaaS** (first 100 free).
+2. **Turn on DCV Delegation** — gives a stable `<host>.<id>.dcv.cloudflare.com`
+   target so users add the cert record once and never touch it again on renewal.
+3. **Fallback Origin:** create a **proxied** DNS record (e.g. `origin.<zone>`)
+   that reaches your edge — on the homelab it's a proxied CNAME into the
+   Cloudflare Tunnel — then set it as the zone's *Fallback Origin*. Put the same
+   hostname in `KOYRA_CLOUDFLARE_SAAS_ORIGIN`.
+4. **Tunnel ingress (tunnel deployments only):** the tunnel must route *unknown*
+   Host headers to Traefik, or custom hostnames 404 inside the tunnel. End the
+   tunnel ingress with a catch-all → `https://traefik_traefik:443` (No TLS
+   Verify). See the homelab `cloudflared` role README for the exact config.
+5. Set `KOYRA_CLOUDFLARE_ZONE_ID` (zone → Overview) and create the
+   `koyra_cloudflare_api_token` secret (section 5).
+
+Each user then adds two CNAMEs at their registrar (both shown in the UI):
+
+| Type  | Host                    | Value                                                 |
+|-------|-------------------------|-------------------------------------------------------|
+| CNAME | `<sub>`                 | your fallback origin (`KOYRA_CLOUDFLARE_SAAS_ORIGIN`) |
+| CNAME | `_acme-challenge.<sub>` | `<full-host>.<dcv-id>.dcv.cloudflare.com`             |
+
+> Cert propagation lags the hostname going "Active" by a few minutes — a
+> transient TLS `handshake failure` right after adding a domain is just the edge
+> cert catching up; don't change anything.
+
 ## Deploy
 ```bash
 DOCKER_CONTEXT=<your swarm context> ./deploy/deploy.sh
