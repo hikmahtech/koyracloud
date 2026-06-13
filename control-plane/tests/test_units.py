@@ -391,8 +391,8 @@ class _FakeCFClient:
         self.responses = list(responses)
         self.calls = []
 
-    def request(self, method, url, headers=None, json=None):
-        self.calls.append((method, url, headers, json))
+    def request(self, method, url, headers=None, json=None, params=None):
+        self.calls.append((method, url, headers, json, params))
         return _FakeCFResp(*self.responses.pop(0))
 
     def close(self):
@@ -426,26 +426,44 @@ def test_cloudflare_noop_when_unconfigured():
 
 def test_cloudflare_create_custom_hostname():
     from koyracloud import cloudflare
-    fc = _FakeCFClient([(200, {"success": True, "result": {
-        "id": "ch_1", "status": "pending",
-        "ssl": {"status": "pending_validation"},
-        "ownership_verification": {"type": "txt", "name": "_cf", "value": "v"}}})])
+    fc = _FakeCFClient([
+        (200, {"success": True, "result": []}),   # GET ?hostname= → none exists yet
+        (200, {"success": True, "result": {       # POST → created
+            "id": "ch_1", "status": "pending",
+            "ssl": {"status": "pending_validation"},
+            "ownership_verification": {"type": "txt", "name": "_cf", "value": "v"}}})])
     s = Settings(cloudflare_api_token="tok", cloudflare_zone_id="zoneid")
     cf = cloudflare.Cloudflare(s, client=fc)
     out = cf.create_custom_hostname("shop.example.com")
     assert out["id"] == "ch_1"
     assert out["status"] == "pending"
     assert out["ssl_status"] == "pending_validation"
-    method, url, headers, body = fc.calls[0]
+    # checks existence first, then POSTs the create
+    assert fc.calls[0][0] == "GET" and fc.calls[0][4] == {"hostname": "shop.example.com"}
+    method, url, headers, body, _ = fc.calls[1]
     assert method == "POST" and url.endswith("/zones/zoneid/custom_hostnames")
     assert headers["Authorization"] == "Bearer tok"
     assert body["hostname"] == "shop.example.com"
     assert body["ssl"]["method"] == "txt" and body["ssl"]["type"] == "dv"
 
 
+def test_cloudflare_create_adopts_existing():
+    """Idempotent: when CF already has the hostname, adopt its id, don't POST."""
+    from koyracloud import cloudflare
+    fc = _FakeCFClient([(200, {"success": True, "result": [
+        {"id": "ch_existing", "status": "active", "ssl": {"status": "active"}}]})])
+    s = Settings(cloudflare_api_token="tok", cloudflare_zone_id="zoneid")
+    cf = cloudflare.Cloudflare(s, client=fc)
+    out = cf.create_custom_hostname("lm.eyelookoptics.in")
+    assert out["id"] == "ch_existing" and out["status"] == "active"
+    assert len(fc.calls) == 1 and fc.calls[0][0] == "GET"  # adopted; no POST
+
+
 def test_cloudflare_error_returns_none():
     from koyracloud import cloudflare
-    fc = _FakeCFClient([(400, {"success": False, "errors": [{"message": "bad"}]})])
+    fc = _FakeCFClient([
+        (200, {"success": True, "result": []}),                    # GET → none
+        (400, {"success": False, "errors": [{"message": "bad"}]})])  # POST fails
     s = Settings(cloudflare_api_token="tok", cloudflare_zone_id="zoneid")
     cf = cloudflare.Cloudflare(s, client=fc)
     assert cf.create_custom_hostname("shop.example.com") is None
@@ -459,7 +477,7 @@ def test_cloudflare_get_custom_hostname():
     cf = cloudflare.Cloudflare(s, client=fc)
     out = cf.get_custom_hostname("ch_1")
     assert out["status"] == "active" and out["ssl_status"] == "active"
-    method, url, _, _ = fc.calls[0]
+    method, url, *_ = fc.calls[0]
     assert method == "GET" and url.endswith("/custom_hostnames/ch_1")
 
 
@@ -469,7 +487,7 @@ def test_cloudflare_delete_custom_hostname():
     s = Settings(cloudflare_api_token="tok", cloudflare_zone_id="zoneid")
     cf = cloudflare.Cloudflare(s, client=fc)
     assert cf.delete_custom_hostname("ch_1") is True
-    method, url, _, _ = fc.calls[0]
+    method, url, *_ = fc.calls[0]
     assert method == "DELETE" and url.endswith("/custom_hostnames/ch_1")
 
 

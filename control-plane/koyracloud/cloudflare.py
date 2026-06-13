@@ -71,11 +71,27 @@ class Cloudflare:
             if owns:
                 client.close()
 
+    def find_custom_hostname(self, host: str) -> dict | None:
+        """Look up an existing custom hostname by exact name. Returns its view or
+        None when not present / unconfigured / on error."""
+        if not self.configured:
+            return None
+        result = self._request(
+            "GET", f"/zones/{self.settings.cloudflare_zone_id}/custom_hostnames",
+            params={"hostname": host})
+        items = result if isinstance(result, list) else []
+        return _hostname_view(items[0]) if items else None
+
     def create_custom_hostname(self, host: str) -> dict | None:
-        """Register ``host`` for SaaS TLS. Returns {id, status, ssl_status,
+        """Register ``host`` for SaaS TLS, idempotently. If CF already has the
+        hostname (e.g. created in a prior session or a re-add), adopt and return
+        its existing record instead of failing. Returns {id, status, ssl_status,
         ownership} or None when unconfigured / on error."""
         if not self.configured:
             return None
+        existing = self.find_custom_hostname(host)
+        if existing:
+            return existing
         body = {"hostname": host, "ssl": {
             "method": "txt", "type": "dv",
             "settings": {"min_tls_version": "1.2"},

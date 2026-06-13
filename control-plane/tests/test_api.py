@@ -524,3 +524,42 @@ def test_verify_domain_reflects_live_status(env):
     did = c.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"}).json()["id"]
     body = c.post(f"/api/apps/{aid}/domains/{did}/verify").json()
     assert body["ssl_status"] == "active" and body["verified"] is True
+
+
+def test_verify_adopts_cert_for_preexisting_domain(env):
+    # A custom Domain with no DomainCert (added before the feature / while CF
+    # was off) gets registered + status-polled when verify runs.
+    cf = _FakeCF()
+    c = _cf_client(env, cf)
+    aid = c.post("/api/apps", json={"name": "shop",
+                 "repo_url": "https://github.com/o/r"}).json()["id"]
+    from koyracloud.models import Domain
+    with env["db"].session() as s:
+        d = Domain(app_id=aid, host="legacy.example.com", is_primary=False)
+        s.add(d)
+        s.commit()
+        did = d.id
+    body = c.post(f"/api/apps/{aid}/domains/{did}/verify").json()
+    assert cf.created == ["legacy.example.com"]              # adopted/created on verify
+    assert any(r["name"] == "legacy.example.com" for r in body["records"])
+    assert body["ssl_status"] == "active" and body["verified"] is True
+
+
+def test_cf_managed_domain_suppresses_ip_dns_check(env):
+    # A SaaS host CNAMEs to Cloudflare anycast, not the WAN IP — dns_ok (the
+    # IP check) must be suppressed so the badge reflects the edge cert instead.
+    from dataclasses import replace
+
+    from fastapi.testclient import TestClient
+
+    from koyracloud.app import create_app
+    cf = _FakeCF()
+    s = replace(env["settings"], public_ip="203.0.113.10")
+    app = create_app(settings=s, db=env["db"], docker=env["docker"],
+                     deployer=env["deployer"], cloudflare=cf, run_async=False)
+    c = TestClient(app)
+    aid = c.post("/api/apps", json={"name": "shop",
+                 "repo_url": "https://github.com/o/r"}).json()["id"]
+    body = c.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"}).json()
+    assert body["dns_ok"] is None
+    assert body["verified"] is False and body["ssl_status"] == "pending_validation"

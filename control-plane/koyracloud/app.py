@@ -372,15 +372,55 @@ def create_app(
 
     def _domain_out(d: Domain) -> DomainOut:
         """Serialize a Domain, layering in DNS + Cloudflare custom-hostname
-        state. The CNAME records + SSL status are only present for domains
-        Cloudflare is managing (i.e. those with a DomainCert row)."""
+        state. For Cloudflare-managed hosts (those with a DomainCert) the status
+        comes from the cert: such a host CNAMEs to the SaaS origin → Cloudflare
+        anycast, so the WAN-IP ``dns_ok`` check is meaningless and is suppressed
+        in favour of the edge cert status."""
         out = DomainOut.model_validate(d)
-        out.dns_ok = _dns_ok(d.host)
         if d.cert is not None:
+            out.dns_ok = None
             out.ssl_status = d.cert.ssl_status or None
             out.verified = d.cert.ssl_status == "active"
             out.records = [DnsRecord(**r) for r in cloudflare.records_for(d.host)]
+        else:
+            out.dns_ok = _dns_ok(d.host)
         return out
+
+    def _ensure_cert(s, d: Domain) -> DomainCert | None:
+        """Register/adopt a Cloudflare custom hostname for a custom host that
+        lacks a DomainCert, persisting the row. No-op (returns None) for the
+        in-zone auto-subdomain, when Cloudflare isn't configured, or on error.
+        ``create_custom_hostname`` adopts an already-existing hostname, so this
+        is safe to call repeatedly and as a backfill for pre-existing domains."""
+        if d.cert is not None:
+            return d.cert
+        if not cloudflare.configured or _in_apps_zone(d.host):
+            return None
+        created = cloudflare.create_custom_hostname(d.host)
+        if not created:
+            return None
+        dcv = cloudflare.dcv_uuid()
+        d.cert = DomainCert(
+            cf_hostname_id=created["id"], ssl_status=created["ssl_status"],
+            ownership_status=created["status"],
+            dcv_target=(f"{d.host}.{dcv}.dcv.cloudflare.com" if dcv else ""),
+            last_checked=dt.datetime.now(dt.timezone.utc))
+        s.flush()
+        return d.cert
+
+    def _backfill_certs() -> None:
+        """One-shot: register/adopt CF custom hostnames for existing custom
+        domains that predate the feature (no DomainCert yet)."""
+        if not cloudflare.configured:
+            return
+        try:
+            with db.session() as s:
+                for d in s.query(Domain).all():
+                    if d.cert is None and not _in_apps_zone(d.host):
+                        _ensure_cert(s, d)
+                s.commit()
+        except Exception as e:  # noqa: BLE001 — best-effort; never block startup
+            print(f"[koyra:cf] backfill failed: {e}", flush=True)
 
     @app.get("/api/apps", response_model=list[AppOut])
     def list_apps(login: str = Auth):
@@ -522,19 +562,11 @@ def create_app(
             s.add(d)
             s.flush()
             # Register external custom domains with Cloudflare for SaaS so the
-            # edge mints + renews their cert. The app's own in-zone
-            # auto-subdomain needs none. CF failures are non-fatal: the domain
-            # is still saved; records simply won't appear until verify succeeds.
-            if cloudflare.configured and not _in_apps_zone(body.host):
-                created = cloudflare.create_custom_hostname(body.host)
-                if created:
-                    dcv = cloudflare.dcv_uuid()
-                    s.add(DomainCert(
-                        domain_id=d.id, cf_hostname_id=created["id"],
-                        ssl_status=created["ssl_status"],
-                        ownership_status=created["status"],
-                        dcv_target=(f"{body.host}.{dcv}.dcv.cloudflare.com" if dcv else ""),
-                        last_checked=dt.datetime.now(dt.timezone.utc)))
+            # edge mints + renews their cert (adopts an existing hostname if one
+            # is already there). The app's own in-zone auto-subdomain needs none.
+            # CF failures are non-fatal: the domain is still saved; records
+            # simply won't appear until a later verify/backfill succeeds.
+            _ensure_cert(s, d)
             deploy_id = _redeploy_if_live(s, obj)
             s.commit()
             out = _domain_out(d)
@@ -587,14 +619,16 @@ def create_app(
             target = next((d for d in obj.domains if d.id == domain_id), None)
             if target is None:
                 raise HTTPException(status_code=404, detail="domain not found")
-            cert = target.cert
+            # Backfill: a custom host with no cert yet (added before the feature,
+            # or while CF was unconfigured) gets registered/adopted here.
+            cert = _ensure_cert(s, target)
             if cert is not None and cert.cf_hostname_id:
                 info = cloudflare.get_custom_hostname(cert.cf_hostname_id)
                 if info:
                     cert.ssl_status = info["ssl_status"]
                     cert.ownership_status = info["status"]
                     cert.last_checked = dt.datetime.now(dt.timezone.utc)
-                    s.commit()
+            s.commit()
             return _domain_out(target)
 
     # ----- runtime (live service) ----------------------------------------
@@ -755,6 +789,11 @@ def create_app(
             notify_event(app_id, "recovered" if state == "up" else "down")
         monitor.UptimeMonitor(db, settings.uptime_interval,
                               on_transition=_on_transition).start()
+
+    # One-shot backfill of Cloudflare custom hostnames for pre-existing custom
+    # domains (run off-thread so a slow/unreachable CF API never blocks boot).
+    if run_async and cloudflare.configured:
+        threading.Thread(target=_backfill_certs, daemon=True).start()
 
     if run_async and settings.backup_enabled:
         from koyracloud import backup
