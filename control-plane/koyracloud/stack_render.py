@@ -29,7 +29,6 @@ def render_stack(
     # Control-plane-managed domains take precedence; fall back to the manifest
     # subdomain (or a derived default) when none are configured.
     effective_hosts = list(hosts) if hosts else [app_host(manifest, app_name, settings)]
-    rule = " || ".join(f"Host(`{h}`)" for h in effective_hosts)
     router = f"koyra-{app_name}"
 
     # Build the container environment: manifest defaults < control-plane env <
@@ -49,13 +48,45 @@ def render_stack(
         environment["KOYRA_ANALYTICS_URL"] = settings.base_url
         environment["KOYRA_ANALYTICS_SITE"] = analytics_site
 
+    # Split hosts by zone. In-zone hosts (the *.apps auto-subdomain) get a
+    # Let's Encrypt cert from Traefik as before. Custom Cloudflare-for-SaaS
+    # hosts are TLS-terminated at the Cloudflare edge and reach Traefik over the
+    # tunnel (noTLSVerify), so Traefik must NOT try to ACME-mint a cert for them
+    # — there is no inbound HTTP-01 path, so it would only fail and burn
+    # Let's Encrypt rate limits. They get a sibling router with TLS but no
+    # resolver, pointing at the same service.
+    apps_domain = settings.apps_domain.lower()
+
+    def _in_zone(h: str) -> bool:
+        h = h.lower()
+        return h == apps_domain or h.endswith("." + apps_domain)
+
+    zone_hosts = [h for h in effective_hosts if _in_zone(h)]
+    saas_hosts = [h for h in effective_hosts if not _in_zone(h)]
+
     labels = [
         "traefik.enable=true",
-        f"traefik.http.routers.{router}.rule={rule}",
-        f"traefik.http.routers.{router}.entrypoints={settings.https_entrypoint}",
-        f"traefik.http.routers.{router}.tls.certresolver={settings.cert_resolver}",
         f"traefik.http.services.{router}.loadbalancer.server.port={manifest.port}",
     ]
+
+    def _router_labels(name: str, rule_hosts: list[str], cert: bool) -> list[str]:
+        rule = " || ".join(f"Host(`{h}`)" for h in rule_hosts)
+        out = [
+            f"traefik.http.routers.{name}.rule={rule}",
+            f"traefik.http.routers.{name}.entrypoints={settings.https_entrypoint}",
+            f"traefik.http.routers.{name}.service={router}",
+            f"traefik.http.routers.{name}.tls=true",
+        ]
+        if cert:
+            out.append(f"traefik.http.routers.{name}.tls.certresolver={settings.cert_resolver}")
+        return out
+
+    if zone_hosts:
+        labels += _router_labels(router, zone_hosts, cert=True)
+    if saas_hosts:
+        labels += _router_labels(f"{router}-saas", saas_hosts, cert=False)
+    if not zone_hosts and not saas_hosts:  # defensive; effective_hosts is never empty
+        labels += _router_labels(router, effective_hosts, cert=True)
 
     service: dict = {
         "image": settings.runtime_image,
