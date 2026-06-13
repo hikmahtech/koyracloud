@@ -94,6 +94,13 @@ Each user then adds two CNAMEs at their registrar (both shown in the UI):
 | CNAME | `<sub>`                 | your fallback origin (`KOYRA_CLOUDFLARE_SAAS_ORIGIN`) |
 | CNAME | `_acme-challenge.<sub>` | `<full-host>.<dcv-id>.dcv.cloudflare.com`             |
 
+Once the traffic CNAME resolves to Cloudflare, the edge auto-validates over HTTP
+and issues the cert (nothing else needed); the `_acme-challenge` record delegates
+renewals. If HTTP validation can't complete, the UI also surfaces a one-off
+ownership **TXT** record to add. Traefik does **not** mint a Let's Encrypt cert
+for these hosts — Cloudflare terminates their TLS at the edge and the app's
+SaaS-host router carries no cert resolver.
+
 > Cert propagation lags the hostname going "Active" by a few minutes — a
 > transient TLS `handshake failure` right after adding a domain is just the edge
 > cert catching up; don't change anything.

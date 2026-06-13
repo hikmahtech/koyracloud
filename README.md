@@ -44,8 +44,12 @@ predeploy:
 start: uvicorn app.main:app --host 0.0.0.0 --port 8000
 persist: [data]                # survives redeploys
 healthcheck: /health
-secrets: [SECRET_KEY]          # values set in the UI, injected at deploy
+secrets: [SECRET_KEY]          # values set in the UI, injected at build + deploy
 ```
+
+Env vars and secrets are available at **both build and run time** (same
+precedence), so build-time-inlined frameworks (`NEXT_PUBLIC_*`, `VITE_*`) bake
+the correct values into their client bundles instead of `undefined`.
 
 Full reference: the **Docs** in-app (`/docs`) or [`examples/`](examples/).
 
@@ -55,7 +59,7 @@ Full reference: the **Docs** in-app (`/docs`) or [`examples/`](examples/).
 repo (.paas/app.yaml)
    │  control plane clones → volume @ commit
    ▼
-one-off build container   (pip / npm / vite, cached by dependency hash)
+one-off build container   (pip / npm / vite; app env + secrets injected; cached by dependency hash)
    ▼
 docker stack deploy  →  service (Traefik labels, secrets, persist dirs)
    ▼
