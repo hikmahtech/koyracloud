@@ -121,10 +121,21 @@ class DomainIn(BaseModel):
         return v
 
 
+class DnsRecord(BaseModel):
+    """A CNAME the customer adds at their own registrar (traffic / DCV)."""
+    type: str
+    name: str
+    value: str
+
+
 class DomainOut(BaseModel):
     id: int
     host: str
     is_primary: bool
     dns_ok: bool | None = None  # resolves to the homelab IP (None = unknown)
+    # Cloudflare-for-SaaS custom-hostname status (defaults when CF isn't managing it)
+    verified: bool = False      # cert is active at the edge
+    ssl_status: str | None = None
+    records: list[DnsRecord] = []  # CNAMEs the customer must add at their registrar
 
     model_config = {"from_attributes": True}

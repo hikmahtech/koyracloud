@@ -27,6 +27,11 @@ services:
       RESEND_API_KEY_FILE: /run/secrets/koyra_resend_api_key
       KOYRA_EMAIL_FROM: ${KOYRA_EMAIL_FROM:-koyracloud <alerts@koyracloud.com>}
       KOYRA_DEFAULT_NOTIFY_EMAIL: ${KOYRA_DEFAULT_NOTIFY_EMAIL:-}
+      # Cloudflare for SaaS — custom hostnames for user domains. Token from a
+      # Docker secret; inert (no-op) until both token and zone id are set.
+      CLOUDFLARE_API_TOKEN_FILE: /run/secrets/koyra_cloudflare_api_token
+      KOYRA_CLOUDFLARE_ZONE_ID: ${KOYRA_CLOUDFLARE_ZONE_ID:-}
+      KOYRA_CLOUDFLARE_SAAS_ORIGIN: ${KOYRA_CLOUDFLARE_SAAS_ORIGIN:-origin.koyracloud.com}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${KOYRA_NFS_BASE:-/mnt/koyracloud}/cp:/data
@@ -41,6 +46,7 @@ services:
       - koyra_github_pat
       - koyra_webhook_secret
       - koyra_resend_api_key
+      - koyra_cloudflare_api_token
     deploy:
       replicas: 1
       placement:
@@ -81,4 +87,6 @@ secrets:
   koyra_webhook_secret:
     external: true
   koyra_resend_api_key:
+    external: true
+  koyra_cloudflare_api_token:
     external: true

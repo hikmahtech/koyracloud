@@ -23,6 +23,8 @@ export const addDomain = (id, host) => api.post(`/apps/${id}/domains`, { host })
 export const setPrimaryDomain = (id, domainId) =>
   api.post(`/apps/${id}/domains/${domainId}/primary`).then((r) => r.data);
 export const deleteDomain = (id, domainId) => api.delete(`/apps/${id}/domains/${domainId}`);
+export const verifyDomain = (id, domainId) =>
+  api.post(`/apps/${id}/domains/${domainId}/verify`).then((r) => r.data);
 
 export const getEnv = (id) => api.get(`/apps/${id}/env`).then((r) => r.data);
 export const putEnv = (id, vars) => api.put(`/apps/${id}/env`, vars).then((r) => r.data);

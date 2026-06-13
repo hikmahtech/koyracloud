@@ -45,10 +45,17 @@ python3 -c 'from cryptography.fernet import Fernet;print(Fernet.generate_key().d
 openssl rand -hex 32 | tr -d '\n' | docker --context <ctx> secret create koyra_session_secret -
 printf '%s' '<github oauth client secret>' | docker --context <ctx> secret create koyra_github_client_secret -
 printf '%s' '<github pat for cloning>'     | docker --context <ctx> secret create koyra_github_pat -
+# Cloudflare for SaaS API token (Zone:SSL and Certificates:Edit + Zone:DNS:Read,
+# scoped to your SaaS zone). Registers user custom domains as custom hostnames.
+printf '%s' '<cloudflare for saas api token>' | docker --context <ctx> secret create koyra_cloudflare_api_token -
 ```
 > Secrets are immutable. To rotate: detach, `secret rm`, recreate, redeploy.
 > Never rotate `koyra_secret_key` (the Fernet master key) without re-encrypting
 > stored app secrets.
+> Every secret is declared `external: true`, so it must exist before deploy. For
+> optional features you aren't using (Cloudflare for SaaS, Resend), create an
+> empty secret: `printf '' | docker --context <ctx> secret create koyra_cloudflare_api_token -`
+> — the control plane treats a blank token as "feature off".
 
 ### 6. GitHub OAuth App
 Register an OAuth App with callback `https://<your host>/api/auth/callback`; put

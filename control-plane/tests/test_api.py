@@ -428,3 +428,138 @@ def test_auth_required_without_dev_login(env):
     c = TestClient(app)
     assert c.get("/api/health").status_code == 200      # public
     assert c.get("/api/apps").status_code == 401        # protected
+
+
+# --- Cloudflare for SaaS custom hostnames -----------------------------------
+class _FakeCF:
+    """Stand-in for koyracloud.cloudflare.Cloudflare (configured), recording
+    calls and returning canned custom-hostname state."""
+    configured = True
+
+    def __init__(self):
+        self.created = []
+        self.deleted = []
+
+    def dcv_uuid(self):
+        return "bc21f3"
+
+    def create_custom_hostname(self, host):
+        self.created.append(host)
+        return {"id": f"ch_{host}", "status": "pending",
+                "ssl_status": "pending_validation", "ownership": {}}
+
+    def get_custom_hostname(self, hostname_id):
+        return {"id": hostname_id, "status": "active",
+                "ssl_status": "active", "ownership": {}}
+
+    def delete_custom_hostname(self, hostname_id):
+        self.deleted.append(hostname_id)
+        return True
+
+    def records_for(self, host):
+        from koyracloud import cloudflare
+        return cloudflare.customer_records(host, "origin.koyracloud.com", self.dcv_uuid())
+
+
+def _cf_client(env, cf):
+    from fastapi.testclient import TestClient
+
+    from koyracloud.app import create_app
+    app = create_app(settings=env["settings"], db=env["db"], docker=env["docker"],
+                     deployer=env["deployer"], cloudflare=cf, run_async=False)
+    return TestClient(app)
+
+
+def test_add_domain_no_op_when_cf_disabled(client):
+    # Default client has no Cloudflare token → custom-hostname fields stay inert.
+    aid = client.post("/api/apps", json={"name": "shop",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    body = client.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"}).json()
+    assert body["records"] == [] and body["ssl_status"] is None and body["verified"] is False
+    # verify is a graceful 200 no-op for a CF-unmanaged domain
+    r = client.post(f"/api/apps/{aid}/domains/{body['id']}/verify")
+    assert r.status_code == 200 and r.json()["records"] == []
+
+
+def test_add_domain_creates_cf_hostname_and_returns_records(env):
+    cf = _FakeCF()
+    c = _cf_client(env, cf)
+    aid = c.post("/api/apps", json={"name": "shop",
+                 "repo_url": "https://github.com/o/r"}).json()["id"]
+    # creating the app must NOT register the in-zone auto-subdomain with CF
+    assert cf.created == []
+    body = c.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"}).json()
+    assert cf.created == ["shop.example.com"]
+    recs = {r["name"]: r["value"] for r in body["records"]}
+    assert recs["shop.example.com"] == "origin.koyracloud.com"
+    assert recs["_acme-challenge.shop.example.com"] == "shop.example.com.bc21f3.dcv.cloudflare.com"
+    assert body["ssl_status"] == "pending_validation" and body["verified"] is False
+
+
+def test_apps_subdomain_skips_cf(env):
+    cf = _FakeCF()
+    c = _cf_client(env, cf)
+    aid = c.post("/api/apps", json={"name": "shop",
+                 "repo_url": "https://github.com/o/r"}).json()["id"]
+    doms = c.get(f"/api/apps/{aid}/domains").json()
+    auto = next(d for d in doms if d["host"] == "shop.apps.koyracloud.com")
+    assert cf.created == [] and auto["records"] == [] and auto["ssl_status"] is None
+
+
+def test_delete_domain_removes_cf_hostname(env):
+    cf = _FakeCF()
+    c = _cf_client(env, cf)
+    aid = c.post("/api/apps", json={"name": "shop",
+                 "repo_url": "https://github.com/o/r"}).json()["id"]
+    did = c.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"}).json()["id"]
+    assert c.delete(f"/api/apps/{aid}/domains/{did}").status_code == 204
+    assert cf.deleted == ["ch_shop.example.com"]
+
+
+def test_verify_domain_reflects_live_status(env):
+    cf = _FakeCF()
+    c = _cf_client(env, cf)
+    aid = c.post("/api/apps", json={"name": "shop",
+                 "repo_url": "https://github.com/o/r"}).json()["id"]
+    did = c.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"}).json()["id"]
+    body = c.post(f"/api/apps/{aid}/domains/{did}/verify").json()
+    assert body["ssl_status"] == "active" and body["verified"] is True
+
+
+def test_verify_adopts_cert_for_preexisting_domain(env):
+    # A custom Domain with no DomainCert (added before the feature / while CF
+    # was off) gets registered + status-polled when verify runs.
+    cf = _FakeCF()
+    c = _cf_client(env, cf)
+    aid = c.post("/api/apps", json={"name": "shop",
+                 "repo_url": "https://github.com/o/r"}).json()["id"]
+    from koyracloud.models import Domain
+    with env["db"].session() as s:
+        d = Domain(app_id=aid, host="legacy.example.com", is_primary=False)
+        s.add(d)
+        s.commit()
+        did = d.id
+    body = c.post(f"/api/apps/{aid}/domains/{did}/verify").json()
+    assert cf.created == ["legacy.example.com"]              # adopted/created on verify
+    assert any(r["name"] == "legacy.example.com" for r in body["records"])
+    assert body["ssl_status"] == "active" and body["verified"] is True
+
+
+def test_cf_managed_domain_suppresses_ip_dns_check(env):
+    # A SaaS host CNAMEs to Cloudflare anycast, not the WAN IP — dns_ok (the
+    # IP check) must be suppressed so the badge reflects the edge cert instead.
+    from dataclasses import replace
+
+    from fastapi.testclient import TestClient
+
+    from koyracloud.app import create_app
+    cf = _FakeCF()
+    s = replace(env["settings"], public_ip="203.0.113.10")
+    app = create_app(settings=s, db=env["db"], docker=env["docker"],
+                     deployer=env["deployer"], cloudflare=cf, run_async=False)
+    c = TestClient(app)
+    aid = c.post("/api/apps", json={"name": "shop",
+                 "repo_url": "https://github.com/o/r"}).json()["id"]
+    body = c.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"}).json()
+    assert body["dns_ok"] is None
+    assert body["verified"] is False and body["ssl_status"] == "pending_validation"

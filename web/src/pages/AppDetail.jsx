@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getApp, listDeploys, triggerDeploy, rollback, updateApp, deleteApp,
   getEnv, putEnv, listSecretKeys, putSecret, deleteSecret,
-  listDomains, addDomain, setPrimaryDomain, deleteDomain, getConfig,
+  listDomains, addDomain, setPrimaryDomain, deleteDomain, verifyDomain, getConfig,
   getStatus, getRuntimeLogs, getUptime, getAnalytics, setAnalytics,
   getNotify, setNotify,
 } from "../api";
@@ -294,28 +294,46 @@ function DomainsTab({ id }) {
   const ip = config?.public_ip || "your server's IP";
   const [host, setHost] = useState("");
   const inval = () => qc.invalidateQueries({ queryKey: ["domains", id] });
-  const addMut = useMutation({ mutationFn: () => addDomain(id, host), onSuccess: () => { setHost(""); inval(); qc.invalidateQueries({ queryKey: ["app", id] }); } });
-  const primMut = useMutation({ mutationFn: (did) => setPrimaryDomain(id, did), onSuccess: () => { inval(); qc.invalidateQueries({ queryKey: ["app", id] }); } });
-  const delMut = useMutation({ mutationFn: (did) => deleteDomain(id, did), onSuccess: () => { inval(); qc.invalidateQueries({ queryKey: ["app", id] }); } });
+  const invalApp = () => qc.invalidateQueries({ queryKey: ["app", id] });
+  const addMut = useMutation({ mutationFn: () => addDomain(id, host), onSuccess: () => { setHost(""); inval(); invalApp(); } });
+  const primMut = useMutation({ mutationFn: (did) => setPrimaryDomain(id, did), onSuccess: () => { inval(); invalApp(); } });
+  const delMut = useMutation({ mutationFn: (did) => deleteDomain(id, did), onSuccess: () => { inval(); invalApp(); } });
+  const verMut = useMutation({ mutationFn: (did) => verifyDomain(id, did), onSuccess: () => inval() });
 
   return (
     <div className="max-w-2xl space-y-5">
       <p className="text-sm text-[var(--color-muted)]">
-        Point an A record at <span className="mono text-acid">{ip}</span>, then add the domain here.
-        Traefik mints TLS on first request. <b className="text-[var(--color-fg)]">Redeploy</b> to apply changes.
+        Add any domain you own. If a custom domain has CNAME records below, add them at your
+        registrar and the edge mints &amp; auto-renews TLS for you. Otherwise point an A record
+        at <span className="mono text-acid">{ip}</span> and Traefik mints TLS on first request.
+        <b className="text-[var(--color-fg)]"> Redeploy</b> to apply changes.
       </p>
       <div className="card divide-y divide-[var(--color-line)]">
         {domains.map((d) => (
-          <div key={d.id} className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <DnsDot ok={d.dns_ok} />
-              <a href={`https://${d.host}`} target="_blank" rel="noreferrer" className="mono text-sm no-underline text-[var(--color-fg)] hover:text-acid truncate">{d.host}</a>
-              {d.is_primary && <span className="mono text-[10px] text-acid border border-[var(--color-line)] rounded px-1.5 py-0.5">PRIMARY</span>}
+          <div key={d.id} className="px-4 py-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 min-w-0">
+                <DnsDot ok={d.dns_ok} />
+                <a href={`https://${d.host}`} target="_blank" rel="noreferrer" className="mono text-sm no-underline text-[var(--color-fg)] hover:text-acid truncate">{d.host}</a>
+                {d.is_primary && <span className="mono text-[10px] text-acid border border-[var(--color-line)] rounded px-1.5 py-0.5">PRIMARY</span>}
+                {d.records?.length > 0 && <CertBadge verified={d.verified} />}
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                {!d.is_primary && <button onClick={() => primMut.mutate(d.id)} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] bg-transparent border-0 cursor-pointer">set primary</button>}
+                <button onClick={() => delMut.mutate(d.id)} className="text-xs text-[var(--color-danger)] hover:underline bg-transparent border-0 cursor-pointer">remove</button>
+              </div>
             </div>
-            <div className="flex items-center gap-3 shrink-0">
-              {!d.is_primary && <button onClick={() => primMut.mutate(d.id)} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] bg-transparent border-0 cursor-pointer">set primary</button>}
-              <button onClick={() => delMut.mutate(d.id)} className="text-xs text-[var(--color-danger)] hover:underline bg-transparent border-0 cursor-pointer">remove</button>
-            </div>
+            {d.records?.length > 0 && (
+              <div className="space-y-2 pl-5">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-[var(--color-muted)]">Add these CNAME records at your registrar:</p>
+                  <button onClick={() => verMut.mutate(d.id)} disabled={verMut.isPending} className="text-xs text-acid hover:underline bg-transparent border-0 cursor-pointer">
+                    {verMut.isPending ? "checking…" : "verify"}
+                  </button>
+                </div>
+                {d.records.map((r, i) => <DnsRecordRow key={i} record={r} />)}
+              </div>
+            )}
           </div>
         ))}
         {domains.length === 0 && <div className="px-4 py-3 mono text-sm text-[var(--color-muted)]">No domains.</div>}
@@ -325,6 +343,40 @@ function DomainsTab({ id }) {
         <button disabled={!host || addMut.isPending} className="btn btn-primary shrink-0">Add</button>
       </form>
       {addMut.isError && <p className="text-[var(--color-danger)] text-sm">{addMut.error?.response?.data?.detail || "Failed"}</p>}
+    </div>
+  );
+}
+
+function CertBadge({ verified }) {
+  const [label, color] = verified ? ["ACTIVE", "var(--color-acid)"] : ["PENDING", "#d9a441"];
+  return (
+    <span className="mono text-[10px] rounded px-1.5 py-0.5 border"
+      style={{ color, borderColor: color }} title="Edge TLS certificate status">{label}</span>
+  );
+}
+
+function DnsRecordRow({ record }) {
+  return (
+    <div className="border border-[var(--color-line)] rounded px-3 py-2 text-xs space-y-1">
+      <div className="mono text-[var(--color-muted)]">{record.type}</div>
+      <CopyRow label="name" value={record.name} />
+      <CopyRow label="value" value={record.value} />
+    </div>
+  );
+}
+
+function CopyRow({ label, value }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard?.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[var(--color-muted)] w-12 shrink-0">{label}</span>
+      <code className="mono text-[var(--color-fg)] truncate flex-1">{value}</code>
+      <button onClick={copy} className="text-[10px] text-acid hover:underline bg-transparent border-0 cursor-pointer shrink-0">{copied ? "copied" : "copy"}</button>
     </div>
   );
 }
