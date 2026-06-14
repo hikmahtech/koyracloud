@@ -9,8 +9,20 @@ from koyracloud.config import Settings
 from koyracloud.manifest import Manifest
 
 
-def app_host(manifest: Manifest, app_name: str, settings: Settings) -> str:
-    return manifest.subdomain or f"{app_name}.{settings.apps_domain}"
+def auto_subdomain(app_name: str, token: str, settings: Settings) -> str:
+    """The app's default in-zone host: ``<name>-<token>.<apps_domain>``.
+
+    The random per-app token keeps two apps' default URLs from ever colliding
+    and stops them being trivially enumerable. ``apps_domain`` is one label deep
+    (e.g. ``koyracloud.com``) so a single free ``*.<apps_domain>`` wildcard cert
+    covers every app. Falls back to the bare name when no token is set (apps
+    created before the token existed)."""
+    label = f"{app_name}-{token}" if token else app_name
+    return f"{label}.{settings.apps_domain}"
+
+
+def app_host(manifest: Manifest, app_name: str, settings: Settings, token: str = "") -> str:
+    return manifest.subdomain or auto_subdomain(app_name, token, settings)
 
 
 def render_stack(
@@ -44,14 +56,16 @@ def render_stack(
         environment["KOYRA_ANALYTICS_URL"] = settings.base_url
         environment["KOYRA_ANALYTICS_SITE"] = analytics_site
 
-    # Split hosts by zone. In-zone hosts (the *.apps auto-subdomain) get a
-    # Let's Encrypt cert from Traefik as before. Custom Cloudflare-for-SaaS
+    # Split hosts by zone. In-zone hosts are the app's own auto-subdomain under
+    # apps_domain; custom Cloudflare-for-SaaS hosts are everything else. SaaS
     # hosts are TLS-terminated at the Cloudflare edge and reach Traefik over the
-    # tunnel (noTLSVerify), so Traefik must NOT try to ACME-mint a cert for them
-    # — there is no inbound HTTP-01 path, so it would only fail and burn
-    # Let's Encrypt rate limits. They get a sibling router with TLS but no
-    # resolver, pointing at the same service.
+    # tunnel (noTLSVerify), so Traefik must NOT ACME-mint a cert for them — there
+    # is no inbound HTTP-01 path, so it would only fail and burn Let's Encrypt
+    # rate limits. The in-zone auto-subdomain gets a Traefik Let's Encrypt cert
+    # UNLESS apps_domain itself sits behind the same proxy (apps_domain_proxied),
+    # in which case the edge serves its cert too and Traefik must skip ACME.
     apps_domain = settings.apps_domain.lower()
+    zone_cert = not settings.apps_domain_proxied
 
     def _in_zone(h: str) -> bool:
         h = h.lower()
@@ -78,11 +92,11 @@ def render_stack(
         return out
 
     if zone_hosts:
-        labels += _router_labels(router, zone_hosts, cert=True)
+        labels += _router_labels(router, zone_hosts, cert=zone_cert)
     if saas_hosts:
         labels += _router_labels(f"{router}-saas", saas_hosts, cert=False)
     if not zone_hosts and not saas_hosts:  # defensive; effective_hosts is never empty
-        labels += _router_labels(router, effective_hosts, cert=True)
+        labels += _router_labels(router, effective_hosts, cert=zone_cert)
 
     # NFS is used only for persisted data dirs (shared across nodes), never for
     # code, mounted at the paths the image expects under /app. With an NFS server

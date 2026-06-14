@@ -69,6 +69,14 @@ class Settings:
         "KOYRA_HEALTHCHECK_START_PERIOD", "600s"))
     apps_domain: str = field(default_factory=lambda: os.environ.get(
         "KOYRA_APPS_DOMAIN", "apps.example.com"))
+    # When the apps_domain sits behind a TLS-terminating proxy — e.g. Cloudflare
+    # with a proxied ``*.<apps_domain>`` record over a tunnel — Traefik must NOT
+    # ACME-mint certs for the in-zone auto-subdomains: the edge already serves
+    # the cert and there is no inbound HTTP-01 path, so an attempt only fails and
+    # burns Let's Encrypt rate limits. Self-hosters with open 80/443 leave this
+    # off and Traefik gets Let's Encrypt certs for auto-subdomains as usual.
+    apps_domain_proxied: bool = field(
+        default_factory=lambda: os.environ.get("KOYRA_APPS_DOMAIN_PROXIED", "") == "1")
     # Default per-app resource limits (a manifest may lower; capped so one app
     # can't starve a node).
     default_cpu: str = field(default_factory=lambda: os.environ.get("KOYRA_DEFAULT_CPU", "1.0"))

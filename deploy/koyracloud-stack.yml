@@ -26,6 +26,10 @@ services:
       # apps with data aren't pinned). Empty → plain bind mounts.
       KOYRA_NFS_SERVER: ${KOYRA_NFS_SERVER:-}
       KOYRA_APPS_DOMAIN: ${KOYRA_APPS_DOMAIN:-apps.example.com}
+      # Set when apps_domain is fronted by a proxy that terminates TLS (e.g.
+      # Cloudflare with a proxied *.<apps_domain> record over a tunnel): Traefik
+      # then skips Let's Encrypt for auto-subdomains (the edge serves the cert).
+      KOYRA_APPS_DOMAIN_PROXIED: ${KOYRA_APPS_DOMAIN_PROXIED:-}
       KOYRA_BASE_URL: ${KOYRA_BASE_URL}
       KOYRA_PUBLIC_IP: ${KOYRA_PUBLIC_IP:-}
       KOYRA_WEB_DIST: /app/web/dist

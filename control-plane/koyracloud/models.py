@@ -24,6 +24,9 @@ class App(Base):
     name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     repo_url: Mapped[str] = mapped_column(String(512))
     branch: Mapped[str] = mapped_column(String(128), default="main")
+    # Random slug appended to the default in-zone host (<name>-<token>.<apps_domain>)
+    # so app names never collide and the URL isn't trivially enumerable.
+    subdomain_token: Mapped[str] = mapped_column(String(16), default="", index=True)
     auto_deploy: Mapped[bool] = mapped_column(default=False)
     owner_login: Mapped[str] = mapped_column(String(128), default="", index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
