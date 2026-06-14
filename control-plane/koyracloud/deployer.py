@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from sqlalchemy import text
+
 from koyracloud.config import Settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
@@ -165,12 +167,23 @@ class Deployer:
             analytics_site = an.token if an.enabled else ""
 
         def emit(line: str, status: str | None = None) -> None:
+            # Atomic single-statement UPDATE (no prior SELECT): a read-then-write
+            # in one transaction can hit SQLite's WAL read->write upgrade
+            # deadlock (SQLITE_BUSY_SNAPSHOT, which busy_timeout does NOT retry)
+            # when a concurrent connection — e.g. an app's analytics ingest —
+            # commits between the SELECT and the UPDATE. This is the deploy's
+            # hot write path (one call per build/push log line).
             with db.session() as s:
-                d = s.get(Deploy, deploy_id)
-                d.log = (d.log or "") + line + "\n"
                 if status:
-                    d.status = status
-                s.add(d)
+                    s.execute(text(
+                        "UPDATE deploys SET log = COALESCE(log, '') || :l, "
+                        "status = :st WHERE id = :i"),
+                        {"l": line + "\n", "st": status, "i": deploy_id})
+                else:
+                    s.execute(text(
+                        "UPDATE deploys SET log = COALESCE(log, '') || :l "
+                        "WHERE id = :i"),
+                        {"l": line + "\n", "i": deploy_id})
                 s.commit()
 
         dest: Path | None = None
@@ -182,9 +195,8 @@ class Deployer:
             dest = Path(self.settings.build_dir) / f"{app_name}-{deploy_id}"
             commit = self.cloner(repo_url, ref, self.settings.github_pat, dest)
             with db.session() as s:
-                d = s.get(Deploy, deploy_id)
-                d.commit = commit
-                s.add(d)
+                s.execute(text('UPDATE deploys SET "commit" = :c WHERE id = :i'),
+                          {"c": commit, "i": deploy_id})
                 s.commit()
             emit(f"[koyra] checked out {commit[:12]}")
 
@@ -267,7 +279,6 @@ class Deployer:
             if dest is not None:
                 shutil.rmtree(dest, ignore_errors=True)   # free the local build dir
             with db.session() as s:
-                d = s.get(Deploy, deploy_id)
-                d.finished_at = dt.datetime.now(dt.timezone.utc)
-                s.add(d)
+                s.execute(text("UPDATE deploys SET finished_at = :t WHERE id = :i"),
+                          {"t": dt.datetime.now(dt.timezone.utc), "i": deploy_id})
                 s.commit()
