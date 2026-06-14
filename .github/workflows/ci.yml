@@ -11,8 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - name: Entrypoint tests
-        run: uv run --with pytest --with pyyaml pytest runtime-image/tests -q
       - name: Control-plane tests
         working-directory: control-plane
         run: uv run --with-editable . --with pytest pytest -q

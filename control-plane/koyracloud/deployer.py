@@ -89,9 +89,9 @@ def resolve_manifest(dest: Path, app_name: str) -> tuple[Manifest, bool]:
 
 
 def git_clone(repo_url: str, ref: str, token: str, dest: Path) -> str:
-    """Clone or fetch the repo at ``dest`` and check out ``ref``. Returns the
-    resolved commit sha. Populates the SAME NFS path the container mounts, so
-    the runtime entrypoint only has to fast-forward."""
+    """Clone or fetch the repo at ``dest`` (a local build dir) and check out
+    ``ref``. Returns the resolved commit sha. The checkout is the docker build
+    context and is removed after the image is built."""
     validate_repo_ref(repo_url, ref)
     auth = _auth_args(token)
     dest.mkdir(parents=True, exist_ok=True)
