@@ -3,7 +3,7 @@ import { PublicNav, Footer } from "../components/Chrome.jsx";
 
 const MANIFEST = `name: lens-inventory
 runtime: python+node
-subdomain: lens.apps.koyracloud.com
+subdomain: lens.apps.example.com
 port: 8000
 build:
   - pip install -r requirements.txt
@@ -23,7 +23,7 @@ const STEPS = [
 
 const FEATURES = [
   ["Bring a repo, not a Dockerfile", "One python+node+git runtime image runs everything. Dependencies are hashed and cached on the volume — restarts are instant and offline-safe."],
-  ["Auto-TLS on every subdomain", "Apps land on <name>.apps.koyracloud.com with a Let's Encrypt cert minted on first request. Attach your own domains in a click."],
+  ["Auto-TLS on every subdomain", "Apps land on <name>.apps.example.com with a Let's Encrypt cert minted on first request. Attach your own domains in a click."],
   ["Secrets, encrypted at rest", "Fernet-encrypted in the control plane, injected at deploy. Never in your repo, never in the image."],
   ["Live logs, history, rollback", "Stream the build and deploy as it happens. Every deploy is recorded; roll back to any commit."],
   ["Persistent storage", "Declare persist dirs in the manifest; they survive redeploys on NFS-backed volumes."],

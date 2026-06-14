@@ -13,7 +13,7 @@ from koyracloud.deployer import Deployer  # noqa: E402
 LENS_MANIFEST = """
 name: lens-inventory
 runtime: python+node
-subdomain: lens.apps.koyracloud.com
+subdomain: lens.apps.example.com
 port: 8000
 build:
   - pip install -r requirements.txt
@@ -24,7 +24,7 @@ persist:
   - data
 healthcheck: /health
 env:
-  CORS_ORIGINS: https://lens.apps.koyracloud.com
+  CORS_ORIGINS: https://lens.apps.example.com
 secrets:
   - SECRET_KEY
 """

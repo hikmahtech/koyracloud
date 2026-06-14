@@ -60,9 +60,10 @@ export default function Docs() {
           <div className="eyebrow">Get started</div>
           <h1 className="font-display text-4xl mt-3 mb-2">Deploy a repo</h1>
           <p className="text-[var(--color-muted)]">
-            koyracloud runs your app from a single shared runtime image. You describe how
-            to build and start it in a <span className="mono text-acid">.paas/app.yaml</span> manifest;
-            the control plane clones, builds, migrates, runs and routes it.
+            koyracloud builds your app into a container image, pushes it to a built-in
+            registry, and runs it on the swarm. You describe how to build and start it in a
+            <span className="mono text-acid"> .paas/app.yaml</span> manifest — or bring your own
+            <span className="mono"> Dockerfile</span>.
           </p>
 
           <Section id="quickstart" title="Quickstart">
@@ -71,7 +72,7 @@ export default function Docs() {
               <li>Sign in, click <b>New App</b>, paste the repo URL and branch.</li>
               <li>Open <b>Secrets</b> and set anything your app needs (e.g. <span className="mono">SECRET_KEY</span>).</li>
               <li>Hit <b>Deploy</b> and watch the live log. Your app comes up at
-                <span className="mono text-acid"> &lt;name&gt;.apps.koyracloud.com</span>.</li>
+                <span className="mono text-acid"> &lt;name&gt;.apps.example.com</span>.</li>
             </ol>
           </Section>
 
@@ -79,7 +80,7 @@ export default function Docs() {
             <p className="text-[var(--color-muted)]">A complete example for a FastAPI + Vite app:</p>
             <Code label=".paas/app.yaml">{`name: lens-inventory
 runtime: python+node
-subdomain: lens.apps.koyracloud.com   # default host (optional)
+subdomain: lens.apps.example.com   # default host (optional)
 port: 8000
 build:
   - pip install -r requirements.txt
@@ -91,7 +92,7 @@ persist:
   - data
 healthcheck: /health
 env:
-  CORS_ORIGINS: https://lens.apps.koyracloud.com
+  CORS_ORIGINS: https://lens.apps.example.com
 secrets:
   - SECRET_KEY`}</Code>
           </Section>
@@ -101,14 +102,15 @@ secrets:
               <table className="w-full text-left border-collapse">
                 <tbody>
                   <Field name="name" req>Stack + service identity. Alphanumeric, <span className="mono">-</span>, <span className="mono">_</span>.</Field>
-                  <Field name="runtime" req><span className="mono">python</span>, <span className="mono">node</span>, <span className="mono">python+node</span>, or <span className="mono">static</span>.</Field>
-                  <Field name="start">The command that starts your server (becomes PID 1). Must bind <span className="mono">0.0.0.0</span> on <span className="mono">port</span>. Not needed for <span className="mono">static</span>.</Field>
+                  <Field name="runtime" req><span className="mono">python</span>, <span className="mono">node</span>, <span className="mono">python+node</span>, <span className="mono">static</span>, or <span className="mono">dockerfile</span>.</Field>
+                  <Field name="dockerfile">Path to your repo's own Dockerfile (or set <span className="mono">runtime: dockerfile</span> for <span className="mono">./Dockerfile</span>). koyracloud builds it as-is; <span className="mono">build</span>/<span className="mono">start</span> are ignored.</Field>
+                  <Field name="start">The command that starts your server (becomes the container command). Must bind <span className="mono">0.0.0.0</span> on <span className="mono">port</span>. Not needed for <span className="mono">static</span> / <span className="mono">dockerfile</span>.</Field>
                   <Field name="static_dir">For <span className="mono">runtime: static</span>: directory to serve. Auto-detected (<span className="mono">dist/build/public/out/_site</span> or repo root) if omitted.</Field>
                   <Field name="port" req>Container port Traefik routes to.</Field>
-                  <Field name="build">Commands run once when dependencies change (hashed over <span className="mono">requirements.txt</span> + <span className="mono">package-lock.json</span>).</Field>
-                  <Field name="predeploy">Commands run on every deploy before start — e.g. migrations. Must be idempotent.</Field>
-                  <Field name="subdomain">Default host. Falls back to <span className="mono">&lt;name&gt;.apps.koyracloud.com</span>. Manage more in the Domains tab.</Field>
-                  <Field name="persist">Directories that survive redeploys (gitignored, on the volume).</Field>
+                  <Field name="build">Image build steps (become <span className="mono">RUN</span> layers). Cached by Docker's layer cache; unchanged deps aren't reinstalled.</Field>
+                  <Field name="predeploy">Commands run on every start before the app — e.g. migrations. Must be idempotent.</Field>
+                  <Field name="subdomain">Default host. Falls back to <span className="mono">&lt;name&gt;.apps.example.com</span>. Manage more in the Domains tab.</Field>
+                  <Field name="persist">Directories that survive redeploys (NFS-backed volumes, mounted into the container).</Field>
                   <Field name="healthcheck">HTTP path probed for liveness, e.g. <span className="mono">/health</span>.</Field>
                   <Field name="env">Non-secret environment defaults baked into the deploy.</Field>
                   <Field name="secrets">Names of secrets to inject at deploy. Set their values in the UI — never commit them.</Field>
@@ -119,15 +121,39 @@ secrets:
 
           <Section id="runtime" title="Runtimes & build">
             <p className="text-[var(--color-muted)]">
-              Every app runs the same image: <span className="mono">python:3.12</span> + <span className="mono">node:22</span> + <span className="mono">git</span>.
-              On start, the entrypoint syncs your repo to the volume, and if the dependency hash
-              changed it runs your <span className="mono">build</span> steps, caching the venv,
-              <span className="mono"> node_modules</span> and built assets. Unchanged restarts skip
-              the build entirely, so reschedules are fast and offline-safe.
+              Each deploy builds a per-app image — from a <span className="mono">Dockerfile</span> koyracloud
+              generates (base <span className="mono">python:3.12</span> + <span className="mono">node:22</span>, your
+              <span className="mono"> build</span> steps as layers) or your repo's own. It's built on local
+              disk (off NFS, layer-cached), pushed to the internal registry, and the container runs from
+              the image — so the app reads no code over NFS and can run on any node.
             </p>
             <p className="text-[var(--color-muted)] mt-3">
-              Single-container model: serve your built frontend from your backend (e.g. FastAPI
+              Build-time env (<span className="mono">NEXT_PUBLIC_*</span>, <span className="mono">VITE_*</span>) is
+              passed as build args, so client bundles bake the right values. Secrets are injected at run time
+              only. Single-container model: serve your built frontend from your backend (e.g. FastAPI
               <span className="mono"> StaticFiles</span>) so API and SPA share one origin and port.
+            </p>
+          </Section>
+
+          <Section id="dockerfile" title="Bring your own Dockerfile">
+            <p className="text-[var(--color-muted)]">
+              Already containerized? Set <span className="mono">runtime: dockerfile</span> and koyracloud builds
+              your image as-is and runs it as a managed service — you still get domains, env/secrets, logs and rollback.
+            </p>
+            <Code label=".paas/app.yaml">{`name: my-app
+runtime: dockerfile        # or: dockerfile: docker/Dockerfile
+port: 8000
+healthcheck: /health
+secrets:
+  - DATABASE_URL`}</Code>
+          </Section>
+
+          <Section id="deploy" title="Push-to-deploy">
+            <p className="text-[var(--color-muted)]">
+              Turn on <b>Auto-deploy</b> in the app's Settings and add a GitHub webhook to your repo
+              (the Settings tab shows the URL + secret). Choose the event it sends:
+              <span className="mono"> push</span> deploys on every push; <span className="mono">workflow_run</span>
+              deploys only after a GitHub Actions run finishes successfully — so repos with CI deploy after it passes.
             </p>
           </Section>
 
@@ -155,15 +181,19 @@ static_dir: dist        # auto-detected if omitted`}</Code>
 
           <Section id="domains" title="Custom domains">
             <p className="text-[var(--color-muted)]">
-              Every app gets <span className="mono text-acid">&lt;name&gt;.apps.koyracloud.com</span> automatically.
-              To attach your own domain, open the app's <b>Domains</b> tab and add it, then point DNS at the homelab:
+              Every app gets <span className="mono text-acid">&lt;name&gt;.apps.example.com</span> automatically.
+              To attach your own domain, open the app's <b>Domains</b> tab and add it. If Cloudflare for SaaS
+              is configured, koyracloud registers it as a custom hostname and shows the two CNAME records to
+              add at <i>your</i> registrar — the Cloudflare edge then mints and auto-renews TLS (Vercel-style,
+              no nameserver move):
             </p>
-            <Code label="DNS (your registrar)">{`Type   Host        Value
-A      yourdomain  <your server's public IP>`}</Code>
+            <Code label="DNS (your registrar)">{`Type   Host                    Value
+CNAME  yourdomain              origin.<your-saas-zone>
+CNAME  _acme-challenge.yourdomain   <shown in the Domains tab>`}</Code>
             <p className="text-[var(--color-muted)]">
-              Traefik mints a Let's Encrypt certificate on the first request — no extra config.
-              The Domains tab shows whether DNS already points here. Set any domain as <b>primary</b>;
-              all attached domains route to the same app.
+              The Domains tab shows each domain's cert status (Pending → Active). Set any domain as
+              <b> primary</b>; all attached domains route to the same app. (Without Cloudflare for SaaS,
+              point an A record at the host and Traefik mints a Let's Encrypt cert instead.)
             </p>
           </Section>
 

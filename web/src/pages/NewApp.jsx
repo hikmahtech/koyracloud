@@ -26,7 +26,7 @@ export default function NewApp() {
       <h1 className="font-display text-3xl mt-2 mb-1">Connect a repository</h1>
       <p className="text-sm text-[var(--color-muted)] mb-7">
         The repo must contain a <span className="mono text-acid">.paas/app.yaml</span> manifest.
-        It gets <span className="mono">&lt;name&gt;.apps.koyracloud.com</span> by default.
+        It gets <span className="mono">&lt;name&gt;.apps.example.com</span> by default.
       </p>
 
       <form onSubmit={(e) => { e.preventDefault(); mut.mutate(); }} className="card p-6 space-y-5">

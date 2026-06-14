@@ -24,7 +24,7 @@ const POSTS = [
     tag: "Feature",
     title: "Attach your own domains",
     body: [
-      "Every app gets an automatic *.apps.koyracloud.com subdomain, but you can now attach custom domains from the app's Domains tab. Point an A record at the homelab and Traefik mints a certificate on the first request — all domains route to the same app, and you choose which one is primary.",
+      "Every app gets an automatic *.apps.example.com subdomain, but you can now attach custom domains from the app's Domains tab. Point an A record at the homelab and Traefik mints a certificate on the first request — all domains route to the same app, and you choose which one is primary.",
     ],
   },
 ];

@@ -12,7 +12,9 @@ else
   echo "warning: $ENV_FILE not found — relying on the current environment" >&2
 fi
 
-CTX=${DOCKER_CONTEXT:-swarm-baa}
+# Your swarm's docker context (see `docker context ls`); falls back to the
+# current/active context.
+CTX=${DOCKER_CONTEXT:-default}
 IMAGE=${KOYRA_IMAGE:-koyracloud:local}
 
 echo "==> building $IMAGE locally"

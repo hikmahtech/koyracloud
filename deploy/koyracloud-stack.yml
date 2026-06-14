@@ -33,13 +33,13 @@ services:
       KOYRA_RESOLVE_IMAGE_NEVER: ${KOYRA_RESOLVE_IMAGE_NEVER:-}
       # Email alerts (Resend) — key from a Docker secret.
       RESEND_API_KEY_FILE: /run/secrets/koyra_resend_api_key
-      KOYRA_EMAIL_FROM: ${KOYRA_EMAIL_FROM:-koyracloud <alerts@koyracloud.com>}
+      KOYRA_EMAIL_FROM: ${KOYRA_EMAIL_FROM:-koyracloud <alerts@example.com>}
       KOYRA_DEFAULT_NOTIFY_EMAIL: ${KOYRA_DEFAULT_NOTIFY_EMAIL:-}
       # Cloudflare for SaaS — custom hostnames for user domains. Token from a
       # Docker secret; inert (no-op) until both token and zone id are set.
       CLOUDFLARE_API_TOKEN_FILE: /run/secrets/koyra_cloudflare_api_token
       KOYRA_CLOUDFLARE_ZONE_ID: ${KOYRA_CLOUDFLARE_ZONE_ID:-}
-      KOYRA_CLOUDFLARE_SAAS_ORIGIN: ${KOYRA_CLOUDFLARE_SAAS_ORIGIN:-origin.koyracloud.com}
+      KOYRA_CLOUDFLARE_SAAS_ORIGIN: ${KOYRA_CLOUDFLARE_SAAS_ORIGIN:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${KOYRA_NFS_BASE:-/mnt/koyracloud}/cp:/data

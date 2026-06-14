@@ -68,7 +68,7 @@ class Settings:
     healthcheck_start_period: str = field(default_factory=lambda: os.environ.get(
         "KOYRA_HEALTHCHECK_START_PERIOD", "600s"))
     apps_domain: str = field(default_factory=lambda: os.environ.get(
-        "KOYRA_APPS_DOMAIN", "apps.koyracloud.com"))
+        "KOYRA_APPS_DOMAIN", "apps.example.com"))
     # Default per-app resource limits (a manifest may lower; capped so one app
     # can't starve a node).
     default_cpu: str = field(default_factory=lambda: os.environ.get("KOYRA_DEFAULT_CPU", "1.0"))
@@ -111,7 +111,7 @@ class Settings:
     # Email alerts via Resend (inert until an API key is set).
     resend_api_key: str = field(default_factory=lambda: _secret("RESEND_API_KEY", ""))
     email_from: str = field(default_factory=lambda: os.environ.get(
-        "KOYRA_EMAIL_FROM", "koyracloud <alerts@koyracloud.com>"))
+        "KOYRA_EMAIL_FROM", "koyracloud <alerts@example.com>"))
     default_notify_email: str = field(
         default_factory=lambda: os.environ.get("KOYRA_DEFAULT_NOTIFY_EMAIL", ""))
     # Admin logins (always allowed; can manage the invite list). Invited members
@@ -129,8 +129,10 @@ class Settings:
         default_factory=lambda: _secret("CLOUDFLARE_API_TOKEN", ""))
     cloudflare_zone_id: str = field(
         default_factory=lambda: os.environ.get("KOYRA_CLOUDFLARE_ZONE_ID", ""))
+    # The proxied CNAME customers point their domain at (your SaaS fallback
+    # origin). No default — set it per instance via KOYRA_CLOUDFLARE_SAAS_ORIGIN.
     cloudflare_saas_origin: str = field(default_factory=lambda: os.environ.get(
-        "KOYRA_CLOUDFLARE_SAAS_ORIGIN", "origin.koyracloud.com"))
+        "KOYRA_CLOUDFLARE_SAAS_ORIGIN", ""))
 
 
 def get_settings() -> Settings:
