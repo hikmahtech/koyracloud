@@ -1,6 +1,9 @@
-# koyracloud-runtime — the shared buildpack image.
-# python:3.12 + node:22 + git + the generic entrypoint. No app code lives here;
-# app code, venv and build caches live on the NFS volume mounted at /workspace.
+# koyracloud-runtime — the base buildpack image.
+# python:3.12 + node:22 + git. It's the `FROM` for app images koyracloud
+# *generates* from a manifest, and it ships koyra_static.py (the static-site
+# server those generated images run). Apps that bring their own Dockerfile
+# don't use it. No app code or entrypoint lives here — each app image sets its
+# own CMD.
 FROM python:3.12-slim
 
 RUN apt-get update \
@@ -10,10 +13,6 @@ RUN apt-get update \
  && git config --system --add safe.directory '*' \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir pyyaml==6.0.2
-
-COPY entrypoint.py /entrypoint.py
 COPY koyra_static.py /koyra_static.py
 
-WORKDIR /workspace
-ENTRYPOINT ["python3", "/entrypoint.py"]
+WORKDIR /app

@@ -136,14 +136,13 @@ cd web && npm install && npm run dev
 ## Tests
 
 ```bash
-cd runtime-image  && uv run --with pytest --with pyyaml pytest      # entrypoint
 cd control-plane  && uv run --with-editable . --with pytest pytest  # control plane
 ```
 
 ## Project layout
 
 ```
-runtime-image/   the base buildpack: Dockerfile + entrypoint.py (used for static apps + as the generated-image base)
+runtime-image/   the base buildpack image: Dockerfile + koyra_static.py (the FROM base for generated app images)
 control-plane/   FastAPI + SQLAlchemy control plane (build/registry, apps, deploys, domains, secrets, OAuth)
 web/             React + Vite + Tailwind + TanStack Query (landing, docs, dashboard)
 deploy/          swarm stack (control plane + registry) + deploy script + runbook
