@@ -4,7 +4,9 @@
 # server those generated images run). Apps that bring their own Dockerfile
 # don't use it. No app code or entrypoint lives here — each app image sets its
 # own CMD.
-FROM python:3.12-slim
+# Pinned to bookworm (Debian 12): the unsuffixed python:3.12-slim now tracks
+# trixie (Debian 13), whose apt index 404s here and breaks the node install.
+FROM python:3.12-slim-bookworm
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git curl ca-certificates \
