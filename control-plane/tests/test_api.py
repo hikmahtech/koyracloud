@@ -69,22 +69,27 @@ def test_deploy_flow_renders_and_calls_docker(client, env):
     assert d["status"] == "live", client.get(f"/api/deploys/{deploy_id}/log").json()
     assert d["commit"].startswith("deadbeef")
 
-    # one-off build ran BEFORE the service deploy
-    assert env["docker"].events == ["build", "deploy"]
-    build_image, build_env, build_vol = env["docker"].builds[0]
-    assert build_image == env["settings"].runtime_image
-    assert build_env["KOYRA_REF"].startswith("deadbeef")
-    assert build_vol.endswith("/lens-inventory:/workspace")
-    # app env + secrets must reach the BUILD too (build-time-inlined vars like
-    # NEXT_PUBLIC_*/VITE_* are baked into the bundle at build, not runtime).
-    assert build_env["NEXT_PUBLIC_FOO"] == "bar"
-    assert build_env["SECRET_KEY"] == "sk"
+    # image is built + pushed BEFORE the service deploy
+    assert env["docker"].events == ["build", "push", "push", "deploy"]
+    tag, context_dir, build_args, dockerfile = env["docker"].builds[0]
+    # image is tagged for the internal registry, by commit
+    assert tag.startswith("reg:5000/koyra-app-lens-inventory:")
+    # built from a LOCAL dir (off NFS), not the app's /workspace volume
+    assert "/build/lens-inventory-" in context_dir and "/workspace" not in context_dir
+    # build-time-inlined vars (NEXT_PUBLIC_*/VITE_*) go in as build-args...
+    assert build_args["NEXT_PUBLIC_FOO"] == "bar"
+    # ...but secrets are NOT baked into the image
+    assert "SECRET_KEY" not in build_args
+    # both commit + latest tags are pushed
+    assert any(p.endswith(":latest") for p in env["docker"].pushed)
 
-    # fake docker received a rendered stack with the secret injected
+    # the deployed service runs the registry image, and gets the secret at RUNTIME
     assert len(env["docker"].deployed) == 1
     stack_name, stack = env["docker"].deployed[0]
     assert stack_name == "koyra-lens-inventory"
-    assert stack["services"]["lens-inventory"]["environment"]["SECRET_KEY"] == "sk"
+    svc = stack["services"]["lens-inventory"]
+    assert svc["image"] == tag
+    assert svc["environment"]["SECRET_KEY"] == "sk"
 
     # deploy log captured
     log = client.get(f"/api/deploys/{deploy_id}/log").json()
@@ -604,3 +609,34 @@ def test_active_ownership_hides_txt_record(env):
     body = c.post(f"/api/apps/{aid}/domains/{did}/verify").json()
     assert body["verified"] is True
     assert not any(r["type"] == "TXT" for r in body["records"])
+
+
+def test_deploy_uses_repo_dockerfile(env):
+    # An app whose manifest opts into runtime: dockerfile builds the repo's OWN
+    # Dockerfile, not a generated one.
+    from fastapi.testclient import TestClient
+
+    from koyracloud.app import create_app
+    from koyracloud.deployer import Deployer
+    from tests.conftest import FakeDocker
+
+    def cloner(repo_url, ref, token, dest):
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / ".paas").mkdir(parents=True, exist_ok=True)
+        (dest / ".paas" / "app.yaml").write_text(
+            "name: dock\nruntime: dockerfile\nport: 8000\nhealthcheck: /health\n")
+        (dest / "Dockerfile").write_text("FROM python:3.12-slim\nCMD echo hi\n")
+        return "deadbeefcafef00dba5eba11c0ffee0011223344"
+
+    docker = FakeDocker()
+    deployer = Deployer(settings=env["settings"], docker=docker, crypto=env["crypto"],
+                        cloner=cloner)
+    app = create_app(settings=env["settings"], db=env["db"], docker=docker,
+                     deployer=deployer, run_async=False)
+    c = TestClient(app)
+    aid = c.post("/api/apps", json={"name": "dock",
+                 "repo_url": "https://github.com/o/r"}).json()["id"]
+    assert c.post(f"/api/apps/{aid}/deploys", json={}).status_code == 201
+    tag, context_dir, build_args, dockerfile = docker.builds[0]
+    # built the repo's own Dockerfile (not the generated .koyra.Dockerfile)
+    assert dockerfile.endswith("/Dockerfile") and not dockerfile.endswith(".koyra.Dockerfile")

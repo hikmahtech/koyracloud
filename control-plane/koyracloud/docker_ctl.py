@@ -12,9 +12,17 @@ import yaml
 
 
 class DockerControl(Protocol):
-    def build(self, image: str, env: dict, volume: str) -> Iterator[str]:
-        """Run a one-off build container (docker run --rm); yields output lines.
+    def image_build(self, tag: str, context_dir: str,
+                    build_args: dict | None = None,
+                    dockerfile: str | None = None) -> Iterator[str]:
+        """`docker build` a per-app image from a local context; yields output.
         Raises on non-zero exit."""
+
+    def image_tag(self, src: str, dst: str) -> None:
+        """`docker tag` — add a second tag (e.g. :latest) to a built image."""
+
+    def image_push(self, tag: str) -> Iterator[str]:
+        """`docker push` an image to the registry; yields output."""
 
     def deploy(self, stack: str, stack_dict: dict) -> Iterator[str]:
         """Deploy/update a stack; yields output lines. Raises on failure."""
@@ -49,13 +57,24 @@ class CLIDockerControl:
         if proc.wait() != 0:
             raise RuntimeError(f"`docker {' '.join(args)}` exited {proc.returncode}")
 
-    def build(self, image: str, env: dict, volume: str) -> Iterator[str]:
-        args = ["run", "--rm"]
-        for k, v in {**env, "KOYRA_BUILD_ONLY": "1"}.items():
-            args += ["-e", f"{k}={v}"]
-        args += ["-v", volume, image]
-        yield "running one-off build container"
+    def image_build(self, tag: str, context_dir: str,
+                    build_args: dict | None = None,
+                    dockerfile: str | None = None) -> Iterator[str]:
+        args = ["build", "-t", tag]
+        if dockerfile:
+            args += ["-f", dockerfile]
+        for k, v in (build_args or {}).items():
+            args += ["--build-arg", f"{k}={v}"]
+        args.append(context_dir)
+        yield f"building image {tag}"
         yield from self._stream(args)
+
+    def image_tag(self, src: str, dst: str) -> None:
+        subprocess.run([*self._base, "tag", src, dst], check=True)
+
+    def image_push(self, tag: str) -> Iterator[str]:
+        yield f"pushing {tag}"
+        yield from self._stream(["push", tag])
 
     def deploy(self, stack: str, stack_dict: dict) -> Iterator[str]:
         with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as f:

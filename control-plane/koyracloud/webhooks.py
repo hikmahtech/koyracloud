@@ -31,3 +31,26 @@ def branch_from_ref(ref: str) -> str | None:
     """refs/heads/main -> main; tags/other refs -> None."""
     prefix = "refs/heads/"
     return ref[len(prefix):] if ref and ref.startswith(prefix) else None
+
+
+def deploy_target(event: str, payload: dict) -> tuple[str, str, str] | None:
+    """Map a GitHub webhook to (repo_full_name, branch, commit_sha) to deploy,
+    or None if this event shouldn't trigger one. Pure + unit-tested.
+
+    - ``push``: deploy immediately (for repos with no gating CI).
+    - ``workflow_run`` completed+success: deploy AFTER CI passes (repos with CI
+      send this event instead of push). Failed/in-progress runs never deploy.
+    """
+    repo = (payload.get("repository") or {}).get("full_name", "").lower()
+    if event == "push":
+        branch = branch_from_ref(payload.get("ref", ""))
+        sha = payload.get("after", "")
+        return (repo, branch, sha) if repo and branch else None
+    if event == "workflow_run":
+        run = payload.get("workflow_run") or {}
+        if payload.get("action") != "completed" or run.get("conclusion") != "success":
+            return None
+        branch = run.get("head_branch") or ""
+        sha = run.get("head_sha", "")
+        return (repo, branch, sha) if repo and branch else None
+    return None

@@ -34,13 +34,23 @@ class FakeDocker:
     def __init__(self):
         self.deployed = []
         self.removed = []
-        self.builds = []
-        self.events = []  # ordered record of calls
+        self.builds = []   # (tag, context_dir, build_args, dockerfile)
+        self.pushed = []
+        self.tagged = []
+        self.events = []   # ordered record of calls
 
-    def build(self, image, env, volume):
-        self.builds.append((image, env, volume))
+    def image_build(self, tag, context_dir, build_args=None, dockerfile=None):
+        self.builds.append((tag, context_dir, build_args or {}, dockerfile))
         self.events.append("build")
-        yield f"fake-build {image}"
+        yield f"fake-build {tag}"
+
+    def image_tag(self, src, dst):
+        self.tagged.append((src, dst))
+
+    def image_push(self, tag):
+        self.pushed.append(tag)
+        self.events.append("push")
+        yield f"fake-push {tag}"
 
     def deploy(self, stack, stack_dict):
         self.deployed.append((stack, stack_dict))
@@ -82,6 +92,8 @@ def settings(tmp_path):
         db_url=f"sqlite:///{tmp_path / 'koyra.db'}",
         secret_key=generate_key(),
         nfs_base=str(tmp_path / "nfs"),
+        build_dir=str(tmp_path / "build"),
+        registry="reg:5000",
         dev_login="tester",
         github_pat="",
         webhook_secret="testhooksecret",

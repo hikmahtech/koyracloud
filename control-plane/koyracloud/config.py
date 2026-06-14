@@ -39,6 +39,17 @@ class Settings:
     # Swarm / Traefik / NFS
     runtime_image: str = field(default_factory=lambda: os.environ.get(
         "KOYRA_RUNTIME_IMAGE", "koyracloud-runtime:latest"))
+    # Internal Docker registry (a swarm service koyracloud owns). Per-app images
+    # are built locally, pushed here, and pulled by swarm on whichever node runs
+    # the service — so apps aren't pinned to the build node. Published on the
+    # ingress mesh; 127.0.0.1 is an insecure-OK registry by default and is never
+    # reachable from outside the swarm.
+    registry: str = field(default_factory=lambda: os.environ.get(
+        "KOYRA_REGISTRY", "127.0.0.1:5000"))
+    # Where to clone + build (LOCAL disk, not the NFS base — NFS small-file I/O
+    # makes npm ci/builds glacial and can starve the control-plane's own DB).
+    build_dir: str = field(default_factory=lambda: os.environ.get(
+        "KOYRA_BUILD_DIR", "/tmp/koyra-build"))
     nfs_base: str = field(default_factory=lambda: os.environ.get(
         "KOYRA_NFS_BASE", "/mnt/koyracloud"))
     traefik_network: str = field(default_factory=lambda: os.environ.get(

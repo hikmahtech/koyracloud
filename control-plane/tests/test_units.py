@@ -227,8 +227,7 @@ def test_visitor_hash_differs_by_visitor():
 
 def test_analytics_render_injects_env():
     m = parse_manifest("name: site\nruntime: static\n")
-    stack = render_stack(m, app_name="site", repo_url="https://github.com/o/r",
-                         ref="abc", git_token="", env_overrides={}, secret_values={},
+    stack = render_stack(m, app_name="site", image="img", env_overrides={}, secret_values={},
                          settings=_settings(), analytics_site="tok123")
     env = stack["services"]["site"]["environment"]
     assert env["KOYRA_ANALYTICS_SITE"] == "tok123" and "KOYRA_ANALYTICS_URL" in env
@@ -251,38 +250,46 @@ def test_app_host_derives_when_blank():
     assert app_host(m, "x", _settings()) == "x.apps.koyracloud.com"
 
 
-def test_render_stack_traefik_and_mounts():
+def test_render_stack_traefik_and_image():
     m = parse_manifest(VALID)
-    stack = render_stack(m, app_name="demo", repo_url="https://github.com/o/r",
-                         ref="abc", git_token="tok", env_overrides={"B": "2"},
+    stack = render_stack(m, app_name="demo", image="reg/koyra-app-demo:abc",
+                         env_overrides={"B": "2"},
                          secret_values={"SECRET_KEY": "v"}, settings=_settings())
     svc = stack["services"]["demo"]
     labels = svc["deploy"]["labels"]
     assert "traefik.enable=true" in labels
     assert any("Host(`demo.apps.koyracloud.com`)" in l for l in labels)
     assert any("loadbalancer.server.port=8000" in l for l in labels)
-    assert svc["volumes"] == ["/nfs/koyracloud/demo:/workspace"]
+    assert svc["image"] == "reg/koyra-app-demo:abc"   # runs the prebuilt image
+    assert "volumes" not in svc                         # no persist dirs → no NFS mount
     assert svc["deploy"]["update_config"]["order"] == "start-first"
     assert stack["networks"]["traefik_public"]["external"] is True
 
 
-def test_render_stack_env_precedence_and_injection():
+def test_render_stack_persist_volumes_only():
+    m = parse_manifest("name: x\nstart: y\nport: 8000\npersist: [data, uploads]\n")
+    svc = render_stack(m, app_name="x", image="img", env_overrides={},
+                       secret_values={}, settings=_settings())["services"]["x"]
+    assert svc["volumes"] == ["/nfs/koyracloud/x/data:/app/data",
+                              "/nfs/koyracloud/x/uploads:/app/uploads"]
+
+
+def test_render_stack_env_precedence_no_koyra_runtime_vars():
     m = parse_manifest(VALID)  # manifest env A=1
-    stack = render_stack(m, app_name="demo", repo_url="https://github.com/o/r",
-                         ref="sha1", git_token="tok", env_overrides={"A": "override"},
+    stack = render_stack(m, app_name="demo", image="img",
+                         env_overrides={"A": "override"},
                          secret_values={"SECRET_KEY": "v"}, settings=_settings())
     env = stack["services"]["demo"]["environment"]
     assert env["A"] == "override"            # control-plane env overrides manifest
     assert env["SECRET_KEY"] == "v"          # secret injected
-    assert env["KOYRA_REPO_URL"] == "https://github.com/o/r"
-    assert env["KOYRA_REF"] == "sha1"
-    assert env["KOYRA_GIT_TOKEN"] == "tok"
+    # runtime no longer clones — no KOYRA_REPO_URL/REF/GIT_TOKEN/WORKSPACE leak
+    assert not any(k.startswith("KOYRA_REPO") or k.startswith("KOYRA_REF")
+                   or k.startswith("KOYRA_GIT") or k.startswith("KOYRA_WORK") for k in env)
 
 
 def test_render_stack_no_constraint_by_default():
     m = parse_manifest(VALID)
-    stack = render_stack(m, app_name="demo", repo_url="https://github.com/o/r",
-                         ref="abc", git_token="", env_overrides={},
+    stack = render_stack(m, app_name="demo", image="img", env_overrides={},
                          secret_values={}, settings=_settings())
     assert "placement" not in stack["services"]["demo"]["deploy"]
 
@@ -291,8 +298,7 @@ def test_render_stack_pins_to_app_node():
     from dataclasses import replace
     s = replace(_settings(), app_node="node1")
     m = parse_manifest(VALID)
-    stack = render_stack(m, app_name="demo", repo_url="https://github.com/o/r",
-                         ref="abc", git_token="", env_overrides={},
+    stack = render_stack(m, app_name="demo", image="img", env_overrides={},
                          secret_values={}, settings=s)
     assert stack["services"]["demo"]["deploy"]["placement"]["constraints"] == \
         ["node.hostname == node1"]
@@ -309,8 +315,7 @@ def test_docker_control_resolve_image_never_flag():
 
 def test_render_stack_multi_host_rule():
     m = parse_manifest(VALID)
-    stack = render_stack(m, app_name="demo", repo_url="https://github.com/o/r",
-                         ref="abc", git_token="", env_overrides={}, secret_values={},
+    stack = render_stack(m, app_name="demo", image="img", env_overrides={}, secret_values={},
                          settings=_settings(), hosts=["a.example.com", "b.example.com"])
     labels = stack["services"]["demo"]["deploy"]["labels"]
     rule = next(l for l in labels if ".rule=" in l)
@@ -322,7 +327,7 @@ def test_render_stack_splits_saas_and_apps_routers():
     # (Cloudflare-for-SaaS) host gets its OWN router with TLS but no resolver —
     # CF terminates its TLS at the edge, so Traefik must not ACME-mint for it.
     m = parse_manifest(VALID)
-    stack = render_stack(m, app_name="demo", repo_url="r", ref="s", git_token="",
+    stack = render_stack(m, app_name="demo", image="img",
                          env_overrides={}, secret_values={}, settings=_settings(),
                          hosts=["demo.apps.koyracloud.com", "shop.example.com"])
     labels = stack["services"]["demo"]["deploy"]["labels"]
@@ -340,7 +345,7 @@ def test_render_stack_splits_saas_and_apps_routers():
 
 def test_render_stack_custom_only_host_has_no_certresolver():
     m = parse_manifest(VALID)
-    stack = render_stack(m, app_name="demo", repo_url="r", ref="s", git_token="",
+    stack = render_stack(m, app_name="demo", image="img",
                          env_overrides={}, secret_values={}, settings=_settings(),
                          hosts=["shop.example.com"])
     labels = stack["services"]["demo"]["deploy"]["labels"]
@@ -351,12 +356,12 @@ def test_render_stack_custom_only_host_has_no_certresolver():
 def test_render_stack_resource_limits_default_and_override():
     s = _settings()
     m = parse_manifest(VALID)
-    lim = render_stack(m, app_name="demo", repo_url="r", ref="a", git_token="",
+    lim = render_stack(m, app_name="demo", image="img",
                        env_overrides={}, secret_values={}, settings=s
                        )["services"]["demo"]["deploy"]["resources"]["limits"]
     assert lim == {"cpus": s.default_cpu, "memory": s.default_memory}
     m2 = parse_manifest("name: x\nstart: y\nport: 8000\ncpu: '0.25'\nmemory: 128M\n")
-    lim2 = render_stack(m2, app_name="x", repo_url="r", ref="a", git_token="",
+    lim2 = render_stack(m2, app_name="x", image="img",
                         env_overrides={}, secret_values={}, settings=s
                         )["services"]["x"]["deploy"]["resources"]["limits"]
     assert lim2 == {"cpus": "0.25", "memory": "128M"}
@@ -401,7 +406,7 @@ def test_deployer_lock_per_app():
 
 def test_render_stack_healthcheck_optional():
     m = parse_manifest("name: x\nstart: y\nport: 9000\n")  # no healthcheck
-    stack = render_stack(m, app_name="x", repo_url="r", ref="s", git_token="",
+    stack = render_stack(m, app_name="x", image="img",
                          env_overrides={}, secret_values={}, settings=_settings())
     assert "healthcheck" not in stack["services"]["x"]
 
@@ -550,3 +555,41 @@ def test_migrate_adds_domain_cert_ownership_columns(tmp_path):
     cols = {col["name"] for col in inspect(db.engine).get_columns("domain_certs")}
     assert "ownership_name" in cols and "ownership_value" in cols
     db._migrate()  # idempotent — second run is a no-op
+
+
+# --- webhook deploy_target (push + workflow_run) ----------------------------
+def test_deploy_target_push():
+    from koyracloud import webhooks
+    assert webhooks.deploy_target("push", {
+        "repository": {"full_name": "Owner/Repo"}, "ref": "refs/heads/main",
+        "after": "abc123"}) == ("owner/repo", "main", "abc123")
+    # a tag push doesn't deploy
+    assert webhooks.deploy_target("push", {
+        "repository": {"full_name": "o/r"}, "ref": "refs/tags/v1"}) is None
+
+
+def test_deploy_target_workflow_run():
+    from koyracloud import webhooks
+    ok = {"action": "completed", "repository": {"full_name": "O/R"},
+          "workflow_run": {"conclusion": "success", "head_branch": "main",
+                           "head_sha": "deadbeef"}}
+    assert webhooks.deploy_target("workflow_run", ok) == ("o/r", "main", "deadbeef")
+    # failed CI does NOT deploy
+    bad = {"action": "completed", "repository": {"full_name": "o/r"},
+           "workflow_run": {"conclusion": "failure", "head_branch": "main"}}
+    assert webhooks.deploy_target("workflow_run", bad) is None
+    # in-progress run does NOT deploy
+    pending = {"action": "requested", "repository": {"full_name": "o/r"},
+               "workflow_run": {"head_branch": "main"}}
+    assert webhooks.deploy_target("workflow_run", pending) is None
+    assert webhooks.deploy_target("ping", {}) is None
+
+
+# --- manifest: dockerfile runtime -------------------------------------------
+def test_manifest_dockerfile_runtime_needs_no_start():
+    m = parse_manifest("name: x\nruntime: dockerfile\nport: 8000\n")
+    assert m.uses_dockerfile is True
+    m2 = parse_manifest("name: y\ndockerfile: docker/Dockerfile\nport: 3000\n")
+    assert m2.uses_dockerfile is True and m2.dockerfile == "docker/Dockerfile"
+    m3 = parse_manifest("name: z\nstart: run\nport: 8000\n")
+    assert m3.uses_dockerfile is False

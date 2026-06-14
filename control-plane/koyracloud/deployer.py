@@ -8,6 +8,7 @@ import base64
 import datetime as dt
 import re
 import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -20,6 +21,7 @@ from koyracloud.config import Settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.docker_ctl import DockerControl
+from koyracloud.dockerfile import render_dockerfile
 from koyracloud.manifest import Manifest, parse_manifest
 from koyracloud.models import AppAnalytics, Deploy
 from koyracloud.stack_render import render_stack
@@ -171,9 +173,13 @@ class Deployer:
                 s.add(d)
                 s.commit()
 
+        dest: Path | None = None
         try:
             emit(f"[koyra] deploy #{deploy_id} for {app_name} @ {ref}", "building")
-            dest = Path(self.settings.nfs_base) / app_name / "repo"
+            # Clone to LOCAL disk (build_dir), never NFS: the build runs here and
+            # its result goes into an image, so NFS small-file I/O never touches a
+            # build (that's what made npm ci glacial and stalled the control plane).
+            dest = Path(self.settings.build_dir) / f"{app_name}-{deploy_id}"
             commit = self.cloner(repo_url, ref, self.settings.github_pat, dest)
             with db.session() as s:
                 d = s.get(Deploy, deploy_id)
@@ -187,42 +193,45 @@ class Deployer:
                 emit("[koyra] no manifest found; repo looks static → runtime: static")
             emit(f"[koyra] manifest ok: {manifest.name} (runtime={manifest.runtime})")
 
-            # One-off build container: install deps + build frontend on the
-            # volume ONCE, before the long-running service starts. This avoids
-            # the served container racing its own healthcheck/restart and
-            # multiple npm builds corrupting the shared NFS node_modules.
-            # The build sees the same app env + secrets as the runtime service
-            # (same precedence: manifest env < overrides < secrets). Frameworks
-            # like Next.js/Vite inline NEXT_PUBLIC_*/VITE_* into the bundle at
-            # build time, so they must be present here, not just at runtime.
-            build_env = {
-                **manifest.env,
-                **env_overrides,
-                **secret_values,
-                "KOYRA_REPO_URL": repo_url,
-                "KOYRA_REF": commit,
-                "KOYRA_WORKSPACE": "/workspace",
-            }
-            if self.settings.github_pat:
-                build_env["KOYRA_GIT_TOKEN"] = self.settings.github_pat
-            volume = f"{self.settings.nfs_base}/{app_name}:/workspace"
-            emit("[koyra] building (one-off container)", "building")
-            for line in self.docker.build(self.settings.runtime_image, build_env, volume):
+            # Build a per-app image: either the repo's OWN Dockerfile, or one we
+            # generate from the manifest. Build-time-inlined vars (NEXT_PUBLIC_*/
+            # VITE_*) go in as build-args; secrets stay runtime-only (not baked).
+            if manifest.uses_dockerfile:
+                dockerfile = manifest.dockerfile or "Dockerfile"
+                if not (dest / dockerfile).is_file():
+                    raise FileNotFoundError(
+                        f"manifest references {dockerfile} but it's not in the repo")
+                emit(f"[koyra] building image from {dockerfile}", "building")
+            else:
+                dockerfile = ".koyra.Dockerfile"
+                (dest / dockerfile).write_text(
+                    render_dockerfile(manifest, self.settings.runtime_image))
+                emit("[koyra] building image (generated Dockerfile)", "building")
+
+            base = f"{self.settings.registry}/koyra-app-{app_name}"
+            image = f"{base}:{commit[:12]}"
+            build_args = {**manifest.env, **env_overrides}
+            for line in self.docker.image_build(image, str(dest), build_args,
+                                                str(dest / dockerfile)):
+                emit(line)
+            self.docker.image_tag(image, f"{base}:latest")
+            emit(f"[koyra] pushing {image} → registry", "building")
+            for line in self.docker.image_push(image):
+                emit(line)
+            for line in self.docker.image_push(f"{base}:latest"):
                 emit(line)
 
             stack = render_stack(
                 manifest,
                 app_name=app_name,
-                repo_url=repo_url,
-                ref=commit,
-                git_token=self.settings.github_pat,
+                image=image,
                 env_overrides=env_overrides,
                 secret_values=secret_values,
                 settings=self.settings,
                 hosts=hosts or None,
                 analytics_site=analytics_site,
             )
-            emit("[koyra] build ok; deploying service to swarm", "deploying")
+            emit("[koyra] image ready; deploying service to swarm", "deploying")
             for line in self.docker.deploy(f"koyra-{app_name}", stack):
                 emit(line)
             emit("[koyra] deploy complete — live", "live")
@@ -236,6 +245,8 @@ class Deployer:
             print(traceback.format_exc(), file=sys.stderr)
             self._fire(app_id, "deploy_failed", msg, hosts[0] if hosts else "")
         finally:
+            if dest is not None:
+                shutil.rmtree(dest, ignore_errors=True)   # free the local build dir
             with db.session() as s:
                 d = s.get(Deploy, deploy_id)
                 d.finished_at = dt.datetime.now(dt.timezone.utc)

@@ -224,23 +224,31 @@ def create_app(
         event = request.headers.get("X-GitHub-Event", "")
         if event == "ping":
             return {"ok": True}
-        if event != "push":
-            return {"ignored": event}
         try:
             payload = json.loads(body)
         except ValueError:
             raise HTTPException(status_code=400, detail="invalid payload")
-        full = (payload.get("repository") or {}).get("full_name", "").lower()
-        branch = webhooks.branch_from_ref(payload.get("ref", ""))
+        # push → deploy now (no-CI repos); workflow_run(success) → deploy after
+        # CI passes. The repo's webhook sends whichever event suits it.
+        target = webhooks.deploy_target(event, payload)
+        if target is None:
+            return {"ignored": event}
+        full, branch, sha = target
         triggered = []
-        if full and branch:
-            with db.session() as s:
-                for a in s.query(App).filter_by(auto_deploy=True).all():
-                    if webhooks.repo_slug(a.repo_url) == full and a.branch == branch:
-                        d = Deploy(app_id=a.id, ref=a.branch, status="pending")
-                        s.add(d)
-                        s.commit()
-                        triggered.append((d.id, a.name))
+        with db.session() as s:
+            for a in s.query(App).filter_by(auto_deploy=True).all():
+                if webhooks.repo_slug(a.repo_url) != full or a.branch != branch:
+                    continue
+                # Dedup: skip a commit already deployed/in-flight (e.g. if a repo
+                # ends up sending both push and workflow_run for the same sha).
+                latest = (s.query(Deploy).filter_by(app_id=a.id)
+                          .order_by(Deploy.id.desc()).first())
+                if latest and sha and latest.commit == sha and latest.status != "failed":
+                    continue
+                d = Deploy(app_id=a.id, ref=a.branch, status="pending")
+                s.add(d)
+                s.commit()
+                triggered.append((d.id, a.name))
         for did, _ in triggered:
             schedule(did)
         return {"triggered": [n for _, n in triggered]}
