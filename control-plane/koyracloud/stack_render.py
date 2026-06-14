@@ -85,8 +85,27 @@ def render_stack(
         labels += _router_labels(router, effective_hosts, cert=True)
 
     # NFS is used only for persisted data dirs (shared across nodes), never for
-    # code. Mounted at the same paths the image expects under /app.
-    volumes = [f"{settings.nfs_base}/{app_name}/{d}:/app/{d}" for d in manifest.persist]
+    # code, mounted at the paths the image expects under /app. With an NFS server
+    # configured, each dir is a Docker NFS-driver volume — Docker mounts the NFS
+    # on whichever node runs the app, so nothing is pinned. Without one (local /
+    # dev), fall back to a plain bind mount.
+    service_volumes: list[str] = []
+    named_volumes: dict[str, dict] = {}
+    for d in manifest.persist:
+        device = f"{settings.nfs_base}/{app_name}/{d}"
+        if settings.nfs_server:
+            vol = f"koyra-{app_name}-{d}".replace("/", "-")
+            service_volumes.append(f"{vol}:/app/{d}")
+            named_volumes[vol] = {
+                "driver": "local",
+                "driver_opts": {
+                    "type": "nfs",
+                    "o": f"addr={settings.nfs_server},rw,nfsvers=4",
+                    "device": f":{device}",
+                },
+            }
+        else:
+            service_volumes.append(f"{device}:/app/{d}")
 
     service: dict = {
         "image": image,
@@ -117,8 +136,8 @@ def render_stack(
         },
     }
 
-    if volumes:
-        service["volumes"] = volumes
+    if service_volumes:
+        service["volumes"] = service_volumes
 
     # No placement constraint by default: the image is pulled from the internal
     # registry, so swarm can run (and reschedule) the app on any node. Pin only
@@ -139,8 +158,11 @@ def render_stack(
             "start_period": settings.healthcheck_start_period,
         }
 
-    return {
+    stack = {
         "version": "3.8",
         "services": {app_name: service},
         "networks": {settings.traefik_network: {"external": True}},
     }
+    if named_volumes:
+        stack["volumes"] = named_volumes
+    return stack

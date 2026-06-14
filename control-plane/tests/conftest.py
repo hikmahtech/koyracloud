@@ -94,6 +94,7 @@ def settings(tmp_path):
         nfs_base=str(tmp_path / "nfs"),
         build_dir=str(tmp_path / "build"),
         registry="reg:5000",
+        nfs_server="10.0.0.9",
         dev_login="tester",
         github_pat="",
         webhook_secret="testhooksecret",
