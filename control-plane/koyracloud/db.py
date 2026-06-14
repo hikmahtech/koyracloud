@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import secrets
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
@@ -15,8 +15,25 @@ class Database:
     def __init__(self, db_url: str):
         connect_args = {"check_same_thread": False} if db_url.startswith("sqlite") else {}
         self.engine = create_engine(db_url, connect_args=connect_args, future=True)
+        if db_url.startswith("sqlite"):
+            self._enable_sqlite_concurrency()
         self._factory = sessionmaker(self.engine, expire_on_commit=False,
                                      class_=Session, future=True)
+
+    def _enable_sqlite_concurrency(self) -> None:
+        """WAL + busy_timeout so concurrent reads don't block writes and a writer
+        waits for a contended lock instead of failing immediately with
+        'database is locked'. The deployer streams build output line-by-line as
+        UPDATEs to deploys.log, which under the default rollback journal would
+        intermittently lose that race against any concurrent read and abort the
+        deploy. Applied per-connection via a connect listener (pool-safe)."""
+        @event.listens_for(self.engine, "connect")
+        def _set_pragmas(dbapi_conn, _record):  # noqa: ANN001
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=15000")
+            cur.execute("PRAGMA synchronous=NORMAL")
+            cur.close()
 
     def create_all(self) -> None:
         # Import models so they register on Base.metadata before create_all.
