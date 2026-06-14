@@ -1,0 +1,27 @@
+# Apex -> www redirector (koyracloud utility service).
+#
+# Purpose: some DNS providers (e.g. Google Cloud DNS, Squarespace-managed) can
+# neither CNAME nor ALIAS a zone apex, and koyracloud's Cloudflare-for-SaaS only
+# activates a custom hostname via a CNAME — so a bare apex can't be served or
+# redirected through the normal hidden tunnel path. This tiny service fills that
+# gap: it 301-redirects <apex> -> https://www.<apex><path>, with a real
+# Let's Encrypt cert (HTTP-01 works here because WAN2:80 is port-forwarded to
+# this service — the inbound path the Cloudflare tunnel can't provide).
+#
+# Exposure: reached ONLY via a WAN2 port-forward (:80 -> baa:8081, :443 ->
+# baa:8443). www and all real app traffic still flow through the hidden CF
+# tunnel; only the bare apex touches WAN2. If WAN2 is down, only apex redirects
+# break — the sites keep working on www.
+#
+# To onboard another apex: add a block below (host -> https://www.host) and
+# redeploy (bump the config version in deploy/apex-redirect-stack.yml).
+
+{
+	http_port 8081
+	https_port 8443
+	email arshad@hikmahtechnologies.com
+}
+
+eyelookoptics.in {
+	redir https://www.eyelookoptics.in{uri} permanent
+}

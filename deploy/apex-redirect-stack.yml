@@ -1,0 +1,34 @@
+# Apex -> www redirector. See deploy/apex-redirect/Caddyfile for the rationale.
+# Deploy:
+#   docker --context swarm-baa stack deploy -c deploy/apex-redirect-stack.yml apex-redirect
+# (run from the repo's deploy/ directory so the config file path resolves)
+#
+# WAN2 port-forward required:  :80 -> 10.20.0.11:8081   :443 -> 10.20.0.11:8443
+# Then point each apex's A record at the WAN2 public IP.
+services:
+  caddy:
+    image: caddy:2-alpine
+    configs:
+      - source: apex_caddyfile_v1
+        target: /etc/caddy/Caddyfile
+    volumes:
+      - apex_caddy_data:/data      # Let's Encrypt cert storage (survives restarts)
+    ports:
+      - { target: 8081, published: 8081, protocol: tcp, mode: host }   # <- WAN2 :80
+      - { target: 8443, published: 8443, protocol: tcp, mode: host }   # <- WAN2 :443
+    deploy:
+      replicas: 1
+      placement:
+        constraints: ["node.hostname == baa"]   # stable target for the WAN2 forward
+      restart_policy:
+        condition: any
+
+configs:
+  # config objects are immutable — bump the version (v2, v3, ...) here AND in the
+  # service's `source` whenever you edit the Caddyfile, then redeploy.
+  apex_caddyfile_v1:
+    file: ./apex-redirect/Caddyfile
+
+volumes:
+  apex_caddy_data:
+    driver: local
