@@ -492,7 +492,7 @@ function SettingsTab({ id, app }) {
         </label>
         <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="accent-[var(--color-acid)]" />
-          <span className="text-[var(--color-muted)]">Auto-deploy on push</span>
+          <span className="text-[var(--color-muted)]">Auto-deploy on push / CI</span>
         </label>
         <button onClick={() => save.mutate()} className="btn btn-primary text-sm">{save.isPending ? "Saving…" : "Save"}</button>
       </div>
@@ -500,13 +500,27 @@ function SettingsTab({ id, app }) {
       <div className="card p-6 space-y-2">
         <div className="text-sm font-medium">Push-to-deploy</div>
         <p className="text-xs text-[var(--color-muted)]">
-          With auto-deploy on, a push to <span className="mono">{app.branch}</span> redeploys this app.
-          Point a GitHub webhook (or your GitHub App's webhook) at this URL, content-type
-          <span className="mono"> application/json</span>, secret = your <span className="mono">KOYRA_WEBHOOK_SECRET</span>:
+          With auto-deploy on, point a GitHub webhook at the URL below (content-type
+          <span className="mono"> application/json</span>, secret = <span className="mono">KOYRA_WEBHOOK_SECRET</span>),
+          then pick which event it sends for <span className="mono">{app.branch}</span>:
         </p>
+        <ul className="text-xs text-[var(--color-muted)] list-disc pl-5 space-y-0.5">
+          <li><span className="mono text-[var(--color-fg)]">push</span> — deploy on every push (repos without CI).</li>
+          <li><span className="mono text-[var(--color-fg)]">workflow_run</span> — deploy only after a GitHub Actions run completes successfully (repos with CI).</li>
+        </ul>
         <div className="mono text-xs bg-[var(--color-ink)] border border-[var(--color-line)] rounded px-3 py-2 break-all">
           {window.location.origin}/api/webhooks/github
         </div>
+      </div>
+
+      <div className="card p-6 space-y-1.5">
+        <div className="text-sm font-medium">How it builds</div>
+        <p className="text-xs text-[var(--color-muted)]">
+          Each deploy builds a container image from your repo (its own
+          <span className="mono"> Dockerfile</span>, or one koyracloud generates from
+          <span className="mono"> .paas/app.yaml</span>), pushes it to the internal registry, and runs it
+          on the swarm. Watch the <b className="text-[var(--color-fg)]">Deploys</b> tab for live build → push → deploy logs.
+        </p>
       </div>
 
       <NotifyCard id={id} />

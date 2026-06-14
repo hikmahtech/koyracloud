@@ -16,6 +16,11 @@ services:
       KOYRA_WEBHOOK_SECRET_FILE: /run/secrets/koyra_webhook_secret
       KOYRA_ALLOWED_LOGINS: ${KOYRA_ALLOWED_LOGINS}
       KOYRA_RUNTIME_IMAGE: ${KOYRA_RUNTIME_IMAGE:-koyracloud-runtime:latest}
+      # Internal registry (the `registry` service below) + a LOCAL build dir.
+      # Per-app images are built off-NFS and pushed here; swarm pulls them on any
+      # node, so apps aren't pinned to the build node.
+      KOYRA_REGISTRY: ${KOYRA_REGISTRY:-127.0.0.1:5000}
+      KOYRA_BUILD_DIR: ${KOYRA_BUILD_DIR:-/tmp/koyra-build}
       KOYRA_NFS_BASE: ${KOYRA_NFS_BASE:-/mnt/koyracloud}
       KOYRA_APPS_DOMAIN: ${KOYRA_APPS_DOMAIN:-apps.example.com}
       KOYRA_BASE_URL: ${KOYRA_BASE_URL}
@@ -69,6 +74,26 @@ services:
       restart_policy:
         condition: on-failure
         max_attempts: 3
+
+  # Internal Docker registry koyracloud owns. Per-app images are pushed here and
+  # pulled by swarm on whichever node runs the app. Published on the ingress
+  # mesh, so every node reaches it as 127.0.0.1:5000 (treated as insecure-OK by
+  # default) — it is never exposed outside the swarm. One instance, unpinned;
+  # storage is NFS-backed so a reschedule keeps the images.
+  registry:
+    image: registry:2
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    volumes:
+      - ${KOYRA_NFS_BASE:-/mnt/koyracloud}/registry:/var/lib/registry
+    networks:
+      - traefik_public
+    ports:
+      - "5000:5000"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
 
 # The Traefik edge network. Convention name; change here if your swarm differs.
 networks:

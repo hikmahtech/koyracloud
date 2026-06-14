@@ -17,31 +17,27 @@ def render_stack(
     manifest: Manifest,
     *,
     app_name: str,
-    repo_url: str,
-    ref: str,
-    git_token: str,
+    image: str,
     env_overrides: dict[str, str],
     secret_values: dict[str, str],
     settings: Settings,
     hosts: list[str] | None = None,
     analytics_site: str = "",
 ) -> dict:
+    # ``image`` is the per-app image already built + pushed to the internal
+    # registry; the container serves the app from it (no NFS workspace).
     # Control-plane-managed domains take precedence; fall back to the manifest
     # subdomain (or a derived default) when none are configured.
     effective_hosts = list(hosts) if hosts else [app_host(manifest, app_name, settings)]
     router = f"koyra-{app_name}"
 
-    # Build the container environment: manifest defaults < control-plane env <
-    # decrypted secrets < koyra-injected runtime vars.
+    # Runtime environment: manifest defaults < control-plane env < decrypted
+    # secrets. (Build-time vars are baked into the image at build; these are the
+    # values read at runtime.)
     environment: dict[str, str] = {}
     environment.update(manifest.env)
     environment.update(env_overrides)
     environment.update(secret_values)
-    environment["KOYRA_REPO_URL"] = repo_url
-    environment["KOYRA_REF"] = ref
-    environment["KOYRA_WORKSPACE"] = "/workspace"
-    if git_token:
-        environment["KOYRA_GIT_TOKEN"] = git_token
     # Native analytics: the static server auto-injects the beacon when these are
     # set (only meaningful for runtime: static; dynamic apps paste the snippet).
     if analytics_site:
@@ -88,10 +84,13 @@ def render_stack(
     if not zone_hosts and not saas_hosts:  # defensive; effective_hosts is never empty
         labels += _router_labels(router, effective_hosts, cert=True)
 
+    # NFS is used only for persisted data dirs (shared across nodes), never for
+    # code. Mounted at the same paths the image expects under /app.
+    volumes = [f"{settings.nfs_base}/{app_name}/{d}:/app/{d}" for d in manifest.persist]
+
     service: dict = {
-        "image": settings.runtime_image,
+        "image": image,
         "environment": environment,
-        "volumes": [f"{settings.nfs_base}/{app_name}:/workspace"],
         "networks": [settings.traefik_network],
         "deploy": {
             "replicas": 1,
@@ -118,6 +117,12 @@ def render_stack(
         },
     }
 
+    if volumes:
+        service["volumes"] = volumes
+
+    # No placement constraint by default: the image is pulled from the internal
+    # registry, so swarm can run (and reschedule) the app on any node. Pin only
+    # if an operator explicitly sets app_node.
     if settings.app_node:
         service["deploy"]["placement"] = {
             "constraints": [f"node.hostname == {settings.app_node}"]
