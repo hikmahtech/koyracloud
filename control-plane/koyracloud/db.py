@@ -1,6 +1,8 @@
 """SQLAlchemy engine/session wiring. SQLite by default, Postgres via DB_URL."""
 from __future__ import annotations
 
+import secrets
+
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -29,6 +31,17 @@ class Database:
         if "apps" not in insp.get_table_names():
             return
         cols = {c["name"] for c in insp.get_columns("apps")}
+        # apps gained a random subdomain_token (default-URL uniqueness) after
+        # release; add it and backfill a token for every existing app.
+        if "subdomain_token" not in cols:
+            with self.engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE apps ADD COLUMN subdomain_token VARCHAR(16) DEFAULT ''"))
+                ids = [r[0] for r in conn.execute(text("SELECT id FROM apps")).all()]
+                for app_id in ids:
+                    conn.execute(
+                        text("UPDATE apps SET subdomain_token = :t WHERE id = :i"),
+                        {"t": secrets.token_hex(3), "i": app_id})
         if "owner_login" not in cols:
             with self.engine.begin() as conn:
                 conn.execute(text(

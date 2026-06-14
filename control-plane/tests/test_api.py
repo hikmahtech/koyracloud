@@ -1,5 +1,6 @@
 """End-to-end API tests with injected fake docker + cloner and synchronous deploy."""
 import json
+import re
 
 
 def test_health_unauthenticated(client):
@@ -128,19 +129,22 @@ def test_create_seeds_primary_domain(client):
                       "repo_url": "https://github.com/o/r"}).json()["id"]
     domains = client.get(f"/api/apps/{aid}/domains").json()
     assert len(domains) == 1
-    assert domains[0]["host"] == "demo-app.apps.example.com"
+    # <name>-<random token>.<apps_domain>
+    assert re.fullmatch(r"demo-app-[0-9a-f]{6}\.apps\.example\.com", domains[0]["host"])
     assert domains[0]["is_primary"] is True
 
 
 def test_domain_add_setprimary_delete(client):
     aid = client.post("/api/apps", json={"name": "shop",
                       "repo_url": "https://github.com/o/r"}).json()["id"]
+    # the seeded auto-subdomain carries a random token, so capture it
+    auto_host = client.get(f"/api/apps/{aid}/domains").json()[0]["host"]
     # add a custom domain
     d = client.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"})
     assert d.status_code == 201
     did = d.json()["id"]
     assert {x["host"] for x in client.get(f"/api/apps/{aid}/domains").json()} == \
-        {"shop.apps.example.com", "shop.example.com"}
+        {auto_host, "shop.example.com"}
     # invalid host rejected
     assert client.post(f"/api/apps/{aid}/domains", json={"host": "not a domain"}).status_code == 422
     # duplicate host rejected
@@ -160,10 +164,24 @@ def test_domain_add_setprimary_delete(client):
 def test_deploy_uses_configured_domains(client, env):
     aid = client.post("/api/apps", json={"name": "shop",
                       "repo_url": "https://github.com/o/r"}).json()["id"]
+    auto_host = client.get(f"/api/apps/{aid}/domains").json()[0]["host"]
     client.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"})
     client.post(f"/api/apps/{aid}/deploys", json={})
     rule = _rule_of(env, "shop")  # union of all router rules (apps + saas split)
-    assert "shop.apps.example.com" in rule and "shop.example.com" in rule
+    assert auto_host in rule and "shop.example.com" in rule
+
+
+def test_redeploy_same_commit_skips_build(client, env):
+    # A redeploy at the same commit (e.g. re-rendering routing after a domain
+    # change) reuses the registry image instead of rebuilding on the control
+    # plane — it's a pure swarm service deploy.
+    aid = client.post("/api/apps", json={"name": "shop",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    client.post(f"/api/apps/{aid}/deploys", json={})
+    assert len(env["docker"].builds) == 1          # first deploy builds + pushes
+    client.post(f"/api/apps/{aid}/deploys", json={})
+    assert len(env["docker"].builds) == 1          # same commit → no rebuild
+    assert len(env["docker"].deployed) == 2        # but it re-deploys the service
 
 
 def _rule_of(env, service):
@@ -189,6 +207,7 @@ def test_add_domain_redeploys_live_app(client, env):
 def test_delete_domain_redeploys_live_app(client, env):
     aid = client.post("/api/apps", json={"name": "shop",
                       "repo_url": "https://github.com/o/r"}).json()["id"]
+    auto_host = client.get(f"/api/apps/{aid}/domains").json()[0]["host"]
     did = client.post(f"/api/apps/{aid}/domains",
                       json={"host": "shop.example.com"}).json()["id"]
     client.post(f"/api/apps/{aid}/deploys", json={})          # live with both hosts
@@ -196,7 +215,7 @@ def test_delete_domain_redeploys_live_app(client, env):
     assert client.delete(f"/api/apps/{aid}/domains/{did}").status_code == 204
     assert len(env["docker"].deployed) == n + 1              # auto-redeployed
     rule = _rule_of(env, "shop")
-    assert "shop.example.com" not in rule and "shop.apps.example.com" in rule
+    assert "shop.example.com" not in rule and auto_host in rule
 
 
 def test_domain_change_skips_redeploy_when_not_live(client, env):
@@ -513,7 +532,7 @@ def test_apps_subdomain_skips_cf(env):
     aid = c.post("/api/apps", json={"name": "shop",
                  "repo_url": "https://github.com/o/r"}).json()["id"]
     doms = c.get(f"/api/apps/{aid}/domains").json()
-    auto = next(d for d in doms if d["host"] == "shop.apps.example.com")
+    auto = next(d for d in doms if d["host"].endswith(".apps.example.com"))
     assert cf.created == [] and auto["records"] == [] and auto["ssl_status"] is None
 
 

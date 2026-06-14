@@ -5,7 +5,7 @@ from koyracloud import auth
 from koyracloud.config import Settings, _secret
 from koyracloud.crypto import CryptoBox, generate_key
 from koyracloud.manifest import parse_manifest
-from koyracloud.stack_render import app_host, render_stack
+from koyracloud.stack_render import app_host, auto_subdomain, render_stack
 
 VALID = """
 name: demo
@@ -251,6 +251,17 @@ def test_app_host_derives_when_blank():
     assert app_host(m, "x", _settings()) == "x.apps.example.com"
 
 
+def test_auto_subdomain_appends_token():
+    assert auto_subdomain("demo", "ab12cd", _settings()) == "demo-ab12cd.apps.example.com"
+    # no token (pre-token apps) → bare name
+    assert auto_subdomain("demo", "", _settings()) == "demo.apps.example.com"
+
+
+def test_app_host_derives_with_token():
+    m = parse_manifest("name: x\nstart: y\nport: 8000\n")
+    assert app_host(m, "x", _settings(), token="ab12cd") == "x-ab12cd.apps.example.com"
+
+
 def test_render_stack_traefik_and_image():
     m = parse_manifest(VALID)
     stack = render_stack(m, app_name="demo", image="reg/koyra-app-demo:abc",
@@ -370,6 +381,21 @@ def test_render_stack_custom_only_host_has_no_certresolver():
     labels = stack["services"]["demo"]["deploy"]["labels"]
     assert not any("certresolver" in l for l in labels)
     assert any("Host(`shop.example.com`)" in l for l in labels)
+
+
+def test_render_stack_apps_domain_proxied_skips_certresolver():
+    # When apps_domain is fronted by a TLS-terminating proxy, even the in-zone
+    # auto-subdomain must NOT carry a Let's Encrypt resolver — the edge serves it.
+    from dataclasses import replace
+    s = replace(_settings(), apps_domain_proxied=True)
+    m = parse_manifest(VALID)
+    stack = render_stack(m, app_name="demo", image="img",
+                         env_overrides={}, secret_values={}, settings=s,
+                         hosts=["demo.apps.example.com"])
+    labels = stack["services"]["demo"]["deploy"]["labels"]
+    assert not any("certresolver" in l for l in labels)
+    assert any("routers.koyra-demo.tls=true" in l for l in labels)
+    assert any("Host(`demo.apps.example.com`)" in l for l in labels)
 
 
 def test_render_stack_resource_limits_default_and_override():

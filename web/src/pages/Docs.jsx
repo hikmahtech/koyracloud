@@ -109,7 +109,7 @@ secrets:
                   <Field name="port" req>Container port Traefik routes to.</Field>
                   <Field name="build">Image build steps (become <span className="mono">RUN</span> layers). Cached by Docker's layer cache; unchanged deps aren't reinstalled.</Field>
                   <Field name="predeploy">Commands run on every start before the app — e.g. migrations. Must be idempotent.</Field>
-                  <Field name="subdomain">Default host. Falls back to <span className="mono">&lt;name&gt;.apps.example.com</span>. Manage more in the Domains tab.</Field>
+                  <Field name="subdomain">Default host. Falls back to <span className="mono">&lt;name&gt;-&lt;token&gt;.apps.example.com</span> (a random token keeps names from colliding). Manage more in the Domains tab.</Field>
                   <Field name="persist">Directories that survive redeploys (NFS-backed volumes, mounted into the container).</Field>
                   <Field name="healthcheck">HTTP path probed for liveness, e.g. <span className="mono">/health</span>.</Field>
                   <Field name="env">Non-secret environment defaults baked into the deploy.</Field>

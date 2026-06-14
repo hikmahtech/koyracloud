@@ -22,12 +22,20 @@ is. It complements the [README](../README.md) (what it is) and
 2. manifest     read .paas/app.yaml (or synthesize one for a static repo)
 3. dockerfile   use the repo's own Dockerfile, or generate one from the manifest
 4. build        docker build  → koyra-app-<name>:<commit>   (app env as build args)
+                (SKIPPED when <commit> was already built + pushed by a prior live
+                 deploy — the redeploy then just re-deploys the existing image)
 5. push         docker push   → <registry>/koyra-app-<name>:<commit> and :latest
 6. deploy       docker stack deploy → Swarm service from the registry image
 7. run          Swarm pulls + runs the app on any node; clean up the local build dir
 ```
 
 Each step streams to the deploy log (SSE) so you watch it live in the dashboard.
+
+Only step 4 (the `docker build`) runs on the control-plane node's Docker; everything
+the app actually *does* is a Swarm service (step 6/7) scheduled on **any** node — apps
+are never pinned to the control plane. Re-rendering routing (e.g. attaching a domain)
+is the common redeploy that hits the build-skip, so it costs nothing but a Swarm
+service update.
 
 ## Decision: build into an image, off NFS — not build-on-NFS
 
@@ -99,8 +107,27 @@ in `pending_validation` forever. DNS validation via the `_acme-challenge` delega
 sidesteps the app entirely. (Proven the hard way: a real hostname stuck on HTTP validation
 went active within ~90s once switched to `txt`.)
 
-The app's own `*.apps.<domain>` auto-subdomain is in-zone and skips this — it just gets a
-Traefik / Let's Encrypt cert.
+## Decision: default app URLs are `<name>-<token>.<apps_domain>` behind one wildcard
+
+Every app gets a default URL the moment it's created, with no DNS work by the user. Two
+choices make this free and collision-proof:
+
+- **One label deep, so one free wildcard cert covers everything.** The host is
+  `<name>-<token>.<apps_domain>` and `apps_domain` is a single label under the zone (e.g.
+  `koyracloud.com`, *not* `apps.koyracloud.com`). A provider's free wildcard cert for
+  `*.<apps_domain>` (e.g. Cloudflare Universal SSL) only matches one label deep, so keeping
+  the host one level down means no paid certificate is needed. A single proxied wildcard DNS
+  record `*.<apps_domain>` → the tunnel routes every app to Traefik, which dispatches by Host.
+- **A random per-app `token`** (a short hex slug stored on the app) is appended to the name
+  so two apps can never collide on a URL and the URLs aren't trivially enumerable
+  (Vercel-style). It's generated once at creation and seeded as the app's primary `Domain`.
+
+The auto-subdomain is in-zone, so it skips the Cloudflare-for-SaaS custom-hostname flow
+above. Its TLS depends on how `apps_domain` is fronted: a self-host with open `80/443` lets
+Traefik mint a Let's Encrypt cert (the default). When `apps_domain` sits behind a
+TLS-terminating proxy over a tunnel (no inbound HTTP-01 path), set
+`KOYRA_APPS_DOMAIN_PROXIED=1` so Traefik *skips* ACME for in-zone hosts — the edge already
+serves the wildcard cert, and an ACME attempt would only fail and burn rate limits.
 
 ## Decision: app env + secrets reach the build, as build args
 

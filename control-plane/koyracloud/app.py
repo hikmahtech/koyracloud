@@ -27,6 +27,7 @@ from koyracloud.models import (AllowedUser, App, AppAnalytics, AppNotify,
 from koyracloud.schemas import (AllowedUserIn, AppCreate, AppOut, AppUpdate,
                                 DeployOut, DeployTrigger, DnsRecord, DomainIn,
                                 DomainOut, EnvVarIn, RollbackRequest, SecretIn)
+from koyracloud.stack_render import auto_subdomain
 
 import re as _re
 
@@ -349,17 +350,27 @@ def create_app(
     from urllib.parse import urlparse
     _control_host = urlparse(settings.base_url).netloc.lower().split(":")[0]
 
-    def _is_reserved_host(host: str, app_name: str) -> bool:
+    def _is_reserved_host(host: str, own_auto: str) -> bool:
         """Block claiming the control-plane host, the apps-domain apex, or any
-        *.apps-domain subdomain other than this app's own auto-subdomain."""
+        in-zone subdomain other than this app's own auto-subdomain (``own_auto``).
+        The whole apps_domain is the platform's namespace, so a custom domain a
+        user attaches must be external."""
         host = host.lower()
         apps = settings.apps_domain.lower()
         reserved = {apps, _control_host, *(h.lower() for h in settings.reserved_hosts)}
         if host in reserved:
             return True
         if host.endswith("." + apps):
-            return host != f"{app_name}.{apps}"
+            return host != own_auto.lower()
         return False
+
+    def _new_subdomain_token(s) -> str:
+        """A short random slug that no existing app already uses (so default
+        URLs are collision-free)."""
+        while True:
+            token = _secrets.token_hex(3)
+            if not s.query(App).filter_by(subdomain_token=token).first():
+                return token
 
     def _dns_ok(host: str) -> bool | None:
         """True if host resolves to the homelab IP, False if it resolves
@@ -451,11 +462,14 @@ def create_app(
             if s.query(App).filter_by(name=body.name).first():
                 raise HTTPException(status_code=409, detail="app name already exists")
             obj = App(name=body.name, repo_url=body.repo_url, branch=body.branch,
-                      auto_deploy=body.auto_deploy, owner_login=login)
+                      auto_deploy=body.auto_deploy, owner_login=login,
+                      subdomain_token=_new_subdomain_token(s))
             s.add(obj)
             s.flush()
-            # Seed the default auto-subdomain as the primary domain.
-            s.add(Domain(app_id=obj.id, host=f"{obj.name}.{settings.apps_domain}",
+            # Seed the default auto-subdomain (<name>-<token>.<apps_domain>) as
+            # the primary domain.
+            s.add(Domain(app_id=obj.id,
+                         host=auto_subdomain(obj.name, obj.subdomain_token, settings),
                          is_primary=True))
             s.add(AppAnalytics(app_id=obj.id, token=analytics.new_token(), enabled=True))
             s.add(AppNotify(app_id=obj.id, owner_login=login, notify_email=""))
@@ -568,7 +582,8 @@ def create_app(
     def add_domain(app_id: int, body: DomainIn, login: str = Auth):
         with db.session() as s:
             obj = get_app_or_404(app_id, s, login)
-            if _is_reserved_host(body.host, obj.name):
+            own_auto = auto_subdomain(obj.name, obj.subdomain_token, settings)
+            if _is_reserved_host(body.host, own_auto):
                 raise HTTPException(status_code=400, detail="that host is reserved")
             if s.query(Domain).filter_by(host=body.host).first():
                 raise HTTPException(status_code=409, detail="domain already in use")
