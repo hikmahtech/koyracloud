@@ -22,6 +22,9 @@ services:
       KOYRA_REGISTRY: ${KOYRA_REGISTRY:-127.0.0.1:5000}
       KOYRA_BUILD_DIR: ${KOYRA_BUILD_DIR:-/tmp/koyra-build}
       KOYRA_NFS_BASE: ${KOYRA_NFS_BASE:-/mnt/koyracloud}
+      # NFS server for app persist volumes (Docker mounts the NFS per-node, so
+      # apps with data aren't pinned). Empty → plain bind mounts.
+      KOYRA_NFS_SERVER: ${KOYRA_NFS_SERVER:-}
       KOYRA_APPS_DOMAIN: ${KOYRA_APPS_DOMAIN:-apps.example.com}
       KOYRA_BASE_URL: ${KOYRA_BASE_URL}
       KOYRA_PUBLIC_IP: ${KOYRA_PUBLIC_IP:-}
@@ -78,14 +81,15 @@ services:
   # Internal Docker registry koyracloud owns. Per-app images are pushed here and
   # pulled by swarm on whichever node runs the app. Published on the ingress
   # mesh, so every node reaches it as 127.0.0.1:5000 (treated as insecure-OK by
-  # default) — it is never exposed outside the swarm. One instance, unpinned;
-  # storage is NFS-backed so a reschedule keeps the images.
+  # default) — it is never exposed outside the swarm. One instance, UNPINNED;
+  # storage is an NFS-driver volume (Docker mounts the NFS on whatever node it
+  # lands on), so a reschedule keeps the images and nothing is pinned.
   registry:
     image: registry:2
     environment:
       REGISTRY_STORAGE_DELETE_ENABLED: "true"
     volumes:
-      - ${KOYRA_NFS_BASE:-/mnt/koyracloud}/registry:/var/lib/registry
+      - koyra_registry:/var/lib/registry
     networks:
       - traefik_public
     ports:
@@ -99,6 +103,17 @@ services:
 networks:
   traefik_public:
     external: true
+
+# Registry storage: a Docker NFS-driver volume. Docker mounts the export on the
+# node the registry runs on, so the registry service needs no pre-mounted NFS
+# and no node pin. The koyracloud/registry dir must exist on the NFS export.
+volumes:
+  koyra_registry:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=${KOYRA_NFS_SERVER},rw,nfsvers=4"
+      device: ":${KOYRA_NFS_BASE:-/mnt/koyracloud}/registry"
 
 secrets:
   koyra_secret_key:

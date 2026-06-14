@@ -236,6 +236,7 @@ def test_analytics_render_injects_env():
 # --- stack_render -----------------------------------------------------------
 def _settings():
     return Settings(apps_domain="apps.koyracloud.com", nfs_base="/nfs/koyracloud",
+                    nfs_server="10.0.0.9",
                     runtime_image="img:latest", traefik_network="traefik_public",
                     cert_resolver="letsencrypt", https_entrypoint="websecure")
 
@@ -266,12 +267,30 @@ def test_render_stack_traefik_and_image():
     assert stack["networks"]["traefik_public"]["external"] is True
 
 
-def test_render_stack_persist_volumes_only():
+def test_render_stack_persist_nfs_volumes_no_pinning():
+    # With an NFS server configured, persist dirs are NFS-driver volumes (Docker
+    # mounts the NFS on whichever node runs the app), and the app is NOT pinned.
     m = parse_manifest("name: x\nstart: y\nport: 8000\npersist: [data, uploads]\n")
-    svc = render_stack(m, app_name="x", image="img", env_overrides={},
-                       secret_values={}, settings=_settings())["services"]["x"]
-    assert svc["volumes"] == ["/nfs/koyracloud/x/data:/app/data",
-                              "/nfs/koyracloud/x/uploads:/app/uploads"]
+    stack = render_stack(m, app_name="x", image="img", env_overrides={},
+                         secret_values={}, settings=_settings())
+    svc = stack["services"]["x"]
+    assert svc["volumes"] == ["koyra-x-data:/app/data", "koyra-x-uploads:/app/uploads"]
+    assert "placement" not in svc["deploy"]      # no node pin
+    vol = stack["volumes"]["koyra-x-data"]
+    assert vol["driver"] == "local"
+    assert vol["driver_opts"]["type"] == "nfs"
+    assert vol["driver_opts"]["o"] == "addr=10.0.0.9,rw,nfsvers=4"
+    assert vol["driver_opts"]["device"] == ":/nfs/koyracloud/x/data"
+
+
+def test_render_stack_persist_bind_fallback_without_nfs_server():
+    from dataclasses import replace
+    s = replace(_settings(), nfs_server="")
+    m = parse_manifest("name: x\nstart: y\nport: 8000\npersist: [data]\n")
+    stack = render_stack(m, app_name="x", image="img", env_overrides={},
+                         secret_values={}, settings=s)
+    assert stack["services"]["x"]["volumes"] == ["/nfs/koyracloud/x/data:/app/data"]
+    assert "volumes" not in stack                # no named NFS volumes
 
 
 def test_render_stack_env_precedence_no_koyra_runtime_vars():

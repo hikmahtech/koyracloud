@@ -52,6 +52,10 @@ class Settings:
         "KOYRA_BUILD_DIR", "/tmp/koyra-build"))
     nfs_base: str = field(default_factory=lambda: os.environ.get(
         "KOYRA_NFS_BASE", "/mnt/koyracloud"))
+    # NFS server for persist volumes. When set, persist dirs use Docker's NFS
+    # volume driver (Docker mounts the NFS on whichever node runs the app), so
+    # apps need no node pinning. Empty → plain bind mounts (local/dev).
+    nfs_server: str = field(default_factory=lambda: os.environ.get("KOYRA_NFS_SERVER", ""))
     traefik_network: str = field(default_factory=lambda: os.environ.get(
         "KOYRA_TRAEFIK_NETWORK", "traefik_public"))
     cert_resolver: str = field(default_factory=lambda: os.environ.get(

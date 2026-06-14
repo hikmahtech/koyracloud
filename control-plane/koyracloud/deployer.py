@@ -221,6 +221,12 @@ class Deployer:
             for line in self.docker.image_push(f"{base}:latest"):
                 emit(line)
 
+            # Ensure each persist dir exists on the NFS so its volume's device
+            # path resolves (the control plane has the NFS base mounted).
+            for d in manifest.persist:
+                (Path(self.settings.nfs_base) / app_name / d).mkdir(
+                    parents=True, exist_ok=True)
+
             stack = render_stack(
                 manifest,
                 app_name=app_name,
