@@ -13,7 +13,7 @@ runtime: python+node
 port: 8000
 start: uvicorn app:app
 healthcheck: /health
-subdomain: demo.apps.koyracloud.com
+subdomain: demo.apps.example.com
 env: {A: "1"}
 secrets: [SECRET_KEY]
 """
@@ -235,7 +235,7 @@ def test_analytics_render_injects_env():
 
 # --- stack_render -----------------------------------------------------------
 def _settings():
-    return Settings(apps_domain="apps.koyracloud.com", nfs_base="/nfs/koyracloud",
+    return Settings(apps_domain="apps.example.com", nfs_base="/nfs/koyracloud",
                     nfs_server="10.0.0.9",
                     runtime_image="img:latest", traefik_network="traefik_public",
                     cert_resolver="letsencrypt", https_entrypoint="websecure")
@@ -243,12 +243,12 @@ def _settings():
 
 def test_app_host_uses_manifest_subdomain():
     m = parse_manifest(VALID)
-    assert app_host(m, "demo", _settings()) == "demo.apps.koyracloud.com"
+    assert app_host(m, "demo", _settings()) == "demo.apps.example.com"
 
 
 def test_app_host_derives_when_blank():
     m = parse_manifest("name: x\nstart: y\nport: 8000\n")
-    assert app_host(m, "x", _settings()) == "x.apps.koyracloud.com"
+    assert app_host(m, "x", _settings()) == "x.apps.example.com"
 
 
 def test_render_stack_traefik_and_image():
@@ -259,7 +259,7 @@ def test_render_stack_traefik_and_image():
     svc = stack["services"]["demo"]
     labels = svc["deploy"]["labels"]
     assert "traefik.enable=true" in labels
-    assert any("Host(`demo.apps.koyracloud.com`)" in l for l in labels)
+    assert any("Host(`demo.apps.example.com`)" in l for l in labels)
     assert any("loadbalancer.server.port=8000" in l for l in labels)
     assert svc["image"] == "reg/koyra-app-demo:abc"   # runs the prebuilt image
     assert "volumes" not in svc                         # no persist dirs → no NFS mount
@@ -348,13 +348,13 @@ def test_render_stack_splits_saas_and_apps_routers():
     m = parse_manifest(VALID)
     stack = render_stack(m, app_name="demo", image="img",
                          env_overrides={}, secret_values={}, settings=_settings(),
-                         hosts=["demo.apps.koyracloud.com", "shop.example.com"])
+                         hosts=["demo.apps.example.com", "shop.example.com"])
     labels = stack["services"]["demo"]["deploy"]["labels"]
     apps_rule = next(l for l in labels if l.startswith("traefik.http.routers.koyra-demo.rule="))
-    assert "Host(`demo.apps.koyracloud.com`)" in apps_rule and "shop.example.com" not in apps_rule
+    assert "Host(`demo.apps.example.com`)" in apps_rule and "shop.example.com" not in apps_rule
     assert any("routers.koyra-demo.tls.certresolver=letsencrypt" in l for l in labels)
     saas_rule = next(l for l in labels if l.startswith("traefik.http.routers.koyra-demo-saas.rule="))
-    assert "Host(`shop.example.com`)" in saas_rule and "apps.koyracloud.com" not in saas_rule
+    assert "Host(`shop.example.com`)" in saas_rule and "apps.example.com" not in saas_rule
     assert not any("koyra-demo-saas.tls.certresolver" in l for l in labels)
     assert any("routers.koyra-demo-saas.tls=true" in l for l in labels)
     # both routers share the one service definition carrying the app port
@@ -456,16 +456,16 @@ class _FakeCFClient:
 
 def test_customer_records_pure():
     from koyracloud import cloudflare
-    recs = cloudflare.customer_records("shop.example.com", "origin.koyracloud.com", "abc123")
+    recs = cloudflare.customer_records("shop.example.com", "origin.example.com", "abc123")
     assert recs[0] == {"type": "CNAME", "name": "shop.example.com",
-                       "value": "origin.koyracloud.com"}
+                       "value": "origin.example.com"}
     assert recs[1] == {"type": "CNAME", "name": "_acme-challenge.shop.example.com",
                        "value": "shop.example.com.abc123.dcv.cloudflare.com"}
 
 
 def test_customer_records_traffic_only_without_dcv():
     from koyracloud import cloudflare
-    recs = cloudflare.customer_records("shop.example.com", "origin.koyracloud.com", "")
+    recs = cloudflare.customer_records("shop.example.com", "origin.example.com", "")
     assert len(recs) == 1 and recs[0]["name"] == "shop.example.com"
 
 
@@ -509,7 +509,7 @@ def test_cloudflare_create_adopts_existing():
         {"id": "ch_existing", "status": "active", "ssl": {"status": "active"}}]})])
     s = Settings(cloudflare_api_token="tok", cloudflare_zone_id="zoneid")
     cf = cloudflare.Cloudflare(s, client=fc)
-    out = cf.create_custom_hostname("lm.eyelookoptics.in")
+    out = cf.create_custom_hostname("shop.example.com")
     assert out["id"] == "ch_existing" and out["status"] == "active"
     assert len(fc.calls) == 1 and fc.calls[0][0] == "GET"  # adopted; no POST
 

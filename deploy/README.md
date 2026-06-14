@@ -29,14 +29,26 @@ cp deploy/koyracloud.env.example deploy/koyracloud.env
 $EDITOR deploy/koyracloud.env   # host, apps domain, public IP, allowlist, node…
 ```
 
-### 4. The runtime image
-Apps run the shared runtime image. Build it and either push it to a registry
-reachable by all nodes, or (single-node / no-registry) load it onto the node and
-set `KOYRA_APP_NODE` + `KOYRA_RESOLVE_IMAGE_NEVER=1`:
-```bash
-docker build -f runtime-image/Dockerfile -t koyracloud-runtime:latest runtime-image/
-# registry:  docker tag … <registry>/koyracloud-runtime && docker push …
-```
+### 4. The base buildpack image + the internal registry
+Each deploy builds a **per-app image** and pushes it to an **internal registry**
+that ships in the stack (a `registry:2` service). Apps are pulled from there and
+run on any node — nothing is pinned.
+
+- The base buildpack image (`python:3.12 + node:22 + git`) is the `FROM` for
+  *generated* app images and serves static sites. Build + make it pullable by the
+  nodes (push to a registry, or load on each node):
+  ```bash
+  docker build -f runtime-image/Dockerfile -t koyracloud-runtime:latest runtime-image/
+  ```
+  Apps that ship their own `Dockerfile` don't use it.
+- Leave `KOYRA_APP_NODE` empty and `KOYRA_RESOLVE_IMAGE_NEVER=0` so apps schedule
+  anywhere and pull from the registry. `KOYRA_REGISTRY` defaults to
+  `127.0.0.1:5000` (the registry on the ingress mesh); `KOYRA_BUILD_DIR` is a
+  **local** path (not NFS) where the control plane clones + builds.
+- Set `KOYRA_NFS_SERVER` to your NFS server IP so the registry's image store and
+  app `persist:` dirs use Docker NFS-driver volumes (mounted per-node, no pinning).
+  Create the registry's storage dir on the export once: `<nfs>/koyracloud/registry`.
+  Leave it empty for single-node / local (plain bind mounts).
 
 ### 5. Secrets (Docker secrets, created once)
 ```bash
@@ -94,12 +106,13 @@ Each user then adds two CNAMEs at their registrar (both shown in the UI):
 | CNAME | `<sub>`                 | your fallback origin (`KOYRA_CLOUDFLARE_SAAS_ORIGIN`) |
 | CNAME | `_acme-challenge.<sub>` | `<full-host>.<dcv-id>.dcv.cloudflare.com`             |
 
-Once the traffic CNAME resolves to Cloudflare, the edge auto-validates over HTTP
-and issues the cert (nothing else needed); the `_acme-challenge` record delegates
-renewals. If HTTP validation can't complete, the UI also surfaces a one-off
-ownership **TXT** record to add. Traefik does **not** mint a Let's Encrypt cert
-for these hosts — Cloudflare terminates their TLS at the edge and the app's
-SaaS-host router carries no cert resolver.
+The cert is validated over **DNS** through the `_acme-challenge` DCV-delegation
+CNAME (Cloudflare controls that record and issues + auto-renews the cert) — *not*
+over HTTP. HTTP-01 can't work behind a tunnel whose catch-all routes the
+`/.well-known/acme-challenge/` path to the app (which 404s it), so koyracloud
+registers custom hostnames with `ssl.method: txt`. Traefik does **not** mint a
+Let's Encrypt cert for these hosts — Cloudflare terminates their TLS at the edge
+and the app's SaaS-host router carries no cert resolver.
 
 > Cert propagation lags the hostname going "Active" by a few minutes — a
 > transient TLS `handshake failure` right after adding a domain is just the edge

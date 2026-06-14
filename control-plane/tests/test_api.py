@@ -128,7 +128,7 @@ def test_create_seeds_primary_domain(client):
                       "repo_url": "https://github.com/o/r"}).json()["id"]
     domains = client.get(f"/api/apps/{aid}/domains").json()
     assert len(domains) == 1
-    assert domains[0]["host"] == "demo-app.apps.koyracloud.com"
+    assert domains[0]["host"] == "demo-app.apps.example.com"
     assert domains[0]["is_primary"] is True
 
 
@@ -140,7 +140,7 @@ def test_domain_add_setprimary_delete(client):
     assert d.status_code == 201
     did = d.json()["id"]
     assert {x["host"] for x in client.get(f"/api/apps/{aid}/domains").json()} == \
-        {"shop.apps.koyracloud.com", "shop.example.com"}
+        {"shop.apps.example.com", "shop.example.com"}
     # invalid host rejected
     assert client.post(f"/api/apps/{aid}/domains", json={"host": "not a domain"}).status_code == 422
     # duplicate host rejected
@@ -163,7 +163,7 @@ def test_deploy_uses_configured_domains(client, env):
     client.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"})
     client.post(f"/api/apps/{aid}/deploys", json={})
     rule = _rule_of(env, "shop")  # union of all router rules (apps + saas split)
-    assert "shop.apps.koyracloud.com" in rule and "shop.example.com" in rule
+    assert "shop.apps.example.com" in rule and "shop.example.com" in rule
 
 
 def _rule_of(env, service):
@@ -196,7 +196,7 @@ def test_delete_domain_redeploys_live_app(client, env):
     assert client.delete(f"/api/apps/{aid}/domains/{did}").status_code == 204
     assert len(env["docker"].deployed) == n + 1              # auto-redeployed
     rule = _rule_of(env, "shop")
-    assert "shop.example.com" not in rule and "shop.apps.koyracloud.com" in rule
+    assert "shop.example.com" not in rule and "shop.apps.example.com" in rule
 
 
 def test_domain_change_skips_redeploy_when_not_live(client, env):
@@ -407,7 +407,7 @@ def test_add_domain_rejects_reserved(client):
     aid = client.post("/api/apps", json={"name": "site",
                       "repo_url": "https://github.com/o/r"}).json()["id"]
     # apps-domain apex and a *.apps subdomain that isn't this app's own are reserved
-    for host in ["apps.koyracloud.com", "foreign.apps.koyracloud.com"]:
+    for host in ["apps.example.com", "foreign.apps.example.com"]:
         r = client.post(f"/api/apps/{aid}/domains", json={"host": host})
         assert r.status_code == 400, f"{host} -> {r.status_code}"
     # a normal custom domain is fine
@@ -469,7 +469,7 @@ class _FakeCF:
 
     def records_for(self, host):
         from koyracloud import cloudflare
-        return cloudflare.customer_records(host, "origin.koyracloud.com", self.dcv_uuid())
+        return cloudflare.customer_records(host, "origin.example.com", self.dcv_uuid())
 
 
 def _cf_client(env, cf):
@@ -502,7 +502,7 @@ def test_add_domain_creates_cf_hostname_and_returns_records(env):
     body = c.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"}).json()
     assert cf.created == ["shop.example.com"]
     recs = {r["name"]: r["value"] for r in body["records"]}
-    assert recs["shop.example.com"] == "origin.koyracloud.com"
+    assert recs["shop.example.com"] == "origin.example.com"
     assert recs["_acme-challenge.shop.example.com"] == "shop.example.com.bc21f3.dcv.cloudflare.com"
     assert body["ssl_status"] == "pending_validation" and body["verified"] is False
 
@@ -513,7 +513,7 @@ def test_apps_subdomain_skips_cf(env):
     aid = c.post("/api/apps", json={"name": "shop",
                  "repo_url": "https://github.com/o/r"}).json()["id"]
     doms = c.get(f"/api/apps/{aid}/domains").json()
-    auto = next(d for d in doms if d["host"] == "shop.apps.koyracloud.com")
+    auto = next(d for d in doms if d["host"] == "shop.apps.example.com")
     assert cf.created == [] and auto["records"] == [] and auto["ssl_status"] is None
 
 

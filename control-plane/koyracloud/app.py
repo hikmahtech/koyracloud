@@ -372,8 +372,8 @@ def create_app(
             return False
 
     def _in_apps_zone(host: str) -> bool:
-        """The app's own *.apps.koyracloud.com auto-subdomain is already in the
-        SaaS zone — no Cloudflare custom hostname is needed for it."""
+        """The app's own auto-subdomain (under the configured apps_domain) is
+        already in the SaaS zone — no Cloudflare custom hostname is needed."""
         apps = settings.apps_domain.lower()
         h = host.lower()
         return h == apps or h.endswith("." + apps)
