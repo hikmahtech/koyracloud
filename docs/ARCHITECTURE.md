@@ -22,12 +22,20 @@ is. It complements the [README](../README.md) (what it is) and
 2. manifest     read .paas/app.yaml (or synthesize one for a static repo)
 3. dockerfile   use the repo's own Dockerfile, or generate one from the manifest
 4. build        docker build  → koyra-app-<name>:<commit>   (app env as build args)
+                (SKIPPED when <commit> was already built + pushed by a prior live
+                 deploy — the redeploy then just re-deploys the existing image)
 5. push         docker push   → <registry>/koyra-app-<name>:<commit> and :latest
 6. deploy       docker stack deploy → Swarm service from the registry image
 7. run          Swarm pulls + runs the app on any node; clean up the local build dir
 ```
 
 Each step streams to the deploy log (SSE) so you watch it live in the dashboard.
+
+Only step 4 (the `docker build`) runs on the control-plane node's Docker; everything
+the app actually *does* is a Swarm service (step 6/7) scheduled on **any** node — apps
+are never pinned to the control plane. Re-rendering routing (e.g. attaching a domain)
+is the common redeploy that hits the build-skip, so it costs nothing but a Swarm
+service update.
 
 ## Decision: build into an image, off NFS — not build-on-NFS
 

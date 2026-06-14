@@ -210,16 +210,29 @@ class Deployer:
 
             base = f"{self.settings.registry}/koyra-app-{app_name}"
             image = f"{base}:{commit[:12]}"
-            build_args = {**manifest.env, **env_overrides}
-            for line in self.docker.image_build(image, str(dest), build_args,
-                                                str(dest / dockerfile)):
-                emit(line)
-            self.docker.image_tag(image, f"{base}:latest")
-            emit(f"[koyra] pushing {image} → registry", "building")
-            for line in self.docker.image_push(image):
-                emit(line)
-            for line in self.docker.image_push(f"{base}:latest"):
-                emit(line)
+            # Skip the build when this exact commit was already built + pushed by
+            # a prior successful deploy: the image is already in the registry, so
+            # a redeploy (e.g. to re-render routing after a domain change) is a
+            # pure swarm service deploy on any node — no rebuild on the
+            # control-plane node's Docker.
+            with db.session() as s:
+                already_built = s.query(Deploy.id).filter(
+                    Deploy.app_id == app_id, Deploy.commit == commit,
+                    Deploy.id != deploy_id, Deploy.status == "live").first() is not None
+            if already_built:
+                emit(f"[koyra] {commit[:12]} already built in a prior deploy "
+                     "→ reusing the registry image (no rebuild)")
+            else:
+                build_args = {**manifest.env, **env_overrides}
+                for line in self.docker.image_build(image, str(dest), build_args,
+                                                    str(dest / dockerfile)):
+                    emit(line)
+                self.docker.image_tag(image, f"{base}:latest")
+                emit(f"[koyra] pushing {image} → registry", "building")
+                for line in self.docker.image_push(image):
+                    emit(line)
+                for line in self.docker.image_push(f"{base}:latest"):
+                    emit(line)
 
             # Ensure each persist dir exists on the NFS so its volume's device
             # path resolves (the control plane has the NFS base mounted).

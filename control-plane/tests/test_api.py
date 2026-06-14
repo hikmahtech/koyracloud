@@ -171,6 +171,19 @@ def test_deploy_uses_configured_domains(client, env):
     assert auto_host in rule and "shop.example.com" in rule
 
 
+def test_redeploy_same_commit_skips_build(client, env):
+    # A redeploy at the same commit (e.g. re-rendering routing after a domain
+    # change) reuses the registry image instead of rebuilding on the control
+    # plane — it's a pure swarm service deploy.
+    aid = client.post("/api/apps", json={"name": "shop",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    client.post(f"/api/apps/{aid}/deploys", json={})
+    assert len(env["docker"].builds) == 1          # first deploy builds + pushes
+    client.post(f"/api/apps/{aid}/deploys", json={})
+    assert len(env["docker"].builds) == 1          # same commit → no rebuild
+    assert len(env["docker"].deployed) == 2        # but it re-deploys the service
+
+
 def _rule_of(env, service):
     # The host may be split across the apps router and the SaaS router, so join
     # every router rule label to assert a host is routed somewhere.
