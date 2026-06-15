@@ -19,6 +19,7 @@ class Manifest(BaseModel):
     # runtime is "dockerfile" — koyracloud builds that Dockerfile as-is instead
     # of generating one, then runs the resulting image. build/start are ignored.
     dockerfile: str = ""
+    root: str = ""                    # build-context subdir for monorepo apps (blank = repo root)
     port: int = 8000
     build: list[str] = Field(default_factory=list)
     predeploy: list[str] = Field(default_factory=list)
@@ -59,6 +60,14 @@ class Manifest(BaseModel):
         if not v or not all(c.isalnum() or c in "-_" for c in v):
             raise ValueError("name must be non-empty alphanumeric/-/_")
         return v
+
+    @field_validator("root")
+    @classmethod
+    def _root_safe(cls, v: str) -> str:
+        # Must stay inside the cloned repo: relative, no parent escapes.
+        if v.startswith("/") or ".." in v.split("/"):
+            raise ValueError("root must be a relative subdirectory within the repo")
+        return v.strip("/")
 
 
 def parse_manifest(text: str) -> Manifest:

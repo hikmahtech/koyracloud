@@ -205,18 +205,28 @@ class Deployer:
                 emit("[koyra] no manifest found; repo looks static → runtime: static")
             emit(f"[koyra] manifest ok: {manifest.name} (runtime={manifest.runtime})")
 
+            # Build context: the repo root, or a subdirectory for monorepo apps
+            # (manifest.root). The Dockerfile path and any generated Dockerfile are
+            # relative to this context.
+            build_ctx = dest / manifest.root if manifest.root else dest
+            if manifest.root:
+                if not build_ctx.is_dir():
+                    raise FileNotFoundError(
+                        f"manifest root '{manifest.root}' is not a directory in the repo")
+                emit(f"[koyra] build context: {manifest.root}/")
+
             # Build a per-app image: either the repo's OWN Dockerfile, or one we
             # generate from the manifest. Build-time-inlined vars (NEXT_PUBLIC_*/
             # VITE_*) go in as build-args; secrets stay runtime-only (not baked).
             if manifest.uses_dockerfile:
                 dockerfile = manifest.dockerfile or "Dockerfile"
-                if not (dest / dockerfile).is_file():
+                if not (build_ctx / dockerfile).is_file():
                     raise FileNotFoundError(
-                        f"manifest references {dockerfile} but it's not in the repo")
+                        f"manifest references {dockerfile} but it's not in the build context")
                 emit(f"[koyra] building image from {dockerfile}", "building")
             else:
                 dockerfile = ".koyra.Dockerfile"
-                (dest / dockerfile).write_text(
+                (build_ctx / dockerfile).write_text(
                     render_dockerfile(manifest, self.settings.runtime_image))
                 emit("[koyra] building image (generated Dockerfile)", "building")
 
@@ -236,8 +246,8 @@ class Deployer:
                      "→ reusing the registry image (no rebuild)")
             else:
                 build_args = {**manifest.env, **env_overrides}
-                for line in self.docker.image_build(image, str(dest), build_args,
-                                                    str(dest / dockerfile)):
+                for line in self.docker.image_build(image, str(build_ctx), build_args,
+                                                    str(build_ctx / dockerfile)):
                     emit(line)
                 self.docker.image_tag(image, f"{base}:latest")
                 emit(f"[koyra] pushing {image} → registry", "building")
