@@ -21,7 +21,10 @@ export default function Team() {
       <h1 className="font-display text-3xl mt-2 mb-1">Team</h1>
       <p className="text-sm text-[var(--color-muted)] mb-8">
         Anyone allowed here can sign in and deploy apps — which run code on your swarm.
-        Invite only people you trust.
+        Invite only people you trust. <span className="text-[var(--color-fg)]">Admins see and
+        manage every app; invited members only see the apps they create.</span> To give a
+        teammate their own private workspace, invite them as a member below — don't add them
+        to <span className="text-acid mono">KOYRA_ALLOWED_LOGINS</span>.
       </p>
 
       {/* Admins */}
@@ -40,7 +43,8 @@ export default function Team() {
           {(data.admins || []).length === 0 && <div className="px-4 py-3 mono text-sm text-[var(--color-muted)]">None configured.</div>}
         </div>
         <p className="mono text-[11px] text-[var(--color-muted)] mt-2">
-          Admins come from <span className="text-acid">KOYRA_ALLOWED_LOGINS</span> and can't be changed here.
+          Admins come from <span className="text-acid">KOYRA_ALLOWED_LOGINS</span> and can't be
+          changed here. They see and manage <span className="text-[var(--color-fg)]">every</span> app.
         </p>
       </section>
 
@@ -59,6 +63,9 @@ export default function Team() {
           ))}
           {(data.members || []).length === 0 && <div className="px-4 py-3 mono text-sm text-[var(--color-muted)]">No invited members yet.</div>}
         </div>
+        <p className="mono text-[11px] text-[var(--color-muted)] mt-2">
+          Members get a private workspace: they only see and manage the apps they create, never each other's.
+        </p>
         <form onSubmit={(e) => { e.preventDefault(); addMut.mutate(); }} className="flex gap-2 mt-4">
           <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder="github-login" className="input mono" />
           <button disabled={!login || addMut.isPending} className="btn btn-primary shrink-0">Invite</button>

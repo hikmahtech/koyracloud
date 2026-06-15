@@ -141,7 +141,9 @@ so apps don't depend on the build node and aren't pinned anywhere.
 - **Secrets encrypted at rest** (Fernet), injected at run time.
 - **Live build/deploy logs** (SSE), deploy history, one-click rollback.
 - **Persistent storage** via manifest `persist:` dirs.
-- **GitHub OAuth** behind a login allowlist — single-operator by design.
+- **GitHub OAuth** behind a login allowlist — single-operator by design. Logins in
+  `KOYRA_ALLOWED_LOGINS` are admins and see every app; people invited from the Team page
+  are scoped members who only see the apps they own.
 
 ## Self-hosting
 
