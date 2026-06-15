@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+import os
 import re
 import secrets
 import shutil
@@ -207,13 +208,20 @@ class Deployer:
 
             # Build context: the repo root, or a subdirectory for monorepo apps
             # (manifest.root). The Dockerfile path and any generated Dockerfile are
-            # relative to this context.
-            build_ctx = dest / manifest.root if manifest.root else dest
+            # relative to this context. Resolve symlinks and assert the context
+            # stays inside the clone, so a crafted manifest + an in-repo symlink
+            # can't point the build context (and COPY) at the host filesystem.
+            dest_real = dest.resolve()
             if manifest.root:
+                build_ctx = (dest / manifest.root).resolve()
                 if not build_ctx.is_dir():
                     raise FileNotFoundError(
                         f"manifest root '{manifest.root}' is not a directory in the repo")
+                if build_ctx != dest_real and not str(build_ctx).startswith(str(dest_real) + os.sep):
+                    raise ValueError(f"manifest root '{manifest.root}' escapes the repo")
                 emit(f"[koyra] build context: {manifest.root}/")
+            else:
+                build_ctx = dest_real
 
             # Build a per-app image: either the repo's OWN Dockerfile, or one we
             # generate from the manifest. Build-time-inlined vars (NEXT_PUBLIC_*/
