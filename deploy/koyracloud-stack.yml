@@ -131,7 +131,16 @@ services:
          --maxmemory ${KOYRA_REDIS_MAXMEMORY:-256mb} --maxmemory-policy noeviction
          --appendonly yes'
     volumes:
-      - koyra_redis:/data
+      # nocopy: skip the image's /data copy-up. On an NFS-driver volume with
+      # root_squash, the copy-up's chown to the image's owner is denied
+      # ("operation not permitted"), which rejects the task. redis runs as root
+      # here (the command override bypasses the entrypoint's gosu drop), so it
+      # writes the AOF through the squash to the nobody-owned export fine.
+      - type: volume
+        source: koyra_redis
+        target: /data
+        volume:
+          nocopy: true
     networks:
       traefik_public:
         aliases:
