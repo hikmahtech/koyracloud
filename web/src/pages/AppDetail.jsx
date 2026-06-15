@@ -7,10 +7,11 @@ import {
   listDomains, addDomain, setPrimaryDomain, deleteDomain, verifyDomain, getConfig,
   getStatus, getRuntimeLogs, getUptime, getAnalytics, setAnalytics,
   getNotify, setNotify,
+  getBackground, getWorkerLogs, getCronRuns, getCronRunLog, runCronNow,
 } from "../api";
 import { StatusBadge } from "./AppsList";
 
-const TABS = ["deploys", "analytics", "logs", "domains", "env", "secrets", "settings"];
+const TABS = ["deploys", "background", "analytics", "logs", "domains", "env", "secrets", "settings"];
 
 export default function AppDetail() {
   const { id } = useParams();
@@ -82,6 +83,7 @@ export default function AppDetail() {
       </div>
 
       {tab === "deploys" && <DeployHistory deploys={deploys} onRollback={(d) => rollbackMut.mutate(d)} />}
+      {tab === "background" && <BackgroundTab id={id} />}
       {tab === "analytics" && <AnalyticsTab id={id} />}
       {tab === "logs" && <RuntimeLogs id={id} />}
       {tab === "domains" && <DomainsTab id={id} />}
@@ -284,6 +286,193 @@ function DeployHistory({ deploys, onRollback }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function fmtTime(iso) { try { return new Date(iso).toLocaleString(); } catch { return iso; } }
+function fmtAgo(iso) {
+  const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+function RunBadge({ status }) {
+  const map = {
+    success: ["ok", "var(--color-acid)"],
+    failed: ["failed", "var(--color-danger)"],
+    running: ["running", "#febc2e"],
+  };
+  const [label, color] = map[status] || [status, "var(--color-muted)"];
+  return <span className="mono text-[10px] rounded px-1.5 py-0.5 border" style={{ color, borderColor: color }}>{label}</span>;
+}
+
+function BackgroundTab({ id }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["background", id], queryFn: () => getBackground(id), refetchInterval: 15000,
+  });
+  if (isLoading || !data) return <p className="mono text-[var(--color-muted)]">loading…</p>;
+  const { redis, workers, cron } = data;
+  const empty = !redis.enabled && workers.length === 0 && cron.length === 0;
+  return (
+    <div className="max-w-3xl space-y-7">
+      {empty && (
+        <p className="text-sm text-[var(--color-muted)]">
+          No background services yet. Declare <span className="mono text-[var(--color-fg)]">workers</span>,{" "}
+          <span className="mono text-[var(--color-fg)]">cron</span> or <span className="mono text-[var(--color-fg)]">redis</span>{" "}
+          in <span className="mono">.paas/app.yaml</span> and redeploy.
+        </p>
+      )}
+
+      <section className="space-y-3">
+        <div className="eyebrow">Workers</div>
+        {workers.length === 0
+          ? <p className="mono text-xs text-[var(--color-muted)]">No workers.</p>
+          : <div className="card divide-y divide-[var(--color-line)]">
+              {workers.map((w) => <WorkerRow key={w.name} id={id} w={w} />)}
+            </div>}
+      </section>
+
+      <section className="space-y-3">
+        <div className="eyebrow">Cron jobs <span className="text-[var(--color-muted)] normal-case">· UTC</span></div>
+        {cron.length === 0
+          ? <p className="mono text-xs text-[var(--color-muted)]">No cron jobs.</p>
+          : <div className="space-y-2">{cron.map((c) => <CronRow key={c.id} id={id} job={c} />)}</div>}
+      </section>
+
+      <section className="space-y-3">
+        <div className="eyebrow">Redis</div>
+        <div className="card p-5 space-y-2">
+          {redis.enabled ? (
+            <>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="dot" style={{ background: "var(--color-acid)", boxShadow: "0 0 8px var(--color-acid)66" }} />
+                <span className="text-[var(--color-fg)]">Provisioned</span>
+                <span className="mono text-xs text-[var(--color-muted)]">· REDIS_URL injected</span>
+              </div>
+              <p className="text-xs text-[var(--color-muted)]">
+                Shared instance, isolated by ACL. Namespace every key and pub/sub channel as{" "}
+                <span className="mono text-acid">{redis.prefix}:</span> — other names are rejected.
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-[var(--color-muted)]">
+              Not enabled. Set <span className="mono text-[var(--color-fg)]">redis: true</span> in the manifest
+              to get a scoped Redis + <span className="mono">REDIS_URL</span>.
+            </p>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function WorkerRow({ id, w }) {
+  const [open, setOpen] = useState(false);
+  const healthy = w.running >= w.desired && w.desired > 0;
+  const c = healthy ? "var(--color-acid)" : w.running > 0 ? "#febc2e" : "var(--color-danger)";
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="dot" style={{ background: c, boxShadow: `0 0 8px ${c}66` }} />
+          <span className="mono text-sm">{w.name}</span>
+          <span className="mono text-xs text-[var(--color-muted)]">{w.running}/{w.desired} running</span>
+        </div>
+        <button onClick={() => setOpen(!open)} className="text-xs text-acid hover:underline bg-transparent border-0 cursor-pointer">
+          {open ? "hide logs" : "logs"}
+        </button>
+      </div>
+      {open && <WorkerLogs id={id} worker={w.name} />}
+    </div>
+  );
+}
+
+function WorkerLogs({ id, worker }) {
+  const { data } = useQuery({
+    queryKey: ["worker-logs", id, worker], queryFn: () => getWorkerLogs(id, worker, 300),
+    refetchInterval: 60000,
+  });
+  const box = useRef(null);
+  useEffect(() => { if (box.current) box.current.scrollTop = box.current.scrollHeight; }, [data]);
+  return (
+    <pre ref={box} className="mono text-[11px] leading-relaxed p-3 h-56 overflow-auto text-[#cdd3dd] bg-[var(--color-ink)] border border-[var(--color-line)] rounded m-0 mt-3">
+      {data?.logs || "loading…"}
+    </pre>
+  );
+}
+
+function CronRow({ id, job }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const run = useMutation({
+    mutationFn: () => runCronNow(id, job.id),
+    onSuccess: () => {
+      setOpen(true);
+      qc.invalidateQueries({ queryKey: ["cron-runs", id, job.id] });
+      qc.invalidateQueries({ queryKey: ["background", id] });
+    },
+  });
+  return (
+    <div className="card px-4 py-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="mono text-sm">{job.name}</span>
+          <span className="mono text-xs text-acid">{job.schedule}</span>
+          {job.last_status && <RunBadge status={job.last_status} />}
+          {job.last_run_at && <span className="mono text-[11px] text-[var(--color-muted)]" title={job.last_run_at}>{fmtAgo(job.last_run_at)}</span>}
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <button onClick={() => run.mutate()} disabled={run.isPending} className="text-xs text-acid hover:underline bg-transparent border-0 cursor-pointer">
+            {run.isPending ? "running…" : "run now"}
+          </button>
+          <button onClick={() => setOpen(!open)} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] bg-transparent border-0 cursor-pointer">
+            {open ? "hide" : "runs"}
+          </button>
+        </div>
+      </div>
+      <div className="mono text-[11px] text-[var(--color-muted)] mt-1.5 truncate">$ {job.command}</div>
+      {open && <CronRuns id={id} jobId={job.id} />}
+    </div>
+  );
+}
+
+function CronRuns({ id, jobId }) {
+  const { data: runs = [] } = useQuery({
+    queryKey: ["cron-runs", id, jobId], queryFn: () => getCronRuns(id, jobId, 20),
+    refetchInterval: 5000,
+  });
+  const [openRun, setOpenRun] = useState(null);
+  if (runs.length === 0) return <p className="mono text-[11px] text-[var(--color-muted)] mt-3">No runs yet.</p>;
+  return (
+    <div className="mt-3 space-y-1">
+      {runs.map((r) => (
+        <div key={r.id}>
+          <button onClick={() => setOpenRun(openRun === r.id ? null : r.id)}
+                  className="w-full flex items-center justify-between text-left bg-transparent border-0 cursor-pointer px-0 py-1">
+            <span className="flex items-center gap-2">
+              <RunBadge status={r.status} />
+              <span className="mono text-[11px] text-[var(--color-muted)]">{fmtTime(r.started_at)}</span>
+              {r.exit_code != null && <span className="mono text-[11px] text-[var(--color-muted)]">exit {r.exit_code}</span>}
+            </span>
+            <span className="text-[11px] text-acid">{openRun === r.id ? "hide log" : "log"}</span>
+          </button>
+          {openRun === r.id && <CronRunLog id={id} jobId={jobId} runId={r.id} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CronRunLog({ id, jobId, runId }) {
+  const { data } = useQuery({
+    queryKey: ["cron-run-log", id, jobId, runId], queryFn: () => getCronRunLog(id, jobId, runId),
+  });
+  return (
+    <pre className="mono text-[11px] leading-relaxed p-3 max-h-72 overflow-auto text-[#cdd3dd] bg-[var(--color-ink)] border border-[var(--color-line)] rounded m-0 mb-2">
+      {data?.log || "loading…"}
+    </pre>
   );
 }
 

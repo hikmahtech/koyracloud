@@ -288,6 +288,12 @@ the SaaS registration; the customer zone's Universal SSL provides the cert.
   ~15). `https://<apex>` returning `000`/`tls=1` right after activation is just
   the cert still provisioning, not a misconfig — verify the routing over HTTP
   meanwhile.
+- **Vercel Cron → `cron:`; background work → `workers:` + `redis:`.** A Vercel
+  Cron Job becomes a `cron:` entry (5-field schedule, UTC) that runs your command
+  to completion from the live image. There's no Vercel equivalent of an always-on
+  process — for queue consumers/bots use a `workers:` entry, and set `redis: true`
+  to get a `REDIS_URL` for the web→worker queue (namespace keys as `<app>:`). See
+  the README's "Background workers, cron & Redis".
 
 ---
 

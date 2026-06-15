@@ -38,6 +38,9 @@ class FakeDocker:
         self.pushed = []
         self.tagged = []
         self.events = []   # ordered record of calls
+        self.jobs = []     # run_job calls (cron)
+        self.removed_services = []
+        self.job_exit = 0  # exit code job_wait returns
 
     def image_build(self, tag, context_dir, build_args=None, dockerfile=None):
         self.builds.append((tag, context_dir, build_args or {}, dockerfile))
@@ -77,6 +80,28 @@ class FakeDocker:
                 out[f"{stack}_{svc}"] = {"running": 1, "desired": 1}
         return out
 
+    def run_job(self, name, image, command, env=None, networks=None):
+        self.jobs.append({"name": name, "image": image, "command": command,
+                          "env": env or {}, "networks": networks or []})
+
+    def job_wait(self, name, timeout=600):
+        return self.job_exit
+
+    def remove_service(self, name):
+        self.removed_services.append(name)
+
+
+class FakeRedisAdmin:
+    def __init__(self):
+        self.users = {}      # username -> {password, prefix}
+        self.deleted = []
+
+    def set_user(self, username, password, prefix):
+        self.users[username] = {"password": password, "prefix": prefix}
+
+    def delete_user(self, username):
+        self.deleted.append(username)
+
 
 def make_fake_cloner(manifest_text=LENS_MANIFEST):
     def cloner(repo_url, ref, token, dest: Path) -> str:
@@ -98,6 +123,7 @@ def settings(tmp_path):
         dev_login="tester",
         github_pat="",
         webhook_secret="testhooksecret",
+        redis_admin_password="testredisadmin",
     )
 
 
@@ -107,10 +133,11 @@ def env(settings):
     db.create_all()
     docker = FakeDocker()
     crypto = CryptoBox(settings.secret_key)
+    redis_admin = FakeRedisAdmin()
     deployer = Deployer(settings=settings, docker=docker, crypto=crypto,
-                        cloner=make_fake_cloner())
+                        cloner=make_fake_cloner(), redis_admin=redis_admin)
     return {"db": db, "docker": docker, "crypto": crypto, "deployer": deployer,
-            "settings": settings}
+            "settings": settings, "redis_admin": redis_admin}
 
 
 @pytest.fixture

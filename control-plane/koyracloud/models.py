@@ -186,3 +186,49 @@ class AllowedUser(Base):
     login: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     added_by: Mapped[str] = mapped_column(String(128), default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AppRedis(Base):
+    """An app's stable shared-Redis credential. The password is generated once
+    and stored encrypted so the injected ``REDIS_URL`` is the same across
+    redeploys. Only apps with ``redis: true`` get a row (own table; no apps
+    ALTER). The ACL user on the shared instance is named ``username`` and scoped
+    to the ``<app>:*`` key + channel prefix."""
+    __tablename__ = "app_redis"
+
+    app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), primary_key=True)
+    username: Mapped[str] = mapped_column(String(128))
+    password_encrypted: Mapped[str] = mapped_column(Text)  # Fernet token, never plaintext
+
+
+class CronJob(Base):
+    """A cron job declared in the app's manifest, persisted on each successful
+    deploy so the scheduler can read schedules without re-cloning the repo.
+    Upserted by (app_id, name); rows whose name leaves the manifest are removed."""
+    __tablename__ = "cron_jobs"
+    __table_args__ = (UniqueConstraint("app_id", "name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    schedule: Mapped[str] = mapped_column(String(128))  # 5-field cron, UTC
+    command: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    runs: Mapped[list["CronRun"]] = relationship(
+        back_populates="job", cascade="all, delete-orphan", order_by="CronRun.id.desc()")
+
+
+class CronRun(Base):
+    """One launch of a cron job: status, exit code, captured output."""
+    __tablename__ = "cron_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cron_job_id: Mapped[int] = mapped_column(ForeignKey("cron_jobs.id"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="running", index=True)
+    exit_code: Mapped[int | None] = mapped_column(default=None)
+    log: Mapped[str] = mapped_column(Text, default="")
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    job: Mapped[CronJob] = relationship(back_populates="runs")

@@ -17,3 +17,24 @@ env:
   CORS_ORIGINS: https://my-app.apps.example.com
 secrets:
   - SECRET_KEY
+
+# --- Optional: background workers, cron, and the shared Redis bus -----------
+# All run from the SAME built image as the web process above (same env/secrets).
+
+# redis: true                  # provision a scoped Redis + inject REDIS_URL.
+                               # IMPORTANT: you may only use keys + pub/sub
+                               # channels prefixed with the app name, e.g.
+                               # "my-app:jobs". Other names are rejected by the
+                               # ACL (shared instance, isolated per app).
+
+# workers:                     # always-on processes — no HTTP port, no router.
+#   - name: events
+#     start: python -m app.worker      # e.g. BLPOP my-app:jobs and process
+#     replicas: 1              # optional (default 1)
+#     # cpu: "0.25"            # optional; falls back to the instance default
+#     # memory: 128M
+
+# cron:                        # 5-field schedules, UTC. Run to completion.
+#   - name: nightly
+#     schedule: "0 2 * * *"
+#     command: python -m app.jobs.nightly

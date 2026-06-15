@@ -44,6 +44,17 @@ export const setAnalytics = (id, enabled) =>
 export const getRuntimeLogs = (id, tail = 300) =>
   api.get(`/apps/${id}/runtime-logs`, { params: { tail } }).then((r) => r.data);
 
+export const getBackground = (id) =>
+  api.get(`/apps/${id}/background`).then((r) => r.data);
+export const getWorkerLogs = (id, worker, tail = 300) =>
+  api.get(`/apps/${id}/workers/${worker}/logs`, { params: { tail } }).then((r) => r.data);
+export const getCronRuns = (id, jobId, limit = 20) =>
+  api.get(`/apps/${id}/cron/${jobId}/runs`, { params: { limit } }).then((r) => r.data);
+export const getCronRunLog = (id, jobId, runId) =>
+  api.get(`/apps/${id}/cron/${jobId}/runs/${runId}/log`).then((r) => r.data);
+export const runCronNow = (id, jobId) =>
+  api.post(`/apps/${id}/cron/${jobId}/run`).then((r) => r.data);
+
 export const listDeploys = (id) =>
   api.get(`/apps/${id}/deploys`).then((r) => r.data);
 export const triggerDeploy = (id, ref) =>
