@@ -31,6 +31,12 @@ is. It complements the [README](../README.md) (what it is) and
 
 Each step streams to the deploy log (SSE) so you watch it live in the dashboard.
 
+The docker build context is the repo root by default, or a subdirectory when the
+manifest sets `root:` (monorepo apps — e.g. a Next site under `marketing/site/`
+of a larger repo). The context is resolved through symlinks and asserted to stay
+inside the clone, so a crafted manifest can't point the build at the host
+filesystem. See `docs/MIGRATING-FROM-VERCEL.md` for the app-author playbook.
+
 Only step 4 (the `docker build`) runs on the control-plane node's Docker; everything
 the app actually *does* is a Swarm service (step 6/7) scheduled on **any** node — apps
 are never pinned to the control plane. Re-rendering routing (e.g. attaching a domain)
@@ -106,6 +112,15 @@ proxied to the app (which 404s it) instead of being served at the edge, and the 
 in `pending_validation` forever. DNS validation via the `_acme-challenge` delegation CNAME
 sidesteps the app entirely. (Proven the hard way: a real hostname stuck on HTTP validation
 went active within ~90s once switched to `txt`.)
+
+**Apex domains are the exception.** A zone apex can't be a CNAME, and Cloudflare for SaaS
+won't activate a custom hostname served via apex `A`-records-to-anycast (HTTP 409, "DNS
+target needs to point to the SaaS zone"). So `www` uses the SaaS path above, and the apex
+is handled per registrar — registrar forwarding, a Route 53 `ALIAS`→CloudFront redirect,
+Cloudflare apex CNAME-flattening (when the domain's DNS is on Cloudflare), or the
+self-hosted `deploy/apex-redirect-stack.yml` (a Caddy redirector reached over a WAN2
+port-forward — the one inbound path that *can* solve Let's Encrypt HTTP-01, which the
+tunnel can't). `docs/MIGRATING-FROM-VERCEL.md` §6 covers all four with trade-offs.
 
 ## Decision: default app URLs are `<name>-<token>.<apps_domain>` behind one wildcard
 

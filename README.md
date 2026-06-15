@@ -118,7 +118,10 @@ export reachable by the nodes. Then:
    **[`deploy/README.md`](deploy/README.md)**.
 
 For the design and the reasoning behind the build/registry/no-pinning choices, see
-**[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
+**[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**. Moving an existing Next.js app off
+Vercel? The field-tested playbook (strategies, Dockerfiles, env/secrets, the apex
+problem and its four solutions, email preservation) is in
+**[`docs/MIGRATING-FROM-VERCEL.md`](docs/MIGRATING-FROM-VERCEL.md)**.
 
 ## Local development
 
