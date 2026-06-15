@@ -214,11 +214,12 @@ the SaaS zone"). Pick by where the domain's DNS lives:
    to www, with an ACM cert). Route 53's ALIAS is the only thing that lets an
    apex target a CDN. Cheap, serverless, fully scriptable.
 3. **Self-hosted redirector** (`deploy/apex-redirect-stack.yml`): a tiny Caddy
-   service on the swarm, exposed via a **WAN2** port-forward (`:80→baa:8081`,
-   `:443→baa:8443`). The apex `A` record points at the WAN2 IP; Caddy mints a
-   Let's Encrypt cert (HTTP-01 works because WAN2:80 is a real inbound path the
-   tunnel can't provide) and 301s `<apex>`→`www`. Only the bare apex touches
-   WAN2; everything else stays behind the hidden Cloudflare tunnel. Use when the
+   service on the swarm, exposed via a second-WAN / public port-forward
+   (`:80→<node>:8081`, `:443→<node>:8443`). The apex `A` record points at that
+   public IP; Caddy mints a Let's Encrypt cert (HTTP-01 works because :80 is a
+   real inbound path the tunnel can't provide) and 301s `<apex>`→`www`. Only the
+   bare apex touches that WAN path; everything else stays behind the hidden
+   Cloudflare tunnel. Use when the
    DNS host can neither CNAME nor ALIAS an apex (e.g. Google Cloud DNS) and you
    don't want a cloud redirector.
 4. **Move the domain's DNS to Cloudflare (best when feasible)**: Cloudflare
@@ -277,12 +278,13 @@ the SaaS registration; the customer zone's Universal SSL provides the cert.
   now via WAL + busy_timeout + atomic single-statement log writes, but still:
   trigger, wait ~150s, check once.)
 - **Recover a stuck/orphaned `building` deploy** by force-restarting the
-  control-plane: `docker --context swarm-baa service update --force
+  control-plane: `docker --context <your-swarm-context> service update --force
   koyracloud_control-plane` (clears in-memory locks/threads; running app
   services are unaffected), then re-trigger.
-- **First build of a new commit runs on the control-plane node** (baa, mounted
-  socket). A redeploy of an already-built commit skips the build and reuses the
-  registry image — pure swarm `stack deploy`, any node.
+- **First build of a new commit runs on the control-plane node** (the manager
+  pinned by `KOYRA_CONTROL_NODE`, mounted socket). A redeploy of an already-built
+  commit skips the build and reuses the registry image — pure swarm `stack
+  deploy`, any node.
 - **DNS/SSL propagation is the long pole.** After a nameserver change, the zone
   goes `active` and Universal SSL provisions automatically (minutes, sometimes
   ~15). `https://<apex>` returning `000`/`tls=1` right after activation is just

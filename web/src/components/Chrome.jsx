@@ -37,6 +37,8 @@ export function Footer() {
         <div className="flex gap-7 text-sm text-[var(--color-muted)]">
           <Link to="/docs" className="hover:text-[var(--color-fg)] no-underline text-inherit">Docs</Link>
           <Link to="/blog" className="hover:text-[var(--color-fg)] no-underline text-inherit">Blog</Link>
+          <a href="https://github.com/hikmahtech/koyracloud" target="_blank" rel="noreferrer"
+             className="hover:text-[var(--color-fg)] no-underline text-inherit">GitHub</a>
           <a href="/api/auth/login" className="hover:text-[var(--color-fg)] no-underline text-inherit">Sign in</a>
         </div>
         <span className="mono text-xs text-[var(--color-muted)]">self-hosted · single-operator · {new Date().getFullYear()}</span>

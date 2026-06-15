@@ -8,20 +8,22 @@
 # Let's Encrypt cert (HTTP-01 works here because WAN2:80 is port-forwarded to
 # this service — the inbound path the Cloudflare tunnel can't provide).
 #
-# Exposure: reached ONLY via a WAN2 port-forward (:80 -> baa:8081, :443 ->
-# baa:8443). www and all real app traffic still flow through the hidden CF
-# tunnel; only the bare apex touches WAN2. If WAN2 is down, only apex redirects
-# break — the sites keep working on www.
+# Exposure: reached ONLY via a public port-forward (:80 -> <node>:8081, :443 ->
+# <node>:8443). www and all real app traffic still flow through the hidden CF
+# tunnel; only the bare apex touches this WAN path. If it's down, only apex
+# redirects break — the sites keep working on www.
 #
-# To onboard another apex: add a block below (host -> https://www.host) and
-# redeploy (bump the config version in deploy/apex-redirect-stack.yml).
+# To onboard an apex: add a block below (host -> https://www.host) and redeploy
+# (bump the config version in deploy/apex-redirect-stack.yml). ACME_EMAIL is
+# supplied as an env var by the stack file.
 
 {
 	http_port 8081
 	https_port 8443
-	email arshad@hikmahtechnologies.com
+	email {$ACME_EMAIL}
 }
 
-eyelookoptics.in {
-	redir https://www.eyelookoptics.in{uri} permanent
+# Replace with the apex domains you want to redirect to their www host:
+example.com {
+	redir https://www.example.com{uri} permanent
 }

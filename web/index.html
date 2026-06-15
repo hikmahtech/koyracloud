@@ -4,19 +4,74 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>koyracloud — your own Vercel, self-hosted</title>
-    <meta name="description" content="Self-hosted PaaS for your Docker Swarm. Connect a repo with a manifest — it builds, runs and routes behind HTTPS with secrets, persistence and rollback." />
+    <meta name="description" content="koyracloud is an open-source, self-hosted PaaS for your Docker Swarm. Connect a git repo with a small manifest — it builds a container image, runs it behind HTTPS, and handles secrets, persistence, custom domains, background workers, cron jobs and a Redis bus. A self-hosted alternative to Vercel, Render and Heroku." />
+    <meta name="keywords" content="self-hosted PaaS, Docker Swarm PaaS, open source Vercel alternative, Render alternative, Heroku alternative, deploy git repo, homelab PaaS, background workers, cron jobs, self-hosted platform as a service" />
+    <meta name="author" content="Arshad Ansari" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://koyracloud.com/" />
     <meta name="theme-color" content="#0a0b0d" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="koyracloud" />
+    <meta property="og:url" content="https://koyracloud.com/" />
     <meta property="og:title" content="koyracloud — your own Vercel, self-hosted" />
-    <meta property="og:description" content="Connect a repo with a manifest — it builds, runs and routes behind HTTPS. Self-hosted on your Docker Swarm." />
+    <meta property="og:description" content="Open-source, self-hosted PaaS for your Docker Swarm. Connect a repo with a manifest — it builds, runs and routes behind HTTPS, with workers, cron and a Redis bus." />
     <meta property="og:image" content="/og.svg" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="koyracloud — your own Vercel, self-hosted" />
-    <meta name="twitter:description" content="Connect a repo with a manifest — it builds, runs and routes behind HTTPS." />
+    <meta name="twitter:description" content="Open-source, self-hosted PaaS for your Docker Swarm. Connect a repo with a manifest — it builds, runs and routes behind HTTPS." />
     <meta name="twitter:image" content="/og.svg" />
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "koyracloud",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux (Docker Swarm)",
+      "description": "Open-source, self-hosted Platform-as-a-Service for Docker Swarm. Connect a git repo with a small .paas/app.yaml manifest and koyracloud builds a per-app container image, pushes it to a built-in registry, and runs it behind HTTPS — with injected secrets, persistent storage, custom domains, push-to-deploy, rollback, background workers, scheduled cron jobs and a per-app-isolated Redis bus.",
+      "url": "https://koyracloud.com/",
+      "codeRepository": "https://github.com/hikmahtech/koyracloud",
+      "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@type": "Person", "name": "Arshad Ansari" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is koyracloud?",
+          "acceptedAnswer": { "@type": "Answer", "text": "koyracloud is an open-source, self-hosted Platform-as-a-Service (PaaS) for Docker Swarm. You connect a git repo with a small .paas/app.yaml manifest and koyracloud builds a container image, runs it behind HTTPS, and gives you secrets, persistent storage, custom domains, push-to-deploy, rollback, background workers, cron jobs and a Redis bus — the 'connect a repo and it deploys' experience of Vercel or Render, on your own hardware." }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I self-host koyracloud?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Clone https://github.com/hikmahtech/koyracloud, set deploy/koyracloud.env and the Docker secrets described in deploy/README.md, then run ./deploy/deploy.sh against your swarm context. You need a Docker Swarm with Traefik (HTTPS + ACME) and an NFS export reachable by the nodes." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is koyracloud free and open source?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. koyracloud is open source under the AGPL-3.0 license and free to self-host." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does koyracloud support background workers and cron jobs?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. In .paas/app.yaml you can declare always-on workers, scheduled cron jobs (5-field UTC), and a shared Redis bus (redis: true) that injects a per-app-isolated REDIS_URL — so a web app can push events to a background worker, all from the same repo and image." }
+        },
+        {
+          "@type": "Question",
+          "name": "How is koyracloud different from Vercel, Render or Heroku?",
+          "acceptedAnswer": { "@type": "Answer", "text": "koyracloud runs entirely on your own Docker Swarm — no cloud vendor, no per-seat or per-build pricing, and your code and data never leave your infrastructure. It targets single-operator and homelab use: trusted code, internal apps and side projects." }
+        }
+      ]
+    }
+    </script>
     <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
