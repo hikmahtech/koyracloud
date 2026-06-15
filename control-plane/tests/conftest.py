@@ -121,3 +121,49 @@ def client(env):
     app = create_app(settings=env["settings"], db=env["db"], docker=env["docker"],
                      deployer=env["deployer"], run_async=False)
     return TestClient(app)
+
+
+@pytest.fixture
+def scoped(tmp_path):
+    """A control-plane with REAL session auth (no dev-login bypass) so the
+    admin-vs-member scoping can be exercised. ``operator`` is the sole admin
+    (KOYRA_ALLOWED_LOGINS); everyone else must be invited as a member to get in.
+    Returns helpers to mint a per-login authenticated client and invite members."""
+    from fastapi.testclient import TestClient
+
+    from koyracloud import auth
+    from koyracloud.app import create_app
+    from koyracloud.models import AllowedUser
+
+    settings = Settings(
+        db_url=f"sqlite:///{tmp_path / 'koyra.db'}",
+        secret_key=generate_key(),
+        nfs_base=str(tmp_path / "nfs"),
+        build_dir=str(tmp_path / "build"),
+        registry="reg:5000",
+        nfs_server="10.0.0.9",
+        dev_login="",                 # no bypass: requests authenticate via cookie
+        allowed_logins=["operator"],  # the single all-seeing admin
+        github_pat="",
+        webhook_secret="testhooksecret",
+    )
+    db = Database(settings.db_url)
+    db.create_all()
+    deployer = Deployer(settings=settings, docker=FakeDocker(),
+                        crypto=CryptoBox(settings.secret_key),
+                        cloner=make_fake_cloner())
+    app = create_app(settings=settings, db=db, docker=FakeDocker(),
+                     deployer=deployer, run_async=False)
+
+    def as_user(login: str):
+        c = TestClient(app)
+        c.cookies.set(auth.SESSION_COOKIE,
+                      auth.make_session(login, settings.session_secret))
+        return c
+
+    def invite(login: str) -> None:
+        with db.session() as s:
+            s.add(AllowedUser(login=login.lower(), added_by="operator"))
+            s.commit()
+
+    return {"as_user": as_user, "invite": invite, "db": db, "settings": settings}
