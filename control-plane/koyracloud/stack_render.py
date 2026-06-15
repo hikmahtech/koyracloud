@@ -2,6 +2,10 @@
 
 Pure function: no I/O, fully unit-tested. The control plane writes the returned
 dict to YAML and runs ``docker stack deploy`` against it.
+
+The stack holds the **web** service (behind Traefik) plus one service per
+**worker** (always-on, no router) — both run the same prebuilt image. Cron jobs
+are NOT in the stack; the scheduler launches them as run-to-completion jobs.
 """
 from __future__ import annotations
 
@@ -25,6 +29,12 @@ def app_host(manifest: Manifest, app_name: str, settings: Settings, token: str =
     return manifest.subdomain or auto_subdomain(app_name, token, settings)
 
 
+def worker_service_name(app_name: str, worker_name: str) -> str:
+    """The stack-service key for a worker (the live Swarm service is then
+    ``koyra-<app>_<app>-<worker>``)."""
+    return f"{app_name}-{worker_name}"
+
+
 def render_stack(
     manifest: Manifest,
     *,
@@ -35,6 +45,7 @@ def render_stack(
     settings: Settings,
     hosts: list[str] | None = None,
     analytics_site: str = "",
+    redis_url: str = "",
 ) -> dict:
     # ``image`` is the per-app image already built + pushed to the internal
     # registry; the container serves the app from it (no NFS workspace).
@@ -43,18 +54,22 @@ def render_stack(
     effective_hosts = list(hosts) if hosts else [app_host(manifest, app_name, settings)]
     router = f"koyra-{app_name}"
 
-    # Runtime environment: manifest defaults < control-plane env < decrypted
-    # secrets. (Build-time vars are baked into the image at build; these are the
-    # values read at runtime.)
-    environment: dict[str, str] = {}
-    environment.update(manifest.env)
-    environment.update(env_overrides)
-    environment.update(secret_values)
-    # Native analytics: the static server auto-injects the beacon when these are
-    # set (only meaningful for runtime: static; dynamic apps paste the snippet).
+    # Runtime environment shared by web + workers: manifest defaults <
+    # control-plane env < decrypted secrets, plus the injected REDIS_URL. (Build-
+    # time vars are baked into the image at build; these are the runtime values.)
+    base_env: dict[str, str] = {}
+    base_env.update(manifest.env)
+    base_env.update(env_overrides)
+    base_env.update(secret_values)
+    if redis_url:
+        base_env["REDIS_URL"] = redis_url
+
+    # Web environment additionally carries the native-analytics beacon config
+    # (only meaningful for runtime: static; dynamic apps paste the snippet).
+    web_env = dict(base_env)
     if analytics_site:
-        environment["KOYRA_ANALYTICS_URL"] = settings.base_url
-        environment["KOYRA_ANALYTICS_SITE"] = analytics_site
+        web_env["KOYRA_ANALYTICS_URL"] = settings.base_url
+        web_env["KOYRA_ANALYTICS_SITE"] = analytics_site
 
     # Split hosts by zone. In-zone hosts are the app's own auto-subdomain under
     # apps_domain; custom Cloudflare-for-SaaS hosts are everything else. SaaS
@@ -102,7 +117,7 @@ def render_stack(
     # code, mounted at the paths the image expects under /app. With an NFS server
     # configured, each dir is a Docker NFS-driver volume — Docker mounts the NFS
     # on whichever node runs the app, so nothing is pinned. Without one (local /
-    # dev), fall back to a plain bind mount.
+    # dev), fall back to a plain bind mount. Web + workers share these volumes.
     service_volumes: list[str] = []
     named_volumes: dict[str, dict] = {}
     for d in manifest.persist:
@@ -121,13 +136,17 @@ def render_stack(
         else:
             service_volumes.append(f"{device}:/app/{d}")
 
-    service: dict = {
-        "image": image,
-        "environment": environment,
-        "networks": [settings.traefik_network],
-        "deploy": {
-            "replicas": 1,
-            "labels": labels,
+    placement = None
+    if settings.app_node:
+        # Pin only if an operator explicitly sets app_node (e.g. the runtime
+        # image lives only on that node). Otherwise swarm runs/reschedules the
+        # image-from-registry app on any node.
+        placement = {"constraints": [f"node.hostname == {settings.app_node}"]}
+
+    def _deploy(replicas: int, cpu: str, memory: str,
+                labels: list[str] | None = None) -> dict:
+        block: dict = {
+            "replicas": replicas,
             "update_config": {
                 "parallelism": 1,
                 "delay": "10s",
@@ -143,27 +162,28 @@ def render_stack(
             },
             "resources": {
                 "limits": {
-                    "cpus": manifest.cpu or settings.default_cpu,
-                    "memory": manifest.memory or settings.default_memory,
+                    "cpus": cpu or settings.default_cpu,
+                    "memory": memory or settings.default_memory,
                 },
             },
-        },
-    }
-
-    if service_volumes:
-        service["volumes"] = service_volumes
-
-    # No placement constraint by default: the image is pulled from the internal
-    # registry, so swarm can run (and reschedule) the app on any node. Pin only
-    # if an operator explicitly sets app_node.
-    if settings.app_node:
-        service["deploy"]["placement"] = {
-            "constraints": [f"node.hostname == {settings.app_node}"]
         }
+        if labels is not None:
+            block["labels"] = labels
+        if placement is not None:
+            block["placement"] = placement
+        return block
 
+    web: dict = {
+        "image": image,
+        "environment": web_env,
+        "networks": [settings.traefik_network],
+        "deploy": _deploy(1, manifest.cpu, manifest.memory, labels=labels),
+    }
+    if service_volumes:
+        web["volumes"] = service_volumes
     if manifest.healthcheck:
         url = f"http://localhost:{manifest.port}{manifest.healthcheck}"
-        service["healthcheck"] = {
+        web["healthcheck"] = {
             "test": ["CMD", "python3", "-c",
                      f"import urllib.request;urllib.request.urlopen('{url}')"],
             "interval": "30s",
@@ -172,9 +192,26 @@ def render_stack(
             "start_period": settings.healthcheck_start_period,
         }
 
+    services: dict = {app_name: web}
+
+    # One service per worker: same image + env (incl REDIS_URL) + persist, but no
+    # Traefik router and no healthcheck. The CMD is overridden to the worker's
+    # start command (the web's predeploy is NOT run — migrations belong to web).
+    for w in manifest.workers:
+        wsvc: dict = {
+            "image": image,
+            "environment": base_env,
+            "networks": [settings.traefik_network],
+            "command": ["sh", "-c", w.start],
+            "deploy": _deploy(w.replicas, w.cpu, w.memory),
+        }
+        if service_volumes:
+            wsvc["volumes"] = list(service_volumes)
+        services[worker_service_name(app_name, w.name)] = wsvc
+
     stack = {
         "version": "3.8",
-        "services": {app_name: service},
+        "services": services,
         "networks": {settings.traefik_network: {"external": True}},
     }
     if named_volumes:

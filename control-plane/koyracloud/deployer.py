@@ -20,13 +20,14 @@ from typing import Callable
 
 from sqlalchemy import text
 
+from koyracloud import redisbus
 from koyracloud.config import Settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.docker_ctl import DockerControl
 from koyracloud.dockerfile import render_dockerfile
 from koyracloud.manifest import Manifest, parse_manifest
-from koyracloud.models import AppAnalytics, Deploy
+from koyracloud.models import AppAnalytics, CronJob, Deploy
 from koyracloud.stack_render import render_stack
 
 
@@ -114,6 +115,9 @@ class Deployer:
     docker: DockerControl
     crypto: CryptoBox
     cloner: Callable[[str, str, str, Path], str] = git_clone
+    # Provisions per-app Redis ACL users when a manifest sets `redis: true`.
+    # None → built lazily from settings (a RedisClientAdmin) on first need.
+    redis_admin: "redisbus.RedisAdmin | None" = None
     # on_event(app_id, event, detail, host) — fired on deploy_live / deploy_failed.
     on_event: Callable[[int, str, str, str], None] | None = None
     _locks: dict = field(default_factory=dict)
@@ -144,6 +148,33 @@ class Deployer:
                 self.on_event(app_id, event, detail, host)
             except Exception:  # noqa: BLE001
                 pass
+
+    def _get_redis_admin(self) -> "redisbus.RedisAdmin":
+        if self.redis_admin is None:
+            self.redis_admin = redisbus.RedisClientAdmin(
+                self.settings.redis_host, self.settings.redis_port,
+                self.settings.redis_admin_password)
+        return self.redis_admin
+
+    def _sync_cron_jobs(self, db: Database, app_id: int, manifest: Manifest) -> None:
+        """Mirror the manifest's cron jobs into the DB so the scheduler can read
+        them without re-cloning: upsert by (app_id, name), delete dropped ones,
+        and refresh schedule/command in place (preserving last_run_at + history)."""
+        wanted = {c.name: c for c in manifest.cron}
+        with db.session() as s:
+            existing = {j.name: j for j in
+                        s.query(CronJob).filter_by(app_id=app_id).all()}
+            for name, job in existing.items():
+                if name not in wanted:
+                    s.delete(job)
+            for name, spec in wanted.items():
+                job = existing.get(name)
+                if job is None:
+                    s.add(CronJob(app_id=app_id, name=name,
+                                  schedule=spec.schedule, command=spec.command))
+                else:
+                    job.schedule, job.command = spec.schedule, spec.command
+            s.commit()
 
     def _run_deploy(self, db: Database, deploy_id: int) -> None:
         """Execute a deploy end-to-end, updating the Deploy row as it goes."""
@@ -270,6 +301,24 @@ class Deployer:
                 (Path(self.settings.nfs_base) / app_name / d).mkdir(
                     parents=True, exist_ok=True)
 
+            # Provision the shared-Redis ACL user (stable URL across redeploys)
+            # when the manifest opts in; fail loudly if the instance has no Redis.
+            redis_url = ""
+            if manifest.redis:
+                emit("[koyra] provisioning Redis (shared bus, scoped ACL user)")
+                redis_url = redisbus.provision(
+                    db, self.crypto, self.settings, self._get_redis_admin(),
+                    app_id, app_name)
+                emit(f"[koyra] Redis ready — REDIS_URL injected "
+                     f"(namespace keys/channels as `{app_name}:`)")
+
+            # Mirror manifest cron jobs into the DB for the scheduler.
+            self._sync_cron_jobs(db, app_id, manifest)
+            if manifest.cron:
+                emit(f"[koyra] {len(manifest.cron)} cron job(s) scheduled (UTC)")
+            if manifest.workers:
+                emit(f"[koyra] {len(manifest.workers)} worker(s) in this stack")
+
             stack = render_stack(
                 manifest,
                 app_name=app_name,
@@ -279,6 +328,7 @@ class Deployer:
                 settings=self.settings,
                 hosts=hosts or None,
                 analytics_site=analytics_site,
+                redis_url=redis_url,
             )
             emit("[koyra] image ready; deploying service to swarm", "deploying")
             for line in self.docker.deploy(f"koyra-{app_name}", stack):

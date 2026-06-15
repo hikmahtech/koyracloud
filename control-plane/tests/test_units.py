@@ -343,6 +343,109 @@ def test_docker_control_resolve_image_never_flag():
     assert any("--resolve-image=never" in a for a in calls)
 
 
+# --- manifest: workers / cron / redis ---------------------------------------
+WORKERS_MANIFEST = """
+name: app
+runtime: python
+start: uvicorn app:app
+port: 8000
+redis: true
+workers:
+  - name: events
+    start: python -m app.worker
+    replicas: 2
+    cpu: "0.25"
+    memory: 128M
+cron:
+  - name: nightly
+    schedule: "0 2 * * *"
+    command: python -m app.jobs.nightly
+"""
+
+
+def test_parse_manifest_workers_cron_redis():
+    m = parse_manifest(WORKERS_MANIFEST)
+    assert m.redis is True
+    assert len(m.workers) == 1 and m.workers[0].name == "events"
+    assert m.workers[0].replicas == 2 and m.workers[0].cpu == "0.25"
+    assert len(m.cron) == 1 and m.cron[0].schedule == "0 2 * * *"
+
+
+def test_parse_manifest_defaults_no_background():
+    m = parse_manifest("name: x\nstart: y\nport: 8000\n")
+    assert m.redis is False and m.workers == [] and m.cron == []
+
+
+def test_parse_manifest_worker_name_reserved_web():
+    with pytest.raises(Exception):
+        parse_manifest("name: x\nstart: y\nworkers: [{name: web, start: z}]\n")
+
+
+def test_parse_manifest_worker_name_must_be_dns_label():
+    with pytest.raises(Exception):
+        parse_manifest("name: x\nstart: y\nworkers: [{name: Events, start: z}]\n")
+
+
+def test_parse_manifest_duplicate_proc_names_rejected():
+    text = ("name: x\nstart: y\n"
+            "workers: [{name: dup, start: z}]\n"
+            "cron: [{name: dup, schedule: '* * * * *', command: c}]\n")
+    with pytest.raises(Exception):
+        parse_manifest(text)
+
+
+def test_parse_manifest_bad_cron_schedule():
+    with pytest.raises(Exception):
+        parse_manifest("name: x\nstart: y\n"
+                       "cron: [{name: j, schedule: 'not-a-cron', command: c}]\n")
+
+
+def test_parse_manifest_empty_worker_start():
+    with pytest.raises(Exception):
+        parse_manifest("name: x\nstart: y\nworkers: [{name: w, start: '   '}]\n")
+
+
+# --- stack_render: workers + redis ------------------------------------------
+def test_render_stack_worker_service():
+    m = parse_manifest(WORKERS_MANIFEST)
+    stack = render_stack(m, app_name="app", image="img", env_overrides={},
+                         secret_values={}, settings=_settings(),
+                         redis_url="redis://app-app:pw@redis:6379/0")
+    assert set(stack["services"]) == {"app", "app-events"}
+    w = stack["services"]["app-events"]
+    assert w["image"] == "img"
+    assert w["command"] == ["sh", "-c", "python -m app.worker"]
+    assert "healthcheck" not in w
+    assert "labels" not in w["deploy"]            # no Traefik router
+    assert w["deploy"]["replicas"] == 2
+    assert w["deploy"]["resources"]["limits"]["cpus"] == "0.25"
+    assert w["environment"]["REDIS_URL"] == "redis://app-app:pw@redis:6379/0"
+
+
+def test_render_stack_redis_url_injected_into_web():
+    m = parse_manifest(WORKERS_MANIFEST)
+    stack = render_stack(m, app_name="app", image="img", env_overrides={},
+                         secret_values={}, settings=_settings(),
+                         redis_url="redis://u:p@redis:6379/0")
+    assert stack["services"]["app"]["environment"]["REDIS_URL"] == "redis://u:p@redis:6379/0"
+
+
+def test_render_stack_no_redis_no_url():
+    m = parse_manifest("name: app\nstart: y\nport: 8000\n")
+    stack = render_stack(m, app_name="app", image="img", env_overrides={},
+                         secret_values={}, settings=_settings())
+    assert "REDIS_URL" not in stack["services"]["app"]["environment"]
+
+
+def test_render_stack_worker_shares_persist_volumes():
+    text = ("name: app\nstart: y\nport: 8000\npersist: [data]\n"
+            "workers: [{name: w, start: run}]\n")
+    m = parse_manifest(text)
+    stack = render_stack(m, app_name="app", image="img", env_overrides={},
+                         secret_values={}, settings=_settings())
+    assert stack["services"]["app-w"]["volumes"] == ["koyra-app-data:/app/data"]
+
+
 def test_render_stack_multi_host_rule():
     m = parse_manifest(VALID)
     stack = render_stack(m, app_name="demo", image="img", env_overrides={}, secret_values={},
