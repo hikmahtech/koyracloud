@@ -1,0 +1,46 @@
+# koyracloud
+
+> koyracloud is an open-source, self-hosted Platform-as-a-Service (PaaS) for Docker
+> Swarm. You connect a git repo with a small `.paas/app.yaml` manifest and koyracloud
+> builds a per-app container image, pushes it to a built-in registry, and runs it
+> behind HTTPS — with injected secrets, persistent storage, custom domains,
+> push-to-deploy, rollback, background workers, scheduled cron jobs and a per-app
+> Redis bus. It is the "connect a repo and it deploys" experience of Vercel or
+> Render, but it runs entirely on your own hardware. License: AGPL-3.0.
+
+## What it does
+
+- Connect a git repo; a `.paas/app.yaml` manifest describes build, start command,
+  port, persistent dirs, env and secrets. Or bring your own `Dockerfile`.
+- Each deploy builds a per-app image, pushes it to an internal registry, and runs a
+  Docker Swarm service from it behind Traefik with automatic TLS.
+- Every app gets a free `<name>-<token>.<apps-domain>` URL; attach custom domains via
+  Cloudflare for SaaS or Let's Encrypt.
+- Secrets are Fernet-encrypted at rest and injected at deploy. Persistent dirs live on
+  NFS-backed volumes and survive redeploys.
+- Push-to-deploy via GitHub webhook (optionally gated on CI), live build logs, deploy
+  history and one-click rollback.
+- Background work, all from the same repo and image: always-on `workers`, scheduled
+  `cron` jobs (5-field UTC, run to completion), and a shared, per-app-isolated `redis`
+  bus that injects `REDIS_URL` (keys/channels namespaced as `<app>:`).
+- Built-in cookieless analytics and an uptime monitor per app.
+
+## Who it is for
+
+Single-operator and homelab use — trusted code, internal apps, client projects and
+side projects. Not a multi-tenant public cloud.
+
+## Self-hosting
+
+- Repository: https://github.com/hikmahtech/koyracloud
+- Requirements: a Docker Swarm with Traefik (HTTPS entrypoint + ACME resolver) and an
+  NFS export reachable by the nodes.
+- Quick start: clone the repo, configure `deploy/koyracloud.env` and the Docker secrets
+  documented in `deploy/README.md`, then run `./deploy/deploy.sh` against your swarm.
+
+## Links
+
+- Source code: https://github.com/hikmahtech/koyracloud
+- Documentation: https://koyracloud.com/docs
+- Architecture & design: https://github.com/hikmahtech/koyracloud/blob/main/docs/ARCHITECTURE.md
+- Migrating from Vercel: https://github.com/hikmahtech/koyracloud/blob/main/docs/MIGRATING-FROM-VERCEL.md
