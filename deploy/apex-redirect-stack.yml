@@ -1,25 +1,32 @@
 # Apex -> www redirector. See deploy/apex-redirect/Caddyfile for the rationale.
-# Deploy:
-#   docker --context swarm-baa stack deploy -c deploy/apex-redirect-stack.yml apex-redirect
-# (run from the repo's deploy/ directory so the config file path resolves)
+# Deploy (export the two vars first; KOYRA_APEX_NODE is your stable redirector
+# node, ACME_EMAIL is your Let's Encrypt contact):
+#   export KOYRA_APEX_NODE=<node-hostname> ACME_EMAIL=you@example.com
+#   docker --context <your-swarm-context> stack deploy \
+#     -c deploy/apex-redirect-stack.yml apex-redirect
+# (run from the repo root so the ./apex-redirect/Caddyfile path resolves)
 #
-# WAN2 port-forward required:  :80 -> 10.20.0.11:8081   :443 -> 10.20.0.11:8443
-# Then point each apex's A record at the WAN2 public IP.
+# A second-WAN / public port-forward is required so Let's Encrypt HTTP-01 can
+# reach this service:  :80 -> <node-ip>:8081   :443 -> <node-ip>:8443
+# Then point each apex's A record at that public IP.
 services:
   caddy:
     image: caddy:2-alpine
     configs:
       - source: apex_caddyfile_v1
         target: /etc/caddy/Caddyfile
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:-}   # Let's Encrypt contact (read by the Caddyfile)
     volumes:
       - apex_caddy_data:/data      # Let's Encrypt cert storage (survives restarts)
     ports:
-      - { target: 8081, published: 8081, protocol: tcp, mode: host }   # <- WAN2 :80
-      - { target: 8443, published: 8443, protocol: tcp, mode: host }   # <- WAN2 :443
+      - { target: 8081, published: 8081, protocol: tcp, mode: host }   # <- public :80
+      - { target: 8443, published: 8443, protocol: tcp, mode: host }   # <- public :443
     deploy:
       replicas: 1
       placement:
-        constraints: ["node.hostname == baa"]   # stable target for the WAN2 forward
+        # Pin to a stable node so the public port-forward always has a target.
+        constraints: ["node.hostname == ${KOYRA_APEX_NODE}"]
       restart_policy:
         condition: any
 

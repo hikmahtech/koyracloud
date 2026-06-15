@@ -100,8 +100,8 @@ class Settings:
         default_factory=lambda: int(os.environ.get("KOYRA_BACKUP_INTERVAL_HOURS", "12")))
     backup_keep: int = field(
         default_factory=lambda: int(os.environ.get("KOYRA_BACKUP_KEEP", "14")))
-    # Optional: pin deployed apps to a single node (e.g. "baa"). Needed when the
-    # runtime image is only present locally on that node (no registry push).
+    # Optional: pin deployed apps to a single node (e.g. "node-1"). Needed when
+    # the runtime image is only present locally on that node (no registry push).
     # Empty = no placement constraint (apps schedule anywhere; image must be
     # pullable from a registry).
     app_node: str = field(default_factory=lambda: os.environ.get("KOYRA_APP_NODE", ""))

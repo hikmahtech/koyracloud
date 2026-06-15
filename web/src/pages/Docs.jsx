@@ -23,6 +23,7 @@ const NAV = [
   ["analytics", "Analytics & uptime"],
   ["secrets", "Secrets & env"],
   ["persistence", "Persistence"],
+  ["background", "Workers, cron & Redis"],
   ["architecture", "How it works"],
 ];
 
@@ -115,6 +116,9 @@ secrets:
                   <Field name="healthcheck">HTTP path probed for liveness, e.g. <span className="mono">/health</span>.</Field>
                   <Field name="env">Non-secret environment defaults baked into the deploy.</Field>
                   <Field name="secrets">Names of secrets to inject at deploy. Set their values in the UI — never commit them.</Field>
+                  <Field name="redis"><span className="mono">true</span> provisions a scoped Redis and injects <span className="mono">REDIS_URL</span>. Namespace keys + channels as <span className="mono">&lt;name&gt;:</span> (see below).</Field>
+                  <Field name="workers">Always-on background processes off the same image — <span className="mono">[{`{name, start, replicas?, cpu?, memory?}`}]</span>. No HTTP port.</Field>
+                  <Field name="cron">Scheduled jobs — <span className="mono">[{`{name, schedule, command}`}]</span>. 5-field cron, UTC, run to completion.</Field>
                 </tbody>
               </table>
             </div>
@@ -227,6 +231,40 @@ CNAME  _acme-challenge.yourdomain   <shown in the Domains tab>`}</Code>
               survive redeploys and reschedules. A SQLite database at <span className="mono">./data/app.db</span>,
               for example, persists across deploys when <span className="mono">data</span> is listed.
             </p>
+          </Section>
+
+          <Section id="background" title="Workers, cron & Redis">
+            <p className="text-[var(--color-muted)]">
+              An app can run background work from the <b>same repo and image</b> as its web
+              process — declared in the manifest, no extra service to wire up:
+            </p>
+            <Code label=".paas/app.yaml">{`redis: true                      # scoped Redis + injected REDIS_URL
+
+workers:                         # always-on, no HTTP port
+  - name: events
+    start: python -m app.worker
+    replicas: 1                  # optional (default 1); cpu/memory optional
+
+cron:                            # 5-field schedules, UTC
+  - name: nightly
+    schedule: "0 2 * * *"
+    command: python -m app.jobs.nightly`}</Code>
+            <ul className="list-disc ml-5 space-y-2 text-[var(--color-fg)]">
+              <li><b>Workers</b> are extra services off the one image — same env, secrets and
+                <span className="mono"> REDIS_URL</span>, no router, no healthcheck. They don't run the
+                web's <span className="mono">predeploy</span>. Status + logs live on the app's
+                <b> Background</b> tab.</li>
+              <li><b>Cron</b> jobs run to completion on schedule (UTC) from the app's live image, with
+                per-run status, logs and a <b>Run now</b> button. No catch-up: a job overdue after
+                downtime fires once, not per missed slot.</li>
+              <li><b>Redis</b> is one shared instance, <b>isolated per app by an ACL user</b>: you may
+                only touch keys and pub/sub channels prefixed <span className="mono text-acid">&lt;name&gt;:</span>
+                (e.g. <span className="mono">my-app:jobs</span>) — other names are rejected. It runs
+                <span className="mono"> noeviction</span>, so it back-pressures instead of silently
+                dropping a queue. A typical pattern: the web app
+                <span className="mono"> RPUSH</span>es to <span className="mono">my-app:jobs</span> and a
+                worker <span className="mono">BLPOP</span>s it.</li>
+            </ul>
           </Section>
 
           <Section id="architecture" title="How it works">

@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { PublicNav, Footer } from "../components/Chrome.jsx";
 
+const REPO_URL = "https://github.com/hikmahtech/koyracloud";
+
 const MANIFEST = `name: lens-inventory
 runtime: python+node
 subdomain: lens.apps.example.com
@@ -27,6 +29,7 @@ const FEATURES = [
   ["Secrets, encrypted at rest", "Fernet-encrypted in the control plane, injected at deploy. Never in your repo, never in the image."],
   ["Live logs, history, rollback", "Stream the build and deploy as it happens. Every deploy is recorded; roll back to any commit."],
   ["Persistent storage", "Declare persist dirs in the manifest; they survive redeploys on NFS-backed volumes."],
+  ["Workers, cron & Redis", "Add background workers and scheduled jobs from the same repo, and a scoped Redis bus to pass events between them — all in the manifest."],
   ["Single-operator, by design", "GitHub OAuth behind an allowlist. Your homelab, your apps, your rules — no multi-tenant ceremony."],
 ];
 
@@ -53,7 +56,13 @@ export default function Landing() {
             <div className="rise mt-8 flex flex-wrap gap-3" style={{ animationDelay: "220ms" }}>
               <a href="/api/auth/login" className="btn btn-primary">Sign in with GitHub →</a>
               <Link to="/docs" className="btn btn-ghost">Read the docs</Link>
+              <a href={REPO_URL} target="_blank" rel="noreferrer" className="btn btn-ghost">Self-host it ↗</a>
             </div>
+            <p className="rise mt-3 text-sm text-[var(--color-muted)]" style={{ animationDelay: "260ms" }}>
+              Open source — <a href={REPO_URL} target="_blank" rel="noreferrer"
+                className="text-acid no-underline hover:underline">github.com/hikmahtech/koyracloud</a>.
+              Run it on your own Docker Swarm.
+            </p>
           </div>
 
           {/* Manifest card */}
@@ -103,10 +112,13 @@ export default function Landing() {
         <div className="card p-10 text-center relative overflow-hidden">
           <div className="glow absolute inset-x-0 top-0 h-40 pointer-events-none" />
           <h2 className="font-display text-3xl sm:text-4xl">Ship your next repo in minutes.</h2>
-          <p className="text-[var(--color-muted)] mt-3">Add a manifest, connect the repo, watch it go live.</p>
-          <div className="mt-7 flex justify-center gap-3">
+          <p className="text-[var(--color-muted)] mt-3">
+            Add a manifest, connect the repo, watch it go live — or run the whole thing on your own swarm.
+          </p>
+          <div className="mt-7 flex justify-center flex-wrap gap-3">
             <a href="/api/auth/login" className="btn btn-primary">Get started</a>
             <Link to="/docs" className="btn btn-ghost">Manifest reference</Link>
+            <a href={REPO_URL} target="_blank" rel="noreferrer" className="btn btn-ghost">Self-host on GitHub ↗</a>
           </div>
         </div>
       </section>

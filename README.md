@@ -146,7 +146,14 @@ so apps don't depend on the build node and aren't pinned anywhere.
 ## Self-hosting
 
 You need a Docker Swarm with Traefik (HTTPS entrypoint + ACME resolver) and an NFS
-export reachable by the nodes. Then:
+export reachable by the nodes. Then clone and deploy:
+
+```bash
+git clone https://github.com/hikmahtech/koyracloud.git
+cd koyracloud
+# configure deploy/koyracloud.env + the Docker secrets (see deploy/README.md), then:
+DOCKER_CONTEXT=<your-swarm-context> ./deploy/deploy.sh
+```
 
 1. Build the base buildpack image (`runtime-image/`) — apps that ship their own
    Dockerfile don't use it.
