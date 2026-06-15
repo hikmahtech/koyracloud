@@ -109,6 +109,24 @@ class Settings:
     # local image instead of resolving a digest from a registry.
     resolve_image_never: bool = field(
         default_factory=lambda: os.environ.get("KOYRA_RESOLVE_IMAGE_NEVER", "") == "1")
+    # Shared Redis bus. One koyracloud-owned instance apps reach as
+    # ``redis:6379`` on the traefik network. Each app with ``redis: true`` gets a
+    # scoped ACL user (managed by the control plane via the admin password) and a
+    # stable injected REDIS_URL. The admin password being empty disables the
+    # feature: a manifest asking for redis then fails the deploy loudly.
+    redis_host: str = field(default_factory=lambda: os.environ.get("KOYRA_REDIS_HOST", "redis"))
+    redis_port: int = field(default_factory=lambda: int(os.environ.get("KOYRA_REDIS_PORT", "6379")))
+    redis_admin_password: str = field(
+        default_factory=lambda: _secret("KOYRA_REDIS_ADMIN_PASSWORD", ""))
+    redis_maxmemory: str = field(
+        default_factory=lambda: os.environ.get("KOYRA_REDIS_MAXMEMORY", "256mb"))
+    # Cron scheduler
+    cron_enabled: bool = field(
+        default_factory=lambda: os.environ.get("KOYRA_CRON_ENABLED", "1") != "0")
+    cron_tick_seconds: int = field(
+        default_factory=lambda: int(os.environ.get("KOYRA_CRON_TICK_SECONDS", "30")))
+    cron_job_timeout: int = field(
+        default_factory=lambda: int(os.environ.get("KOYRA_CRON_JOB_TIMEOUT", "600")))
     # GitHub
     github_client_id: str = field(default_factory=lambda: os.environ.get("GITHUB_CLIENT_ID", ""))
     github_client_secret: str = field(

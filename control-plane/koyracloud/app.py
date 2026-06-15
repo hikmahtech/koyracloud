@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
-from koyracloud import analytics, auth, monitor, notifier, webhooks
+from koyracloud import analytics, auth, monitor, notifier, scheduler, webhooks
 from koyracloud.ratelimit import RateLimiter
 from koyracloud.cloudflare import Cloudflare
 from koyracloud.config import Settings, get_settings
@@ -22,12 +22,12 @@ from koyracloud.db import Database
 from koyracloud.deployer import Deployer
 from koyracloud.docker_ctl import CLIDockerControl, DockerControl
 from koyracloud.models import (AllowedUser, App, AppAnalytics, AppNotify,
-                                Deploy, Domain, DomainCert, EnvVar, Hit, Secret,
-                                User)
+                                AppRedis, CronJob, CronRun, Deploy, Domain,
+                                DomainCert, EnvVar, Hit, Secret, User)
 from koyracloud.schemas import (AllowedUserIn, AppCreate, AppOut, AppUpdate,
                                 DeployOut, DeployTrigger, DnsRecord, DomainIn,
                                 DomainOut, EnvVarIn, RollbackRequest, SecretIn)
-from koyracloud.stack_render import auto_subdomain
+from koyracloud.stack_render import auto_subdomain, worker_service_name
 
 import re as _re
 
@@ -72,6 +72,13 @@ def create_app(
                              daemon=True).start()
         else:
             deployer.run_deploy(db, deploy_id)
+
+    def launch_cron(cron_job_id: int) -> None:
+        args = (db, docker, settings, crypto, cron_job_id)
+        if run_async:
+            threading.Thread(target=scheduler.launch, args=args, daemon=True).start()
+        else:
+            scheduler.launch(*args)
 
     def notify_event(app_id: int, event: str, detail: str = "") -> None:
         """Resolve recipient + app info and send an email (fire-and-forget)."""
@@ -514,6 +521,14 @@ def create_app(
         with db.session() as s:
             obj = get_app_or_404(app_id, s, login)
             name = obj.name
+            # Background state isn't an App relationship — clean it explicitly so
+            # no cron jobs/runs or Redis credential are orphaned.
+            for j in s.query(CronJob).filter_by(app_id=app_id).all():
+                s.delete(j)   # cascades its CronRun history
+            ar = s.get(AppRedis, app_id)
+            redis_user = ar.username if ar else ""
+            if ar:
+                s.delete(ar)
             s.delete(obj)
             s.commit()
         try:  # best-effort teardown; never block the delete on swarm state
@@ -521,6 +536,11 @@ def create_app(
                 pass
         except Exception:  # noqa: BLE001
             pass
+        if redis_user:  # drop the scoped ACL user from the shared instance
+            try:
+                deployer._get_redis_admin().delete_user(redis_user)
+            except Exception:  # noqa: BLE001
+                pass
         return Response(status_code=204)
 
     # ----- env vars -------------------------------------------------------
@@ -730,6 +750,81 @@ def create_app(
             s.commit()
         return Response(status_code=204)
 
+    # ----- background: workers, cron, redis -------------------------------
+    def _worker_status(app_name: str) -> list[dict]:
+        """Worker services are ``koyra-<app>_<app>-<worker>``; derive the list +
+        replica counts from the one services overview (no per-worker DB rows)."""
+        prefix = f"koyra-{app_name}_{app_name}-"
+        out = []
+        for svc, st in docker.services_overview().items():
+            if svc.startswith(prefix):
+                out.append({"name": svc[len(prefix):],
+                            "running": st.get("running", 0),
+                            "desired": st.get("desired", 0)})
+        return sorted(out, key=lambda w: w["name"])
+
+    def _owned_cron_job(app_id: int, job_id: int, s, login: str) -> CronJob:
+        obj = get_app_or_404(app_id, s, login)
+        j = s.get(CronJob, job_id)
+        if j is None or j.app_id != obj.id:
+            raise HTTPException(status_code=404, detail="cron job not found")
+        return j
+
+    @app.get("/api/apps/{app_id}/background")
+    def app_background(app_id: int, login: str = Auth):
+        with db.session() as s:
+            obj = get_app_or_404(app_id, s, login)
+            name = obj.name
+            redis_on = s.get(AppRedis, app_id) is not None
+            cron = []
+            for j in s.query(CronJob).filter_by(app_id=app_id).order_by(CronJob.name).all():
+                last = (s.query(CronRun).filter_by(cron_job_id=j.id)
+                        .order_by(CronRun.id.desc()).first())
+                cron.append({
+                    "id": j.id, "name": j.name, "schedule": j.schedule,
+                    "command": j.command, "enabled": j.enabled,
+                    "last_run_at": j.last_run_at.isoformat() if j.last_run_at else None,
+                    "last_status": last.status if last else None,
+                })
+        return {"redis": {"enabled": redis_on, "prefix": name},
+                "workers": _worker_status(name), "cron": cron}
+
+    @app.get("/api/apps/{app_id}/workers/{worker}/logs")
+    def worker_logs(app_id: int, worker: str, tail: int = 200, login: str = Auth):
+        with db.session() as s:
+            obj = get_app_or_404(app_id, s, login)
+            name = obj.name
+        svc = f"koyra-{name}_{worker_service_name(name, worker)}"
+        return {"logs": docker.service_logs(svc, min(max(tail, 10), 1000))}
+
+    @app.get("/api/apps/{app_id}/cron/{job_id}/runs")
+    def cron_runs(app_id: int, job_id: int, limit: int = 20, login: str = Auth):
+        with db.session() as s:
+            _owned_cron_job(app_id, job_id, s, login)
+            runs = (s.query(CronRun).filter_by(cron_job_id=job_id)
+                    .order_by(CronRun.id.desc()).limit(min(max(limit, 1), 100)).all())
+            return [{
+                "id": r.id, "status": r.status, "exit_code": r.exit_code,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+            } for r in runs]
+
+    @app.get("/api/apps/{app_id}/cron/{job_id}/runs/{run_id}/log")
+    def cron_run_log(app_id: int, job_id: int, run_id: int, login: str = Auth):
+        with db.session() as s:
+            _owned_cron_job(app_id, job_id, s, login)
+            r = s.get(CronRun, run_id)
+            if r is None or r.cron_job_id != job_id:
+                raise HTTPException(status_code=404, detail="run not found")
+            return {"status": r.status, "exit_code": r.exit_code, "log": r.log or ""}
+
+    @app.post("/api/apps/{app_id}/cron/{job_id}/run", status_code=202)
+    def cron_run_now(app_id: int, job_id: int, login: str = Auth):
+        with db.session() as s:
+            _owned_cron_job(app_id, job_id, s, login)
+        launch_cron(job_id)
+        return {"launched": True}
+
     # ----- deploys --------------------------------------------------------
     @app.get("/api/apps/{app_id}/deploys", response_model=list[DeployOut])
     def list_deploys(app_id: int, login: str = Auth):
@@ -822,6 +917,11 @@ def create_app(
             notify_event(app_id, "recovered" if state == "up" else "down")
         monitor.UptimeMonitor(db, settings.uptime_interval,
                               on_transition=_on_transition).start()
+
+    # Cron scheduler: launch due jobs as Swarm run-to-completion jobs each tick.
+    if run_async and settings.cron_enabled:
+        scheduler.CronScheduler(db, docker, settings, crypto,
+                                settings.cron_tick_seconds).start()
 
     # One-shot backfill of Cloudflare custom hostnames for pre-existing custom
     # domains (run off-thread so a slow/unreachable CF API never blocks boot).

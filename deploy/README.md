@@ -49,6 +49,9 @@ run on any node — nothing is pinned.
   app `persist:` dirs use Docker NFS-driver volumes (mounted per-node, no pinning).
   Create the registry's storage dir on the export once: `<nfs>/koyracloud/registry`.
   Leave it empty for single-node / local (plain bind mounts).
+- The shared **Redis** service (the bus for app `redis: true`, workers and cron)
+  also stores its AOF on an NFS-driver volume — create `<nfs>/koyracloud/redis`
+  on the export once too.
 
 ### 5. Secrets (Docker secrets, created once)
 ```bash
@@ -60,6 +63,10 @@ printf '%s' '<github pat for cloning>'     | docker --context <ctx> secret creat
 # Cloudflare for SaaS API token (Zone:SSL and Certificates:Edit + Zone:DNS:Read,
 # scoped to your SaaS zone). Registers user custom domains as custom hostnames.
 printf '%s' '<cloudflare for saas api token>' | docker --context <ctx> secret create koyra_cloudflare_api_token -
+# Shared Redis admin password (the `default`/admin user). The control plane uses
+# it to manage per-app ACL users. A blank secret disables the Redis bus — apps
+# with `redis: true` then fail their deploy. Use a URL-safe value (no spaces).
+openssl rand -hex 24 | tr -d '\n' | docker --context <ctx> secret create koyra_redis_admin_password -
 ```
 > Secrets are immutable. To rotate: detach, `secret rm`, recreate, redeploy.
 > Never rotate `koyra_secret_key` (the Fernet master key) without re-encrypting

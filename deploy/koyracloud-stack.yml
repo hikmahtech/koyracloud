@@ -44,6 +44,16 @@ services:
       CLOUDFLARE_API_TOKEN_FILE: /run/secrets/koyra_cloudflare_api_token
       KOYRA_CLOUDFLARE_ZONE_ID: ${KOYRA_CLOUDFLARE_ZONE_ID:-}
       KOYRA_CLOUDFLARE_SAAS_ORIGIN: ${KOYRA_CLOUDFLARE_SAAS_ORIGIN:-}
+      # Shared Redis bus (the `redis` service below). Apps with `redis: true`
+      # get a scoped ACL user (managed via the admin password) + injected
+      # REDIS_URL. Empty admin password disables the feature (a manifest asking
+      # for redis then fails its deploy loudly).
+      KOYRA_REDIS_HOST: ${KOYRA_REDIS_HOST:-redis}
+      KOYRA_REDIS_PORT: ${KOYRA_REDIS_PORT:-6379}
+      KOYRA_REDIS_ADMIN_PASSWORD_FILE: /run/secrets/koyra_redis_admin_password
+      KOYRA_REDIS_MAXMEMORY: ${KOYRA_REDIS_MAXMEMORY:-256mb}
+      # Cron scheduler (launches due jobs as Swarm run-to-completion jobs).
+      KOYRA_CRON_ENABLED: ${KOYRA_CRON_ENABLED:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${KOYRA_NFS_BASE:-/mnt/koyracloud}/cp:/data
@@ -59,6 +69,7 @@ services:
       - koyra_webhook_secret
       - koyra_resend_api_key
       - koyra_cloudflare_api_token
+      - koyra_redis_admin_password
     deploy:
       replicas: 1
       placement:
@@ -103,6 +114,35 @@ services:
       restart_policy:
         condition: on-failure
 
+  # Shared Redis bus koyracloud owns. Apps with `redis: true` reach it as
+  # `redis:6379` on the traefik network (the explicit alias guarantees the name
+  # resolves across stacks); each gets a scoped ACL user. `noeviction` means a
+  # full instance back-pressures with write errors rather than silently dropping
+  # another app's queued messages. AOF on an NFS-driver volume survives a
+  # reschedule (unpinned, like the registry). The admin password (the `default`
+  # user) is read from a Docker secret at start; `$$` keeps stack-deploy from
+  # interpolating the runtime `$(cat ...)`.
+  redis:
+    image: redis:7-alpine
+    command:
+      - sh
+      - -c
+      - 'exec redis-server --requirepass "$$(cat /run/secrets/koyra_redis_admin_password)"
+         --maxmemory ${KOYRA_REDIS_MAXMEMORY:-256mb} --maxmemory-policy noeviction
+         --appendonly yes'
+    volumes:
+      - koyra_redis:/data
+    networks:
+      traefik_public:
+        aliases:
+          - redis
+    secrets:
+      - koyra_redis_admin_password
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
 # The Traefik edge network. Convention name; change here if your swarm differs.
 networks:
   traefik_public:
@@ -118,6 +158,13 @@ volumes:
       type: nfs
       o: "addr=${KOYRA_NFS_SERVER},rw,nfsvers=4"
       device: ":${KOYRA_NFS_BASE:-/mnt/koyracloud}/registry"
+  # Redis AOF storage. The koyracloud/redis dir must exist on the NFS export.
+  koyra_redis:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=${KOYRA_NFS_SERVER},rw,nfsvers=4"
+      device: ":${KOYRA_NFS_BASE:-/mnt/koyracloud}/redis"
 
 secrets:
   koyra_secret_key:
@@ -133,4 +180,6 @@ secrets:
   koyra_resend_api_key:
     external: true
   koyra_cloudflare_api_token:
+    external: true
+  koyra_redis_admin_password:
     external: true

@@ -68,6 +68,42 @@ Build-time-inlined frameworks (`NEXT_PUBLIC_*`, `VITE_*`) get their values as
 
 Full reference: the **Docs** in-app (`/docs`) or [`examples/`](examples/).
 
+## Background workers, cron & Redis
+
+The same repo + the same built image can also run **background workers** (always-on,
+no HTTP port), **cron jobs** (run to completion on a schedule), and reach a **shared
+Redis** bus — all declared in the manifest:
+
+```yaml
+redis: true                      # provision a scoped Redis, inject REDIS_URL
+
+workers:                         # always-on processes (queue consumers, bots…)
+  - name: events
+    start: python -m app.worker
+    replicas: 1                  # optional (default 1); cpu/memory optional too
+
+cron:                            # 5-field schedules, UTC
+  - name: nightly
+    schedule: "0 2 * * *"
+    command: python -m app.jobs.nightly
+```
+
+- **Workers** are extra Swarm services off the one image — same env, secrets and
+  `REDIS_URL`, no router, no healthcheck. They don't run the web's `predeploy`.
+- **Cron** jobs are launched by the control plane as Swarm run-to-completion jobs from
+  the app's current live image, with per-run status + logs and a **Run now** button in
+  the dashboard. No catch-up: a job overdue after downtime fires once, not per missed slot.
+- **Redis** is one koyracloud-owned instance shared by all apps but **isolated per app
+  by an ACL user**: you may only touch keys and pub/sub channels prefixed `<app-name>:`.
+  Namespace your keys that way (e.g. `my-app:jobs`) — other names are rejected. The
+  instance runs `noeviction`, so it back-pressures with write errors rather than silently
+  dropping another app's queued messages.
+
+The **Background** tab on each app shows worker status + logs, cron schedules + run
+history, and the Redis status.
+
+Full reference: the **Docs** in-app (`/docs`) or [`examples/`](examples/).
+
 ## How it works
 
 ```
