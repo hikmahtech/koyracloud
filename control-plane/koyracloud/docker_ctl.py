@@ -77,6 +77,17 @@ class CLIDockerControl:
         yield from self._stream(["push", tag])
 
     def deploy(self, stack: str, stack_dict: dict) -> Iterator[str]:
+        # `docker stack deploy` interpolates ${...}/$VAR in the compose file, so a
+        # literal $ in any env value must be escaped to $$ or the deploy errors
+        # ("invalid interpolation format"). Env/secret values are the only
+        # user-controlled free text in the rendered stack; escape them in place.
+        for svc in stack_dict.get("services", {}).values():
+            env = svc.get("environment")
+            if isinstance(env, dict):
+                svc["environment"] = {
+                    k: (v.replace("$", "$$") if isinstance(v, str) else v)
+                    for k, v in env.items()
+                }
         with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as f:
             yaml.safe_dump(stack_dict, f, sort_keys=False)
             path = f.name
