@@ -13,7 +13,8 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
-from koyracloud import analytics, auth, monitor, notifier, scheduler, webhooks
+from koyracloud import (analytics, auth, metrics as kmetrics, monitor, notifier,
+                        scheduler, webhooks)
 from koyracloud.ratelimit import RateLimiter
 from koyracloud.cloudflare import Cloudflare
 from koyracloud.config import Settings, get_settings
@@ -181,6 +182,25 @@ def create_app(
     @app.get("/api/health")
     def health():
         return {"status": "ok"}
+
+    # Prometheus scrape target (unauthenticated; reached in-cluster over the
+    # `monitoring` overlay). Exposes only platform-unique signal — per-app
+    # uptime, app/deploy counts, Redis reachability.
+    def _redis_ping() -> bool:
+        try:
+            import redis
+            return bool(redis.Redis(
+                host=settings.redis_host, port=settings.redis_port,
+                username="default", password=settings.redis_admin_password,
+                socket_timeout=3, decode_responses=True).ping())
+        except Exception:
+            return False
+
+    @app.get("/metrics")
+    def metrics_endpoint():
+        ping = _redis_ping if settings.redis_admin_password else None
+        return Response(kmetrics.render(db, redis_ping=ping),
+                        media_type="text/plain; version=0.0.4")
 
     @app.get("/api/config")
     def public_config():
