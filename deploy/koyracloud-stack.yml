@@ -87,7 +87,12 @@ services:
           - node.hostname == ${KOYRA_CONTROL_NODE}
       labels:
         - traefik.enable=true
-        - "traefik.http.routers.koyracloud.rule=Host(`${KOYRA_HOST}`)"
+        # `&& !PathPrefix(/metrics)` keeps GET /metrics OFF the public edge — it
+        # exposes per-app traffic/visitor counts and must not be world-readable.
+        # Prometheus scrapes it in-cluster over the `monitoring` overlay
+        # (tasks.koyracloud_control-plane:8000), which bypasses Traefik, so this
+        # only blocks public access. See docs/MONITORING.md.
+        - "traefik.http.routers.koyracloud.rule=Host(`${KOYRA_HOST}`) && !PathPrefix(`/metrics`)"
         - traefik.http.routers.koyracloud.entrypoints=${KOYRA_HTTPS_ENTRYPOINT:-websecure}
         - traefik.http.routers.koyracloud.tls.certresolver=${KOYRA_CERT_RESOLVER:-letsencrypt}
         - traefik.http.services.koyracloud.loadbalancer.server.port=8000
