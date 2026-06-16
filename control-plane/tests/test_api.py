@@ -184,6 +184,24 @@ def test_redeploy_same_commit_skips_build(client, env):
     assert len(env["docker"].deployed) == 2        # but it re-deploys the service
 
 
+def test_redeploy_changed_env_rebuilds(client, env):
+    # Changing a build-time env var (NEXT_PUBLIC_*/VITE_*) must force a rebuild
+    # even at the same commit: the value is inlined into the image at build
+    # time, so reusing the prior image silently ships the stale value. The
+    # image identity therefore includes a hash of the build-args, not just the
+    # commit.
+    aid = client.post("/api/apps", json={"name": "shop",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    client.post(f"/api/apps/{aid}/deploys", json={})
+    assert len(env["docker"].builds) == 1          # first deploy builds + pushes
+    client.post(f"/api/apps/{aid}/deploys", json={})
+    assert len(env["docker"].builds) == 1          # same commit + env → no rebuild
+    client.put(f"/api/apps/{aid}/env", json=[{"key": "NEXT_PUBLIC_FOO", "value": "bar"}])
+    client.post(f"/api/apps/{aid}/deploys", json={})
+    assert len(env["docker"].builds) == 2          # env changed → rebuild despite same commit
+    assert env["docker"].builds[-1][0] != env["docker"].builds[0][0]  # distinct image tag
+
+
 def _rule_of(env, service):
     # The host may be split across the apps router and the SaaS router, so join
     # every router rule label to assert a host is routed somewhere.

@@ -97,6 +97,23 @@ class Deploy(Base):
     app: Mapped[App] = relationship(back_populates="deploys")
 
 
+class BuiltImage(Base):
+    """Registry images already built+pushed for an app, keyed by full tag.
+
+    The tag encodes every build input — git commit AND a hash of the build-args
+    (NEXT_PUBLIC_*/VITE_* etc. inlined at build time) — so a deploy can skip the
+    rebuild only when an image with the *identical* inputs exists. Changing a
+    build-time env var yields a new tag, forcing a rebuild even at the same
+    commit. Its own table (create_all never ALTERs `deploys`).
+    """
+    __tablename__ = "built_images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), index=True)
+    tag: Mapped[str] = mapped_column(String(255), index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class User(Base):
     __tablename__ = "users"
 
