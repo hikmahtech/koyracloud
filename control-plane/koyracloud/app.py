@@ -184,8 +184,9 @@ def create_app(
 
     @app.get("/api/config")
     def public_config():
-        # Non-sensitive instance config for the UI (e.g. the DNS hint).
-        return {"apps_domain": settings.apps_domain, "public_ip": settings.public_ip}
+        # Non-sensitive instance config for the UI (e.g. the DNS hint, GA id).
+        return {"apps_domain": settings.apps_domain, "public_ip": settings.public_ip,
+                "ga_measurement_id": settings.ga_measurement_id}
 
     @app.get("/_k/a.js")
     def analytics_beacon():
