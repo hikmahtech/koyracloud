@@ -1,6 +1,8 @@
 """Prometheus /metrics exposition."""
+import datetime as dt
+
 from koyracloud import metrics
-from koyracloud.models import App, Deploy, Domain, UptimeState
+from koyracloud.models import App, Deploy, Domain, Hit, UptimeState
 
 
 def _seed(db):
@@ -38,6 +40,29 @@ def test_render_counts_uptime_and_deploys(env):
     assert "koyracloud_redis_up 1" in text
     # proper exposition: every series has a TYPE line
     assert "# TYPE koyracloud_app_up gauge" in text
+
+
+def test_app_usage_views_and_visitors(env):
+    now = dt.datetime(2026, 6, 17, 12, 0, tzinfo=dt.timezone.utc)
+    with env["db"].session() as s:
+        a = App(name="alpha", repo_url="https://github.com/o/a")
+        s.add(a); s.flush()
+        # 3 views in the last 24h from 2 distinct visitors, + 1 old view (>24h)
+        s.add(Hit(app_id=a.id, ts=now - dt.timedelta(hours=1), path="/", visitor="v1"))
+        s.add(Hit(app_id=a.id, ts=now - dt.timedelta(hours=2), path="/x", visitor="v1"))
+        s.add(Hit(app_id=a.id, ts=now - dt.timedelta(hours=3), path="/", visitor="v2"))
+        s.add(Hit(app_id=a.id, ts=now - dt.timedelta(hours=30), path="/", visitor="v3"))
+        # beta exists but has no hits -> must still emit 0 for both
+        b = App(name="beta", repo_url="https://github.com/o/b")
+        s.add(b)
+        s.commit()
+
+    text = metrics.render(env["db"], now=now)
+    assert 'koyracloud_app_views_total{app="alpha"} 4' in text      # all-time
+    assert 'koyracloud_app_views_total{app="beta"} 0' in text       # every app visible
+    assert 'koyracloud_app_visitors_24h{app="alpha"} 2' in text     # v1,v2 (v3 is >24h)
+    assert 'koyracloud_app_visitors_24h{app="beta"} 0' in text
+    assert "# TYPE koyracloud_app_visitors_24h gauge" in text
 
 
 def test_redis_metric_omitted_when_unconfigured(env):

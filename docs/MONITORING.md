@@ -37,9 +37,19 @@ hand-rendered, no extra dependency) computed from the DB on each scrape:
 | `koyracloud_app_up` | gauge | `app`, `host` | 1/0 from the uptime monitor (apps with a known state only) |
 | `koyracloud_deploys_total` | counter | `status` | deploy rows by status (`live`/`failed`/…) |
 | `koyracloud_redis_up` | gauge | — | control plane can reach the shared Redis (omitted if Redis isn't configured) |
+| `koyracloud_app_views_total` | counter | `app` | pageviews from the built-in analytics beacon (all time) |
+| `koyracloud_app_visitors_24h` | gauge | `app` | unique cookieless visitors in the last 24h |
 
 No `owner` label — the endpoint is reachable at `koyracloud.com/metrics`, and app
 hostnames are already public sites, so nothing sensitive is exposed.
+
+**Per-app usage.** "How each app is doing" comes from two sources. Traffic,
+latency and error rate are read straight from **Traefik's** already-scraped
+per-router metrics (`traefik_service_*{service="koyra-<app>@docker"}`) — always
+available, no app changes. "How many users" comes from `koyracloud_app_views_total`
+/ `koyracloud_app_visitors_24h`, which only count apps that embed the `/_k/a.js`
+beacon (a per-app opt-in). koyracloud has no visibility into apps' *internal*
+registered users — each app owns its own database.
 
 ## Wiring into Prometheus (homelab-gitops)
 
