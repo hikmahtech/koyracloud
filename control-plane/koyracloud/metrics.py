@@ -9,12 +9,13 @@ already come from cadvisor / node-exporter / swarm-exporter on the swarm.
 """
 from __future__ import annotations
 
+import datetime as dt
 from typing import Callable
 
-from sqlalchemy import func
+from sqlalchemy import distinct, func
 
 from koyracloud.db import Database
-from koyracloud.models import App, Deploy, UptimeState
+from koyracloud.models import App, Deploy, Hit, UptimeState
 from koyracloud.monitor import _primary_host
 
 # A Redis pinger returns True when the control plane can reach the shared Redis.
@@ -33,8 +34,10 @@ def _metric(name: str, value, labels: dict[str, str] | None = None) -> str:
     return f"{name} {value}"
 
 
-def render(db: Database, *, redis_ping: RedisPing | None = None) -> str:
+def render(db: Database, *, redis_ping: RedisPing | None = None,
+           now: dt.datetime | None = None) -> str:
     """Render the full /metrics body (text exposition format 0.0.4)."""
+    now = now or dt.datetime.now(dt.timezone.utc)
     out: list[str] = []
     with db.session() as s:
         apps = s.query(App).all()
@@ -66,6 +69,23 @@ def render(db: Database, *, redis_ping: RedisPing | None = None) -> str:
                 "# TYPE koyracloud_deploys_total counter"]
         for status, count in s.query(Deploy.status, func.count()).group_by(Deploy.status):
             out.append(_metric("koyracloud_deploys_total", count, {"status": status}))
+
+        # Per-app usage from the built-in analytics beacon. Only apps that embed
+        # /_k/a.js report hits; every app gets a series (0 when none) so each is
+        # visible. Visitors are the cookieless daily-rotating hash → a privacy-
+        # safe "active users" proxy.
+        views = dict(s.query(Hit.app_id, func.count()).group_by(Hit.app_id).all())
+        visitors = dict(s.query(Hit.app_id, func.count(distinct(Hit.visitor)))
+                        .filter(Hit.ts >= now - dt.timedelta(hours=24))
+                        .group_by(Hit.app_id).all())
+        out += ["# HELP koyracloud_app_views_total Pageviews from the analytics beacon (all time).",
+                "# TYPE koyracloud_app_views_total counter"]
+        for a in apps:
+            out.append(_metric("koyracloud_app_views_total", views.get(a.id, 0), {"app": a.name}))
+        out += ["# HELP koyracloud_app_visitors_24h Unique cookieless visitors in the last 24h.",
+                "# TYPE koyracloud_app_visitors_24h gauge"]
+        for a in apps:
+            out.append(_metric("koyracloud_app_visitors_24h", visitors.get(a.id, 0), {"app": a.name}))
 
     if redis_ping is not None:
         out += ["# HELP koyracloud_redis_up Control plane can reach the shared Redis (1/0).",
