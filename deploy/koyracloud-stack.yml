@@ -48,7 +48,11 @@ services:
       # get a scoped ACL user (managed via the admin password) + injected
       # REDIS_URL. Empty admin password disables the feature (a manifest asking
       # for redis then fails its deploy loudly).
-      KOYRA_REDIS_HOST: ${KOYRA_REDIS_HOST:-redis}
+      # Use the fully-qualified swarm service name, NOT the bare `redis` alias:
+      # the control plane also joins the `monitoring` overlay, where the homelab
+      # standalone redis is aliased `redis` too — so the bare name resolves to
+      # the wrong instance (auth failure). `koyracloud_redis` is unambiguous.
+      KOYRA_REDIS_HOST: ${KOYRA_REDIS_HOST:-koyracloud_redis}
       KOYRA_REDIS_PORT: ${KOYRA_REDIS_PORT:-6379}
       KOYRA_REDIS_ADMIN_PASSWORD_FILE: /run/secrets/koyra_redis_admin_password
       KOYRA_REDIS_MAXMEMORY: ${KOYRA_REDIS_MAXMEMORY:-256mb}
