@@ -27,8 +27,12 @@ every live app's public URL and records `UptimeState.up` — so the control plan
 is the authoritative, *dynamic* source of per-app health (no hardcoded target
 lists that rot as apps come and go).
 
-The control plane exposes an **unauthenticated** `GET /metrics` (Prometheus text;
-hand-rendered, no extra dependency) computed from the DB on each scrape:
+The control plane exposes `GET /metrics` (Prometheus text; hand-rendered, no
+extra dependency) computed from the DB on each scrape. It is **not
+authenticated, but it is not publicly routable**: the Traefik router rule
+(`… && !PathPrefix(/metrics)`) returns 404 for `koyracloud.com/metrics`, so only
+in-cluster scrapers reach it. The metrics below include per-app traffic/visitor
+counts that must stay internal — keep `/metrics` off any public ingress.
 
 | Metric | Type | Labels | Meaning |
 |--------|------|--------|---------|
@@ -40,8 +44,8 @@ hand-rendered, no extra dependency) computed from the DB on each scrape:
 | `koyracloud_app_views_total` | counter | `app` | pageviews from the built-in analytics beacon (all time) |
 | `koyracloud_app_visitors_24h` | gauge | `app` | unique cookieless visitors in the last 24h |
 
-No `owner` label — the endpoint is reachable at `koyracloud.com/metrics`, and app
-hostnames are already public sites, so nothing sensitive is exposed.
+No `owner` label is emitted; the endpoint is reached only in-cluster by
+Prometheus (the public path is blocked at the edge, above).
 
 **Per-app usage.** "How each app is doing" comes from two sources. Traffic,
 latency and error rate are read straight from **Traefik's** already-scraped
