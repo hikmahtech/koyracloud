@@ -8,12 +8,13 @@ is. It complements the [README](../README.md) (what it is) and
 
 | Component | What it is |
 |-----------|------------|
-| **Control plane** | A FastAPI + React app running as a single Swarm service on a manager node. Owns the database (apps, deploys, domains, env, secrets), drives the cluster via the mounted docker socket, and serves the dashboard + API. |
+| **Control plane** | A FastAPI + React app running as a single Swarm service on a manager node. Owns the database (apps, deploys, domains, env, secrets), drives the cluster via the mounted docker socket, serves the dashboard + API, and runs background loops: the uptime monitor and the **cron scheduler** (launches due jobs as Swarm run-to-completion jobs). Also exposes Prometheus `/metrics` (see [`MONITORING.md`](MONITORING.md)). |
 | **Internal registry** | A `registry:2` Swarm service koyracloud owns. Per-app images are pushed here and pulled by Swarm on whichever node runs the app. |
+| **Shared Redis** | A `redis:7` Swarm service koyracloud owns — the bus for apps with `redis: true` (and their workers/cron). Each app gets an ACL user scoped to its own `<app>:*` keys/channels; reached as `koyracloud_redis:6379`. AOF on an NFS-driver volume. |
 | **Base buildpack image** | `python:3.12 + node:22 + git` (`runtime-image/`). Used as the `FROM` for *generated* app images and to serve static sites. Apps that ship their own `Dockerfile` don't use it. |
 | **Traefik** | The HTTPS edge. The control plane renders per-app router labels; Traefik routes by `Host(...)`. |
 | **cloudflared tunnel** | Brings custom-domain traffic from the Cloudflare edge to Traefik (for the Cloudflare-for-SaaS flow). |
-| **NFS** | Shared storage for persisted app data and the registry's image store. **Never** for application code. |
+| **NFS** | Shared storage for persisted app data, the registry's image store, and Redis's AOF. **Never** for application code. |
 
 ## The deploy pipeline
 

@@ -141,6 +141,13 @@ so apps don't depend on the build node and aren't pinned anywhere.
 - **Secrets encrypted at rest** (Fernet), injected at run time.
 - **Live build/deploy logs** (SSE), deploy history, one-click rollback.
 - **Persistent storage** via manifest `persist:` dirs.
+- **Background workers, cron & a Redis bus** — declare `workers:`, `cron:` and
+  `redis: true` in the manifest: always-on workers, scheduled jobs (with run history),
+  and a per-app-isolated Redis to pass events between them — all from the same repo.
+  See the *Background workers, cron & Redis* section below.
+- **Metrics & monitoring** — the control plane exposes Prometheus `/metrics` (per-app
+  end-to-end reachability) plus an alert group + Grafana dashboard
+  ([`docs/MONITORING.md`](docs/MONITORING.md)).
 - **GitHub OAuth** behind a login allowlist — single-operator by design. Logins in
   `KOYRA_ALLOWED_LOGINS` are admins and see every app; people invited from the Team page
   are scoped members who only see the apps they own.
