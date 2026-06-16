@@ -22,6 +22,8 @@ export function PublicNav() {
         <div className="flex items-center gap-7 text-sm">
           <Link to="/docs" className="text-[var(--color-muted)] hover:text-[var(--color-fg)] no-underline">Docs</Link>
           <Link to="/blog" className="text-[var(--color-muted)] hover:text-[var(--color-fg)] no-underline">Blog</Link>
+          <a href="https://github.com/hikmahtech/koyracloud" target="_blank" rel="noreferrer"
+             className="text-[var(--color-muted)] hover:text-[var(--color-fg)] no-underline">GitHub ↗</a>
           <a href="/api/auth/login" className="btn btn-primary">Sign in</a>
         </div>
       </nav>

@@ -18,13 +18,13 @@ healthcheck: /health
 secrets: [SECRET_KEY]`;
 
 const STEPS = [
-  { n: "01", t: "Commit a manifest", d: "Drop a .paas/app.yaml in your repo — build, start, port, persistent dirs, secrets." },
-  { n: "02", t: "Connect the repo", d: "Point koyracloud at it. One shared runtime image builds every app on the volume — no per-app Dockerfile." },
-  { n: "03", t: "It deploys", d: "Clone → build → migrate → run, behind Traefik with an auto-TLS subdomain. Logs, history, rollback included." },
+  { n: "01", t: "Commit a manifest", d: "Drop a .paas/app.yaml in your repo — build, start, port, persistent dirs, secrets. Or point at your own Dockerfile." },
+  { n: "02", t: "Connect the repo", d: "Point koyracloud at it. Each deploy builds a per-app container image — from your manifest's steps or your Dockerfile — and pushes it to a built-in registry." },
+  { n: "03", t: "It deploys", d: "Swarm pulls the image and runs it on any node, behind Traefik with an auto-TLS subdomain. Live logs, history and rollback included." },
 ];
 
 const FEATURES = [
-  ["Bring a repo, not a Dockerfile", "One python+node+git runtime image runs everything. Dependencies are hashed and cached on the volume — restarts are instant and offline-safe."],
+  ["Bring a repo — or your own Dockerfile", "A manifest builds a per-app image (python+node base, or your Dockerfile), layer-cached and pushed to a built-in registry — so any node can pull and run it."],
   ["Auto-TLS on every subdomain", "Apps land on a unique <name>-<token>.apps.example.com with TLS handled for you. Attach your own domains in a click."],
   ["Secrets, encrypted at rest", "Fernet-encrypted in the control plane, injected at deploy. Never in your repo, never in the image."],
   ["Live logs, history, rollback", "Stream the build and deploy as it happens. Every deploy is recorded; roll back to any commit."],
@@ -49,9 +49,9 @@ export default function Landing() {
               Your own Vercel,<br />running on <span className="text-acid">your</span> metal.
             </h1>
             <p className="rise mt-6 text-lg text-[var(--color-muted)] max-w-xl" style={{ animationDelay: "140ms" }}>
-              Connect a git repo, get a running app behind HTTPS — with builds, persistent
-              storage, injected secrets, live logs and rollback. No per-app Dockerfile,
-              runner, or registry. Just a manifest.
+              Connect a git repo, get a running app behind HTTPS — with per-app image
+              builds, persistent storage, injected secrets, live logs and rollback.
+              Bring a small manifest, or your own Dockerfile.
             </p>
             <div className="rise mt-8 flex flex-wrap gap-3" style={{ animationDelay: "220ms" }}>
               <a href="/api/auth/login" className="btn btn-primary">Sign in with GitHub →</a>

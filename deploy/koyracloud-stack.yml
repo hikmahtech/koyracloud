@@ -32,6 +32,8 @@ services:
       KOYRA_APPS_DOMAIN_PROXIED: ${KOYRA_APPS_DOMAIN_PROXIED:-}
       KOYRA_BASE_URL: ${KOYRA_BASE_URL}
       KOYRA_PUBLIC_IP: ${KOYRA_PUBLIC_IP:-}
+      # Google Analytics 4 Measurement ID (public). Empty = analytics off.
+      KOYRA_GA_MEASUREMENT_ID: ${KOYRA_GA_MEASUREMENT_ID:-}
       KOYRA_WEB_DIST: /app/web/dist
       KOYRA_APP_NODE: ${KOYRA_APP_NODE:-}
       KOYRA_RESOLVE_IMAGE_NEVER: ${KOYRA_RESOLVE_IMAGE_NEVER:-}

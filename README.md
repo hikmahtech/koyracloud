@@ -156,32 +156,27 @@ so apps don't depend on the build node and aren't pinned anywhere.
 - A **domain** for your apps (e.g. `apps.example.com`) with a wildcard DNS record, and a
   **GitHub OAuth app** so you can sign in.
 
-**Set it up (about 15 minutes):**
+**Set it up:**
 
 ```bash
-# 1. Get the code
 git clone https://github.com/hikmahtech/koyracloud.git
 cd koyracloud
 
-# 2. Build the base image apps are built FROM (python + node + git)
-docker build -f runtime-image/Dockerfile -t koyracloud-runtime:latest runtime-image/
-
-# 3. Configure your instance — copy the example and fill in your values
+# Fill in your instance config (domain, NFS server, GitHub login, host):
 cp deploy/koyracloud.env.example deploy/koyracloud.env
-$EDITOR deploy/koyracloud.env        # domain, NFS server, your GitHub login, etc.
+$EDITOR deploy/koyracloud.env
 
-# 4. Create the Docker secrets (Fernet key, session secret, GitHub creds, Redis
-#    admin password, …). The exact commands are in deploy/README.md §5.
-
-# 5. Deploy the control plane + the built-in registry + Redis to your swarm
-DOCKER_CONTEXT=<your-swarm-context> ./deploy/deploy.sh
+# Guided installer: creates the network + secrets, builds the base image, deploys.
+DOCKER_CONTEXT=<your-swarm-context> ./deploy/install.sh
 ```
 
 Then open `https://<your KOYRA_HOST>`, sign in with GitHub, click **New App**, paste a
 repo URL, and **Deploy**. Your app comes up at `<name>-<token>.<your apps domain>`.
 
-> **Full step-by-step** (prerequisites, every secret, GitHub OAuth, custom domains via
-> Cloudflare for SaaS): **[`deploy/README.md`](deploy/README.md)**.
+> **New to Docker Swarm + Traefik?** The full walkthrough — from bare machines to your
+> first deployed app, including the swarm, Traefik edge, NFS and DNS — is in
+> **[`docs/SELF-HOST-TUTORIAL.md`](docs/SELF-HOST-TUTORIAL.md)**. Prefer manual steps and
+> every secret command spelled out? **[`deploy/README.md`](deploy/README.md)**.
 
 For the design and the reasoning behind the build/registry/no-pinning choices, see
 **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**. Moving an existing Next.js app off

@@ -147,6 +147,11 @@ class Settings:
     dev_login: str = field(default_factory=lambda: os.environ.get("KOYRA_DEV_LOGIN", ""))
     base_url: str = field(default_factory=lambda: os.environ.get(
         "KOYRA_BASE_URL", "http://localhost:8000"))
+    # Google Analytics 4 Measurement ID (e.g. G-XXXXXXXXXX). Public, not a secret;
+    # served to the SPA via /api/config and loaded client-side. Empty = GA off, so
+    # a self-hosted instance ships no analytics unless its operator opts in.
+    ga_measurement_id: str = field(
+        default_factory=lambda: os.environ.get("KOYRA_GA_MEASUREMENT_ID", ""))
     # Cloudflare for SaaS — registers user-supplied custom domains as custom
     # hostnames so the edge mints/renews their certs. Active only when both
     # token and zone_id are set; otherwise every Cloudflare call is a graceful
