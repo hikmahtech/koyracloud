@@ -6,17 +6,17 @@ const POSTS = [
     tag: "Launch",
     title: "Introducing koyracloud",
     body: [
-      "koyracloud turns a homelab Docker Swarm into a self-hosted PaaS. Connect a git repo with a .paas/app.yaml manifest and it builds, runs and routes your app behind HTTPS — no per-app Dockerfile, runner, or container registry.",
-      "It's built for a single trusted operator: GitHub OAuth behind an allowlist, secrets encrypted at rest, and one shared runtime image that runs everything. The first app onboarded was a FastAPI + React inventory system — connected, built and live on its own subdomain in minutes.",
+      "koyracloud turns a homelab Docker Swarm into a self-hosted PaaS. Connect a git repo with a .paas/app.yaml manifest — or your own Dockerfile — and it builds a container image, runs it behind HTTPS, and routes it for you.",
+      "It's built for a single trusted operator: GitHub OAuth behind an allowlist, secrets encrypted at rest, and a built-in registry every node pulls app images from. The first app onboarded was a FastAPI + React inventory system — connected, built and live on its own subdomain in minutes.",
     ],
   },
   {
     date: "2026-06-10",
     tag: "Engineering",
-    title: "Why builds run in a one-off container",
+    title: "Why we build apps into images, off NFS",
     body: [
-      "Early on, apps built their dependencies inside the served container on first start. That raced the healthcheck and, worse, concurrent restarts ran npm installs against the same shared volume and corrupted each other.",
-      "The fix: the control plane runs the build once in a disposable container, then deploys the long-running service — which finds the dependency hash satisfied, skips the build, runs migrations and starts. No race, no corruption, fast restarts.",
+      "An earlier design kept each app's code, node_modules and venv on a shared NFS volume, and a one-off container built dependencies there before the long-running service served the code from NFS. It worked — until it didn't: NFS is miserable at the many-small-files workload of a node_modules tree, builds crawled, and the I/O contention starved the control plane's own database enough to fail its healthcheck mid-deploy.",
+      "Now each deploy builds a per-app container image on local disk (off NFS), pushes it to a built-in registry, and runs the container from the image. Docker's layer cache replaces the hand-rolled dependency hashing, NFS is touched only for persisted data, and because any node can pull the image, apps run and reschedule anywhere. It removed more code than it added.",
     ],
   },
   {

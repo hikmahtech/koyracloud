@@ -268,20 +268,23 @@ cron:                            # 5-field schedules, UTC
           </Section>
 
           <Section id="architecture" title="How it works">
-            <Code>{`repo (.paas/app.yaml)
-   │  control plane clones → NFS volume @ commit
+            <Code>{`repo (.paas/app.yaml — or your own Dockerfile)
+   │  control plane clones @ commit → LOCAL build dir (off NFS)
    ▼
-one-off build container  (pip / npm / vite, cached by dep-hash)
+docker build   →  per-app image  (layer-cached)
    ▼
-docker stack deploy  →  service (Traefik labels, secrets, persist)
+docker push    →  internal registry koyracloud runs
    ▼
-entrypoint: sync · skip build · predeploy (migrate) · exec start
+docker stack deploy  →  Swarm service (Traefik labels, secrets, persist)
    ▼
-https://<host>  ·  per-host TLS minted on first request`}</Code>
+Swarm pulls + runs on ANY node  ·  predeploy (migrate) · start
+   ▼
+https://<host>  ·  TLS at the edge, or minted by Traefik`}</Code>
             <p className="text-[var(--color-muted)]">
               The control plane is a single service on the swarm manager that renders a Docker
-              stack from your manifest and drives the cluster. Builds run in a one-off container so
-              the served app never races its own healthcheck.
+              stack from your manifest and drives the cluster. Each deploy builds your app into an
+              image on local disk and runs the container from it — the app never reads code over
+              NFS, so any node can pull, run and reschedule it. NFS is used only for persisted data.
             </p>
           </Section>
 
