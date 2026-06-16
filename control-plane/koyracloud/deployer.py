@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+import hashlib
+import json
 import os
 import re
 import secrets
@@ -27,7 +29,7 @@ from koyracloud.db import Database
 from koyracloud.docker_ctl import DockerControl
 from koyracloud.dockerfile import render_dockerfile
 from koyracloud.manifest import Manifest, parse_manifest
-from koyracloud.models import AppAnalytics, CronJob, Deploy
+from koyracloud.models import AppAnalytics, BuiltImage, CronJob, Deploy
 from koyracloud.stack_render import render_stack
 
 
@@ -270,21 +272,28 @@ class Deployer:
                 emit("[koyra] building image (generated Dockerfile)", "building")
 
             base = f"{self.settings.registry}/koyra-app-{app_name}"
-            image = f"{base}:{commit[:12]}"
-            # Skip the build when this exact commit was already built + pushed by
-            # a prior successful deploy: the image is already in the registry, so
-            # a redeploy (e.g. to re-render routing after a domain change) is a
-            # pure swarm service deploy on any node — no rebuild on the
-            # control-plane node's Docker.
+            # The image identity is the commit AND a hash of the build-args
+            # (NEXT_PUBLIC_*/VITE_* etc. inlined at build time). Tagging by
+            # commit alone meant an env-only change silently reused the stale
+            # image; folding the build-args into the tag forces a rebuild when
+            # any of them change, while an unchanged redeploy (e.g. re-rendering
+            # routing after a domain change) still maps to the same tag.
+            build_args = {**manifest.env, **env_overrides}
+            args_hash = hashlib.sha256(
+                json.dumps(build_args, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()[:12]
+            image = f"{base}:{commit[:12]}-{args_hash}"
+            # Skip the build only when this exact image (commit + build-args) was
+            # already built + pushed by a prior deploy: it's in the registry, so
+            # the redeploy is a pure swarm service deploy — no control-plane
+            # rebuild.
             with db.session() as s:
-                already_built = s.query(Deploy.id).filter(
-                    Deploy.app_id == app_id, Deploy.commit == commit,
-                    Deploy.id != deploy_id, Deploy.status == "live").first() is not None
+                already_built = s.query(BuiltImage.id).filter(
+                    BuiltImage.app_id == app_id, BuiltImage.tag == image).first() is not None
             if already_built:
-                emit(f"[koyra] {commit[:12]} already built in a prior deploy "
-                     "→ reusing the registry image (no rebuild)")
+                emit(f"[koyra] {commit[:12]} (build {args_hash}) already in the "
+                     "registry → reusing the image (no rebuild)")
             else:
-                build_args = {**manifest.env, **env_overrides}
                 for line in self.docker.image_build(image, str(build_ctx), build_args,
                                                     str(build_ctx / dockerfile)):
                     emit(line)
@@ -294,6 +303,9 @@ class Deployer:
                     emit(line)
                 for line in self.docker.image_push(f"{base}:latest"):
                     emit(line)
+                with db.session() as s:
+                    s.add(BuiltImage(app_id=app_id, tag=image))
+                    s.commit()
 
             # Ensure each persist dir exists on the NFS so its volume's device
             # path resolves (the control plane has the NFS base mounted).
