@@ -61,6 +61,9 @@ services:
       - ${KOYRA_NFS_BASE:-/mnt/koyracloud}:${KOYRA_NFS_BASE:-/mnt/koyracloud}
     networks:
       - traefik_public
+      # Joined so the homelab Prometheus (on this external overlay) can scrape
+      # GET /metrics at tasks.koyracloud_control-plane:8000. See docs/MONITORING.md.
+      - monitoring
     secrets:
       - koyra_secret_key
       - koyra_session_secret
@@ -155,6 +158,10 @@ services:
 # The Traefik edge network. Convention name; change here if your swarm differs.
 networks:
   traefik_public:
+    external: true
+  # The homelab monitoring stack's overlay (created by that stack); the control
+  # plane joins it so Prometheus can scrape /metrics.
+  monitoring:
     external: true
 
 # Registry storage: a Docker NFS-driver volume. Docker mounts the export on the
