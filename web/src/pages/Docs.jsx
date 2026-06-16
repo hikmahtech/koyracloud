@@ -67,6 +67,14 @@ export default function Docs() {
             <span className="mono"> Dockerfile</span>.
           </p>
 
+          <div className="card p-4 mt-5 text-sm text-[var(--color-muted)]">
+            Want to run your <i>own</i> koyracloud? It's open source — the full
+            self-host walkthrough (Docker Swarm, Traefik, NFS, DNS) is in the{" "}
+            <a href="https://github.com/hikmahtech/koyracloud/blob/main/docs/SELF-HOST-TUTORIAL.md"
+               target="_blank" rel="noreferrer" className="text-acid no-underline hover:underline">
+              self-host tutorial</a> on GitHub.
+          </div>
+
           <Section id="quickstart" title="Quickstart">
             <ol className="list-decimal ml-5 space-y-2 text-[var(--color-fg)]">
               <li>Add <span className="mono text-acid">.paas/app.yaml</span> to your repo (see below) and push.</li>

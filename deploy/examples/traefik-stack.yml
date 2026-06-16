@@ -1,0 +1,62 @@
+# Example Traefik v3 edge for koyracloud — a STARTING POINT, adapt to your setup.
+#
+# koyracloud needs an HTTPS edge that: (a) terminates TLS on a `websecure`
+# entrypoint, (b) can mint Let's Encrypt certs via a resolver named to match
+# KOYRA_CERT_RESOLVER (default `letsencrypt`), and (c) discovers swarm services
+# by their Traefik labels on a shared external overlay network (`traefik_public`).
+#
+# Prereqs:
+#   docker network create --driver overlay --attachable traefik_public
+#   export ACME_EMAIL=you@example.com      # Let's Encrypt contact
+# Deploy:
+#   docker --context <your-swarm-context> stack deploy -c deploy/examples/traefik-stack.yml traefik
+#
+# This uses the HTTP-01 challenge, so the node needs inbound :80 and :443 from
+# the internet. If your apps_domain sits behind a TLS-terminating proxy/tunnel
+# (e.g. Cloudflare), set KOYRA_APPS_DOMAIN_PROXIED=1 in koyracloud.env instead —
+# the edge serves the cert and Traefik skips ACME for in-zone hosts.
+services:
+  traefik:
+    image: traefik:v3
+    command:
+      - --providers.swarm=true
+      - --providers.swarm.exposedByDefault=false
+      - --providers.swarm.network=traefik_public
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      # redirect all plain HTTP to HTTPS
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      # Let's Encrypt (HTTP-01). The resolver name must match KOYRA_CERT_RESOLVER.
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json
+      # - --api.dashboard=true   # optional; secure it before exposing
+    ports:
+      - target: 80
+        published: 80
+        mode: host
+      - target: 443
+        published: 443
+        mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_acme:/acme
+    networks:
+      - traefik_public
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+
+networks:
+  traefik_public:
+    external: true
+
+volumes:
+  traefik_acme:
+    driver: local
