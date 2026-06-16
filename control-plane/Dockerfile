@@ -5,6 +5,9 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json* ./
 RUN npm ci
 COPY web/ ./
+# Optional: bake a Google Analytics 4 gtag into index.html (empty => no analytics).
+ARG KOYRA_GA_MEASUREMENT_ID=""
+ENV KOYRA_GA_MEASUREMENT_ID=$KOYRA_GA_MEASUREMENT_ID
 RUN npm run build
 
 FROM python:3.12-slim

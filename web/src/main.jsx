@@ -6,11 +6,6 @@ import "./index.css";
 import Dashboard from "./App.jsx";
 import Docs from "./pages/Docs.jsx";
 import Blog from "./pages/Blog.jsx";
-import { getConfig } from "./api";
-import { initGA } from "./ga";
-
-// Turn on GA4 only if this instance is configured with a Measurement ID.
-getConfig().then((c) => initGA(c.ga_measurement_id)).catch(() => {});
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },

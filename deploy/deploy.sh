@@ -18,7 +18,10 @@ CTX=${DOCKER_CONTEXT:-default}
 IMAGE=${KOYRA_IMAGE:-koyracloud:local}
 
 echo "==> building $IMAGE locally"
-docker build -f control-plane/Dockerfile -t "$IMAGE" .
+# KOYRA_GA_MEASUREMENT_ID (from koyracloud.env, optional) is baked into the SPA at
+# build time; empty => no analytics tag.
+docker build -f control-plane/Dockerfile -t "$IMAGE" \
+  --build-arg KOYRA_GA_MEASUREMENT_ID="${KOYRA_GA_MEASUREMENT_ID:-}" .
 
 echo "==> loading $IMAGE onto $CTX"
 docker save "$IMAGE" | docker --context "$CTX" load
