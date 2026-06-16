@@ -89,15 +89,43 @@ plus the aegis webhook for critical) — no routing changes.
 Per-service task-down (control plane, redis, any app) is already covered by the
 generic `swarm-health` group, so it is not duplicated here.
 
+## Redis on the `monitoring` overlay (gotcha)
+
+Joining the `monitoring` overlay (so Prometheus can scrape) has a side effect:
+the bare hostname `redis` becomes ambiguous, because the homelab standalone redis
+is also on that overlay aliased `redis`. The control plane therefore targets the
+**fully-qualified** service name — `KOYRA_REDIS_HOST` defaults to `koyracloud_redis`,
+not `redis`. On any container attached to multiple overlays, use `<stack>_<service>`
+names, never bare service aliases.
+
 ## Grafana
 
 `koyracloud.json` (Infrastructure folder) shows control-plane up, apps
-total/live, per-app up/down, deploys by status, redis up, and per-`koyra-*`
-task health from swarm-exporter.
+total/live, per-app up/down, deploys by status, redis up, and per-`koyra-*` task
+health — plus a **Usage** row: per-app requests/sec, p95 latency and 5xx rate from
+**Traefik's** already-scraped `traefik_service_*{service="koyra-<app>@docker"}`
+(always-on, no app changes), and per-app unique visitors from the beacon. The
+dashboard is hosted on `daal` (a CI-reachable node) — see the homelab-gitops
+`docs/infrastructure/logging-monitoring.md` for the node/CI details.
 
-## Deploy order
+## Deploying
 
-Deploy koyracloud first (so the control plane is on the `monitoring` network and
-`tasks.koyracloud_control-plane` resolves), then apply the Prometheus/Grafana
-changes — otherwise the scrape target won't resolve and `KoyracloudControlPlaneDown`
-fires until the next koyracloud deploy.
+The **control plane has no auto-deploy** — `ci.yml` only runs tests + builds the
+UI. Ship it with `deploy/deploy.sh`:
+
+- **Code change** (e.g. `metrics.py`): `DOCKER_CONTEXT=swarm-baa bash deploy/deploy.sh`
+  rebuilds the image, loads it onto the manager and rolls the service.
+- **Stack-env / label-only change** (e.g. `KOYRA_REDIS_HOST`, the Traefik rule): no
+  rebuild needed — re-apply the stack:
+  `set -a; . deploy/koyracloud.env; set +a;
+  KOYRA_IMAGE=koyracloud:local docker --context swarm-baa stack deploy
+  --resolve-image=never -c deploy/koyracloud-stack.yml koyracloud`
+
+The **homelab-gitops** side (scrape job, alerts, dashboard) **auto-deploys on
+merge** to main (the on-merge Ansible pipeline maps changed files to the
+`prometheus` / `grafana` playbooks).
+
+**Order:** deploy koyracloud first (so the control plane is on the `monitoring`
+network and `tasks.koyracloud_control-plane` resolves), then the homelab side —
+otherwise the scrape target won't resolve and `KoyracloudControlPlaneDown` fires
+until the next koyracloud deploy.
