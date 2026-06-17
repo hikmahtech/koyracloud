@@ -22,10 +22,11 @@ is. It complements the [README](../README.md) (what it is) and
 1. clone        repo @ commit → LOCAL build dir (KOYRA_BUILD_DIR, off NFS)
 2. manifest     read .paas/app.yaml (or synthesize one for a static repo)
 3. dockerfile   use the repo's own Dockerfile, or generate one from the manifest
-4. build        docker build  → koyra-app-<name>:<commit>   (app env as build args)
-                (SKIPPED when <commit> was already built + pushed by a prior live
-                 deploy — the redeploy then just re-deploys the existing image)
-5. push         docker push   → <registry>/koyra-app-<name>:<commit> and :latest
+4. build        docker build  → koyra-app-<name>:<commit>-<argshash>  (app env as build args)
+                (SKIPPED when this exact image — same <commit> AND same build-args —
+                 was already built+pushed, tracked in the `built_images` table; the
+                 redeploy then just re-deploys the existing image)
+5. push         docker push   → <registry>/koyra-app-<name>:<commit>-<argshash> and :latest
 6. deploy       docker stack deploy → Swarm service from the registry image
 7. run          Swarm pulls + runs the app on any node; clean up the local build dir
 ```
@@ -43,6 +44,15 @@ the app actually *does* is a Swarm service (step 6/7) scheduled on **any** node 
 are never pinned to the control plane. Re-rendering routing (e.g. attaching a domain)
 is the common redeploy that hits the build-skip, so it costs nothing but a Swarm
 service update.
+
+**The image tag includes a hash of the build-args, not just the commit.** Build-time
+vars (`NEXT_PUBLIC_*`/`VITE_*`) are inlined into the image at `docker build`, so the
+build inputs are `commit + build-args`. Tagging by commit alone meant changing such a
+var and redeploying *silently reused the stale image* — the new value never shipped
+without an unrelated new commit to bust the cache. Folding the build-args into the tag
+(`:<commit>-<argshash>`) makes that change a new image identity, so it rebuilds; an
+unchanged redeploy still maps to the same tag and skips. Each built tag is recorded in
+the `built_images` table, and the build is skipped only when that exact row exists.
 
 ## Decision: build into an image, off NFS — not build-on-NFS
 
@@ -64,7 +74,7 @@ clone-on-NFS / sync-on-start / dep-hash machinery is gone).
 ## Decision: an internal registry, reached at `127.0.0.1:5000`
 
 To run an app on *any* node, that node must be able to pull its image. koyracloud runs
-a `registry:2` service and tags images `<registry>/koyra-app-<name>:<commit>`.
+a `registry:2` service and tags images `<registry>/koyra-app-<name>:<commit>-<argshash>`.
 
 The registry is **published on the Swarm ingress mesh** (`5000:5000`), so every node
 reaches it as `127.0.0.1:5000`. Docker treats `127.0.0.1` as an insecure-OK registry
