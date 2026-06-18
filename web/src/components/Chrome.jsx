@@ -43,7 +43,12 @@ export function Footer() {
              className="hover:text-[var(--color-fg)] no-underline text-inherit">GitHub</a>
           <a href="/api/auth/login" className="hover:text-[var(--color-fg)] no-underline text-inherit">Sign in</a>
         </div>
-        <span className="mono text-xs text-[var(--color-muted)]">self-hosted · single-operator · {new Date().getFullYear()}</span>
+        <span className="mono text-xs text-[var(--color-muted)]">
+          self-hosted · single-operator ·{" "}
+          <a href="https://hikmahtechnologies.com" target="_blank" rel="noreferrer"
+             className="hover:text-[var(--color-fg)] no-underline text-inherit">Hikmah Technologies</a>
+          {" "}· {new Date().getFullYear()}
+        </span>
       </div>
     </footer>
   );
