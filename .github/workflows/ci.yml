@@ -46,8 +46,8 @@ jobs:
 
       - uses: docker/login-action@v3
         with:
-          username: arshadansari27
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - id: meta
         uses: docker/metadata-action@v5
@@ -77,7 +77,8 @@ jobs:
           SWARM_MANAGER_HOST: ${{ secrets.SWARM_MANAGER_HOST }}
           SWARM_MANAGER_USER: ${{ secrets.SWARM_MANAGER_USER }}
           SSH_PRIVATE_KEY: ${{ secrets.SWARM_SSH_PRIVATE_KEY }}
-          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/swarm_key
@@ -86,7 +87,7 @@ jobs:
 
           ssh -i ~/.ssh/swarm_key -o StrictHostKeyChecking=no \
             "${SWARM_MANAGER_USER}@${SWARM_MANAGER_HOST}" \
-            "echo '${DOCKER_HUB_TOKEN}' | docker login -u arshadansari27 --password-stdin && \
+            "echo '${DOCKERHUB_TOKEN}' | docker login -u '${DOCKERHUB_USERNAME}' --password-stdin && \
              docker pull arshadansari27/koyracloud:${SHORT_SHA} && \
              docker service update --with-registry-auth \
                --image arshadansari27/koyracloud:${SHORT_SHA} \
