@@ -227,6 +227,10 @@ Multi-tenant isolation/sandboxing of untrusted code, autoscaling, preview-per-PR
 environments, managed databases, billing. It's a single-operator, trusted-code,
 internal-apps platform — kept small on purpose.
 
+## Built by
+
+koyracloud is built and maintained by **[Hikmah Technologies](https://hikmahtechnologies.com)** and is running in production for clients including [ansaar.in](https://ansaar.in), [domainposture.com](https://domainposture.com), [quantamentary.com](https://quantamentary.com), [manasrealty.com](https://manasrealty.com), and [vcsolutions.co.in](https://vcsolutions.co.in).
+
 ## Contributing
 
 Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and
@@ -242,4 +246,4 @@ you must offer your source under the same terms.
 business. A commercial license (no copyleft obligations) is available from the
 copyright holder — see [LICENSING.md](LICENSING.md).
 
-© Hikmah Technologies / Arshad Ansari.
+© [Hikmah Technologies](https://hikmahtechnologies.com) / Arshad Ansari.

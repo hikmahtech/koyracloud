@@ -33,6 +33,14 @@ const FEATURES = [
   ["Single-operator, by design", "GitHub OAuth behind an allowlist. Your homelab, your apps, your rules — no multi-tenant ceremony."],
 ];
 
+const CLIENTS = [
+  { name: "ansaar.in", url: "https://ansaar.in", desc: "Islamic reference platform" },
+  { name: "domainposture.com", url: "https://domainposture.com", desc: "Domain security posture" },
+  { name: "quantamentary.com", url: "https://quantamentary.com", desc: "Quantamental investing" },
+  { name: "manasrealty.com", url: "https://manasrealty.com", desc: "Real estate" },
+  { name: "vcsolutions.co.in", url: "https://vcsolutions.co.in", desc: "VC solutions" },
+];
+
 export default function Landing() {
   return (
     <div className="grid-bg min-h-screen">
@@ -103,6 +111,25 @@ export default function Landing() {
               <div className="font-display text-lg leading-snug">{t}</div>
               <p className="text-[var(--color-muted)] text-sm mt-2 leading-relaxed">{d}</p>
             </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Our Clients */}
+      <section className="max-w-6xl mx-auto px-6 py-16">
+        <div className="eyebrow text-center">Our clients</div>
+        <p className="mt-3 text-center text-sm text-[var(--color-muted)]">
+          Production apps running on koyracloud — built by{" "}
+          <a href="https://hikmahtechnologies.com" target="_blank" rel="noreferrer"
+             className="text-acid no-underline hover:underline">Hikmah Technologies</a>.
+        </p>
+        <div className="mt-8 flex flex-wrap justify-center gap-4">
+          {CLIENTS.map((c) => (
+            <a key={c.name} href={c.url} target="_blank" rel="noreferrer noopener"
+               className="card px-6 py-4 no-underline hover:border-[#3a4150] transition text-center min-w-[160px]">
+              <div className="font-display text-sm font-medium text-[var(--color-fg)]">{c.name}</div>
+              <div className="text-xs text-[var(--color-muted)] mt-1">{c.desc}</div>
+            </a>
           ))}
         </div>
       </section>
