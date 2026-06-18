@@ -79,5 +79,16 @@ class Database:
                         conn.execute(text(
                             f"ALTER TABLE domain_certs ADD COLUMN {col} VARCHAR(255) DEFAULT ''"))
 
+        # Older releases left every successful deploy at status "live" because
+        # the deployer never demoted the prior live row. Keep only the newest
+        # live deploy per app live; demote the rest. Idempotent.
+        if "deploys" in insp.get_table_names():
+            with self.engine.begin() as conn:
+                conn.execute(text(
+                    "UPDATE deploys SET status = 'superseded' "
+                    "WHERE status = 'live' AND id NOT IN ("
+                    "  SELECT MAX(id) FROM deploys WHERE status = 'live' "
+                    "  GROUP BY app_id)"))
+
     def session(self) -> Session:
         return self._factory()

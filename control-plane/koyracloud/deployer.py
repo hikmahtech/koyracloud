@@ -345,7 +345,17 @@ class Deployer:
             emit("[koyra] image ready; deploying service to swarm", "deploying")
             for line in self.docker.deploy(f"koyra-{app_name}", stack):
                 emit(line)
-            emit("[koyra] deploy complete — live", "live")
+            # Only the newest live deploy actually serves traffic — each deploy
+            # replaces the running container — so demote any prior live row for
+            # this app in the same transaction that marks this one live.
+            with db.session() as s:
+                s.execute(text("UPDATE deploys SET status = 'superseded' "
+                               "WHERE app_id = :a AND status = 'live' AND id != :i"),
+                          {"a": app_id, "i": deploy_id})
+                s.execute(text("UPDATE deploys SET log = COALESCE(log, '') || :l, "
+                               "status = 'live' WHERE id = :i"),
+                          {"l": "[koyra] deploy complete — live\n", "i": deploy_id})
+                s.commit()
             self._fire(app_id, "deploy_live", "", hosts[0] if hosts else "")
         except Exception as exc:  # noqa: BLE001 — surface a scrubbed error
             msg = str(exc)

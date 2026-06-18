@@ -9,6 +9,7 @@ const STATUS = {
   deploying: ["#febc2e", "deploying"],
   pending: ["#8a909c", "pending"],
   rolled_back: ["#b69cff", "rolled back"],
+  superseded: ["#5a6070", "superseded"],
 };
 
 export function StatusBadge({ status }) {

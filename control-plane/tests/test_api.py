@@ -113,6 +113,40 @@ def test_rollback_redeploys_target_commit(client, env):
     assert len(env["docker"].deployed) == 2
 
 
+def test_new_deploy_supersedes_prior_live(client, env):
+    app_id = client.post("/api/apps", json={"name": "lens-inventory",
+                         "repo_url": "https://github.com/example/app"}
+                         ).json()["id"]
+    # two synchronous deploys (run_async=False) for the same app
+    first_id = client.post(f"/api/apps/{app_id}/deploys", json={}).json()["id"]
+    second_id = client.post(f"/api/apps/{app_id}/deploys", json={}).json()["id"]
+
+    # the newest live deploy serves traffic; the prior one is demoted
+    assert client.get(f"/api/deploys/{first_id}").json()["status"] == "superseded"
+    assert client.get(f"/api/deploys/{second_id}").json()["status"] == "live"
+
+
+def test_migrate_backfills_supersedes_prior_live(env):
+    from koyracloud.models import App, Deploy
+    db = env["db"]
+    with db.session() as s:
+        app = App(name="legacy", repo_url="https://github.com/o/r")
+        s.add(app)
+        s.flush()
+        # two rows both stuck at "live" (older releases never demoted the prior)
+        older = Deploy(app_id=app.id, status="live")
+        newer = Deploy(app_id=app.id, status="live")
+        s.add_all([older, newer])
+        s.commit()
+        older_id, newer_id = older.id, newer.id
+
+    db._migrate()
+
+    with db.session() as s:
+        assert s.get(Deploy, older_id).status == "superseded"
+        assert s.get(Deploy, newer_id).status == "live"
+
+
 def test_create_app_rejects_flag_injection_repo(client):
     r = client.post("/api/apps", json={"name": "evil", "repo_url": "--upload-pack=x"})
     assert r.status_code == 422

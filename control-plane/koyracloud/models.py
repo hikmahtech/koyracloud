@@ -14,7 +14,7 @@ def _now() -> dt.datetime:
 
 
 # Deploy lifecycle states.
-DEPLOY_STATUSES = ("pending", "building", "deploying", "live", "failed", "rolled_back")
+DEPLOY_STATUSES = ("pending", "building", "deploying", "live", "failed", "rolled_back", "superseded")
 
 
 class App(Base):

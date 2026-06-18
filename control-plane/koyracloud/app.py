@@ -34,7 +34,7 @@ import re as _re
 
 WEB_DIST = Path(os.environ.get(
     "KOYRA_WEB_DIST", str(Path(__file__).resolve().parents[2] / "web" / "dist")))
-TERMINAL = {"live", "failed", "rolled_back"}
+TERMINAL = {"live", "failed", "rolled_back", "superseded"}
 _EMAIL_RE = _re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
