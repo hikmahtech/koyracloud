@@ -25,7 +25,7 @@ function AppShell({ me, children }) {
               <span className="dot" style={{ background: "var(--color-acid)" }} />@{me.login}
             </div>
             <button onClick={async () => { await logout(); nav(0); }}
-                    className="text-[var(--color-muted)] hover:text-[var(--color-fg)] bg-transparent border-0 cursor-pointer text-sm">
+                    className="text-[var(--color-muted)] hover:text-[var(--color-fg)] linkbtn text-sm">
               Sign out
             </button>
           </div>
