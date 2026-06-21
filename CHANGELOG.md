@@ -45,6 +45,18 @@ track functional changes by theme rather than tagged semver releases. Newest fir
 
 ### Changed
 
+- **Dependency cleanup** (#33, #34) — dropped three unused/avoidable dependencies with no
+  behaviour change: `authlib` and `python-multipart` from the control plane (OAuth is plain
+  `httpx`; nothing parses form data), and `axios` from the web app — replaced by a ~25-line
+  native `fetch` wrapper that keeps the same `err.response` error shape callers rely on.
+  Smaller image and a smaller JS bundle.
+- **Front-end CSS dedup** (#35) — collapsed the bare text-button utility soup
+  (`bg-transparent border-0 cursor-pointer`, repeated across 15 buttons) into a single
+  `.linkbtn` class, matching the existing `.btn` / `.card` / `.input` convention. Purely
+  presentational; no visual change.
+- **CI on Node 24** (#36) — bumped every GitHub Action to its latest Node 24 major
+  (`checkout` v7, `setup-node` v6, `setup-uv` v7, `docker/*` v4–v7), clearing the Node 20
+  runtime deprecation warnings on each run.
 - **Open-source hygiene** (#13) — removed homelab-specific identifiers (node names,
   private IPs, the swarm-context name, a client domain, a personal ACME email) from the
   deploy templates and docs in favour of env vars / placeholders. Application source was
