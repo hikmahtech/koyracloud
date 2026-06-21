@@ -57,6 +57,13 @@ track functional changes by theme rather than tagged semver releases. Newest fir
 - **CI on Node 24** (#36) — bumped every GitHub Action to its latest Node 24 major
   (`checkout` v7, `setup-node` v6, `setup-uv` v7, `docker/*` v4–v7), clearing the Node 20
   runtime deprecation warnings on each run.
+- **CI lint gate** (#38) — added a `ruff` job that blocks build + deploy on lint failures,
+  and cleaned up the pre-existing lint it surfaced (two unused imports in `monitor.py`, plus
+  test-style fixes). Keeps unused imports / dead code from creeping back in.
+- **Dead-code removal** (#39) — deleted three verified-unused items: the `deprovision()`
+  Redis helper (redundant with `delete_app`'s inline teardown), the uncalled
+  `CronScheduler.stop()`, and the never-read `redis_maxmemory` setting (Redis maxmemory is
+  set in the deploy stack via `KOYRA_REDIS_MAXMEMORY`).
 - **Open-source hygiene** (#13) — removed homelab-specific identifiers (node names,
   private IPs, the swarm-context name, a client domain, a personal ACME email) from the
   deploy templates and docs in favour of env vars / placeholders. Application source was
