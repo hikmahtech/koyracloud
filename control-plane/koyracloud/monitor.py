@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import datetime as dt
 import threading
-import time
 from typing import Callable
 
 import httpx
 
 from koyracloud.db import Database
-from koyracloud.models import App, Domain, UptimeSample, UptimeState
+from koyracloud.models import App, UptimeSample, UptimeState
 
 # prober(url) -> ok: a server responded (any status < 500) within the timeout.
 Prober = Callable[[str], bool]

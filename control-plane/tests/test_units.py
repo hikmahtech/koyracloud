@@ -270,8 +270,8 @@ def test_render_stack_traefik_and_image():
     svc = stack["services"]["demo"]
     labels = svc["deploy"]["labels"]
     assert "traefik.enable=true" in labels
-    assert any("Host(`demo.apps.example.com`)" in l for l in labels)
-    assert any("loadbalancer.server.port=8000" in l for l in labels)
+    assert any("Host(`demo.apps.example.com`)" in lbl for lbl in labels)
+    assert any("loadbalancer.server.port=8000" in lbl for lbl in labels)
     assert svc["image"] == "reg/koyra-app-demo:abc"   # runs the prebuilt image
     assert "volumes" not in svc                         # no persist dirs → no NFS mount
     assert svc["deploy"]["update_config"]["order"] == "start-first"
@@ -451,7 +451,7 @@ def test_render_stack_multi_host_rule():
     stack = render_stack(m, app_name="demo", image="img", env_overrides={}, secret_values={},
                          settings=_settings(), hosts=["a.example.com", "b.example.com"])
     labels = stack["services"]["demo"]["deploy"]["labels"]
-    rule = next(l for l in labels if ".rule=" in l)
+    rule = next(lbl for lbl in labels if ".rule=" in lbl)
     assert "Host(`a.example.com`) || Host(`b.example.com`)" in rule
 
 
@@ -464,16 +464,16 @@ def test_render_stack_splits_saas_and_apps_routers():
                          env_overrides={}, secret_values={}, settings=_settings(),
                          hosts=["demo.apps.example.com", "shop.example.com"])
     labels = stack["services"]["demo"]["deploy"]["labels"]
-    apps_rule = next(l for l in labels if l.startswith("traefik.http.routers.koyra-demo.rule="))
+    apps_rule = next(lbl for lbl in labels if lbl.startswith("traefik.http.routers.koyra-demo.rule="))
     assert "Host(`demo.apps.example.com`)" in apps_rule and "shop.example.com" not in apps_rule
-    assert any("routers.koyra-demo.tls.certresolver=letsencrypt" in l for l in labels)
-    saas_rule = next(l for l in labels if l.startswith("traefik.http.routers.koyra-demo-saas.rule="))
+    assert any("routers.koyra-demo.tls.certresolver=letsencrypt" in lbl for lbl in labels)
+    saas_rule = next(lbl for lbl in labels if lbl.startswith("traefik.http.routers.koyra-demo-saas.rule="))
     assert "Host(`shop.example.com`)" in saas_rule and "apps.example.com" not in saas_rule
-    assert not any("koyra-demo-saas.tls.certresolver" in l for l in labels)
-    assert any("routers.koyra-demo-saas.tls=true" in l for l in labels)
+    assert not any("koyra-demo-saas.tls.certresolver" in lbl for lbl in labels)
+    assert any("routers.koyra-demo-saas.tls=true" in lbl for lbl in labels)
     # both routers share the one service definition carrying the app port
-    assert any("services.koyra-demo.loadbalancer.server.port=8000" in l for l in labels)
-    assert any("routers.koyra-demo-saas.service=koyra-demo" in l for l in labels)
+    assert any("services.koyra-demo.loadbalancer.server.port=8000" in lbl for lbl in labels)
+    assert any("routers.koyra-demo-saas.service=koyra-demo" in lbl for lbl in labels)
 
 
 def test_render_stack_custom_only_host_has_no_certresolver():
@@ -482,8 +482,8 @@ def test_render_stack_custom_only_host_has_no_certresolver():
                          env_overrides={}, secret_values={}, settings=_settings(),
                          hosts=["shop.example.com"])
     labels = stack["services"]["demo"]["deploy"]["labels"]
-    assert not any("certresolver" in l for l in labels)
-    assert any("Host(`shop.example.com`)" in l for l in labels)
+    assert not any("certresolver" in lbl for lbl in labels)
+    assert any("Host(`shop.example.com`)" in lbl for lbl in labels)
 
 
 def test_render_stack_apps_domain_proxied_skips_certresolver():
@@ -496,9 +496,9 @@ def test_render_stack_apps_domain_proxied_skips_certresolver():
                          env_overrides={}, secret_values={}, settings=s,
                          hosts=["demo.apps.example.com"])
     labels = stack["services"]["demo"]["deploy"]["labels"]
-    assert not any("certresolver" in l for l in labels)
-    assert any("routers.koyra-demo.tls=true" in l for l in labels)
-    assert any("Host(`demo.apps.example.com`)" in l for l in labels)
+    assert not any("certresolver" in lbl for lbl in labels)
+    assert any("routers.koyra-demo.tls=true" in lbl for lbl in labels)
+    assert any("Host(`demo.apps.example.com`)" in lbl for lbl in labels)
 
 
 def test_render_stack_resource_limits_default_and_override():

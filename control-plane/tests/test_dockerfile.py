@@ -42,7 +42,7 @@ def test_node_dockerfile():
     assert "COPY . /app" in df
     assert "RUN npm ci" in df and "RUN npm run build" in df
     # start runs as the container command, no predeploy prefix
-    cmd = next(l for l in df.splitlines() if l.startswith("CMD "))
+    cmd = next(lbl for lbl in df.splitlines() if lbl.startswith("CMD "))
     assert "exec npm run start -- -p 3000" in cmd and "&&" not in cmd
 
 
@@ -50,7 +50,7 @@ def test_python_dockerfile_predeploy_and_persist():
     df = render_dockerfile(parse_manifest(PY), "koyra-runtime:latest")
     assert "RUN pip install -r requirements.txt" in df
     assert "RUN mkdir -p /app/data" in df          # persist dir exists in image
-    cmd = next(l for l in df.splitlines() if l.startswith("CMD "))
+    cmd = next(lbl for lbl in df.splitlines() if lbl.startswith("CMD "))
     # predeploy runs every start, then exec start
     assert "alembic upgrade head && exec uvicorn app:app" in cmd
 
@@ -58,5 +58,5 @@ def test_python_dockerfile_predeploy_and_persist():
 def test_static_dockerfile_serves_detected_dir():
     df = render_dockerfile(parse_manifest(STATIC), "koyra-runtime:latest")
     assert "RUN npm ci" in df
-    cmd = next(l for l in df.splitlines() if l.startswith("CMD "))
+    cmd = next(lbl for lbl in df.splitlines() if lbl.startswith("CMD "))
     assert "/koyra_static.py" in cmd and "--port 8000" in cmd
