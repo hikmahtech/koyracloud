@@ -76,7 +76,7 @@ export default function AppDetail() {
       <div className="flex gap-1 border-b border-[var(--color-line)] mb-6">
         {TABS.map((t) => (
           <button key={t} onClick={() => setTab(t)}
-                  className={`px-4 py-2.5 text-sm capitalize bg-transparent border-0 cursor-pointer -mb-px border-b-2 ${
+                  className={`px-4 py-2.5 text-sm capitalize linkbtn -mb-px border-b-2 ${
                     tab === t ? "border-[var(--color-acid)] text-[var(--color-fg)]" : "border-transparent text-[var(--color-muted)] hover:text-[var(--color-fg)]"
                   }`}>{t}</button>
         ))}
@@ -222,7 +222,7 @@ function RuntimeLogs({ id }) {
           runtime logs · auto-refresh 5m · updated {updated}
         </span>
         <button onClick={() => refetch()} disabled={isFetching}
-                className="mono text-xs text-acid hover:underline bg-transparent border-0 cursor-pointer disabled:opacity-50">
+                className="mono text-xs text-acid hover:underline linkbtn disabled:opacity-50">
           {isFetching ? "refreshing…" : "refresh"}
         </button>
       </div>
@@ -276,7 +276,7 @@ function DeployHistory({ deploys, onRollback }) {
               <td className="mono text-xs text-[var(--color-muted)]">{d.commit?.slice(0, 12) || "—"}</td>
               <td className="text-right pr-4">
                 {d.commit && (
-                  <button onClick={() => onRollback(d.id)} className="text-acid hover:underline text-xs bg-transparent border-0 cursor-pointer">
+                  <button onClick={() => onRollback(d.id)} className="text-acid hover:underline text-xs linkbtn">
                     redeploy this commit
                   </button>
                 )}
@@ -380,7 +380,7 @@ function WorkerRow({ id, w }) {
           <span className="mono text-sm">{w.name}</span>
           <span className="mono text-xs text-[var(--color-muted)]">{w.running}/{w.desired} running</span>
         </div>
-        <button onClick={() => setOpen(!open)} className="text-xs text-acid hover:underline bg-transparent border-0 cursor-pointer">
+        <button onClick={() => setOpen(!open)} className="text-xs text-acid hover:underline linkbtn">
           {open ? "hide logs" : "logs"}
         </button>
       </div>
@@ -424,10 +424,10 @@ function CronRow({ id, job }) {
           {job.last_run_at && <span className="mono text-[11px] text-[var(--color-muted)]" title={job.last_run_at}>{fmtAgo(job.last_run_at)}</span>}
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <button onClick={() => run.mutate()} disabled={run.isPending} className="text-xs text-acid hover:underline bg-transparent border-0 cursor-pointer">
+          <button onClick={() => run.mutate()} disabled={run.isPending} className="text-xs text-acid hover:underline linkbtn">
             {run.isPending ? "running…" : "run now"}
           </button>
-          <button onClick={() => setOpen(!open)} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] bg-transparent border-0 cursor-pointer">
+          <button onClick={() => setOpen(!open)} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] linkbtn">
             {open ? "hide" : "runs"}
           </button>
         </div>
@@ -450,7 +450,7 @@ function CronRuns({ id, jobId }) {
       {runs.map((r) => (
         <div key={r.id}>
           <button onClick={() => setOpenRun(openRun === r.id ? null : r.id)}
-                  className="w-full flex items-center justify-between text-left bg-transparent border-0 cursor-pointer px-0 py-1">
+                  className="w-full flex items-center justify-between text-left linkbtn px-0 py-1">
             <span className="flex items-center gap-2">
               <RunBadge status={r.status} />
               <span className="mono text-[11px] text-[var(--color-muted)]">{fmtTime(r.started_at)}</span>
@@ -508,15 +508,15 @@ function DomainsTab({ id }) {
                 {d.records?.length > 0 && <CertBadge verified={d.verified} />}
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                {!d.is_primary && <button onClick={() => primMut.mutate(d.id)} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] bg-transparent border-0 cursor-pointer">set primary</button>}
-                <button onClick={() => delMut.mutate(d.id)} className="text-xs text-[var(--color-danger)] hover:underline bg-transparent border-0 cursor-pointer">remove</button>
+                {!d.is_primary && <button onClick={() => primMut.mutate(d.id)} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] linkbtn">set primary</button>}
+                <button onClick={() => delMut.mutate(d.id)} className="text-xs text-[var(--color-danger)] hover:underline linkbtn">remove</button>
               </div>
             </div>
             {d.records?.length > 0 && (
               <div className="space-y-2 pl-5">
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-[var(--color-muted)]">Add these CNAME records at your registrar:</p>
-                  <button onClick={() => verMut.mutate(d.id)} disabled={verMut.isPending} className="text-xs text-acid hover:underline bg-transparent border-0 cursor-pointer">
+                  <button onClick={() => verMut.mutate(d.id)} disabled={verMut.isPending} className="text-xs text-acid hover:underline linkbtn">
                     {verMut.isPending ? "checking…" : "verify"}
                   </button>
                 </div>
@@ -565,7 +565,7 @@ function CopyRow({ label, value }) {
     <div className="flex items-center gap-2">
       <span className="text-[var(--color-muted)] w-12 shrink-0">{label}</span>
       <code className="mono text-[var(--color-fg)] truncate flex-1">{value}</code>
-      <button onClick={copy} className="text-[10px] text-acid hover:underline bg-transparent border-0 cursor-pointer shrink-0">{copied ? "copied" : "copy"}</button>
+      <button onClick={copy} className="text-[10px] text-acid hover:underline linkbtn shrink-0">{copied ? "copied" : "copy"}</button>
     </div>
   );
 }
@@ -597,7 +597,7 @@ function EnvEditor({ id }) {
         </div>
       ))}
       <div className="flex gap-3 items-center">
-        <button onClick={() => setRows([...list, { key: "", value: "" }])} className="text-acid text-sm bg-transparent border-0 cursor-pointer">+ add variable</button>
+        <button onClick={() => setRows([...list, { key: "", value: "" }])} className="text-acid text-sm linkbtn">+ add variable</button>
         <button onClick={() => mut.mutate()} className="btn btn-primary text-sm">{mut.isPending ? "Saving…" : "Save env"}</button>
       </div>
     </div>
@@ -617,7 +617,7 @@ function SecretsEditor({ id }) {
         {keys.map((key) => (
           <div key={key} className="flex items-center justify-between px-4 py-3">
             <span className="mono text-sm">{key}</span>
-            <button onClick={() => delMut.mutate(key)} className="text-xs text-[var(--color-danger)] hover:underline bg-transparent border-0 cursor-pointer">delete</button>
+            <button onClick={() => delMut.mutate(key)} className="text-xs text-[var(--color-danger)] hover:underline linkbtn">delete</button>
           </div>
         ))}
         {keys.length === 0 && <div className="px-4 py-3 mono text-sm text-[var(--color-muted)]">No secrets.</div>}

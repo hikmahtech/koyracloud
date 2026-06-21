@@ -64,6 +64,8 @@ h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: -0
 .btn-ghost:hover { border-color: #3a4150; background: var(--color-surface); }
 .btn-danger { background: transparent; color: var(--color-danger); border-color: rgba(255,107,107,.35); }
 .btn-danger:hover { background: rgba(255,107,107,.1); }
+/* Bare text-link button reset; pair with text-color/size utilities at the call site. */
+.linkbtn { background: transparent; border: 0; cursor: pointer; }
 
 /* Surfaces */
 .card {

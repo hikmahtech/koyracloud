@@ -57,7 +57,7 @@ export default function Team() {
               <span className="mono text-sm">@{m.login}</span>
               <div className="flex items-center gap-3">
                 {m.added_by && <span className="mono text-xs text-[var(--color-muted)]">invited by @{m.added_by}</span>}
-                <button onClick={() => delMut.mutate(m.login)} className="text-xs text-[var(--color-danger)] hover:underline bg-transparent border-0 cursor-pointer">remove</button>
+                <button onClick={() => delMut.mutate(m.login)} className="text-xs text-[var(--color-danger)] hover:underline linkbtn">remove</button>
               </div>
             </div>
           ))}
