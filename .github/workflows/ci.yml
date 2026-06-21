@@ -29,9 +29,18 @@ jobs:
         working-directory: web
         run: npm ci && npm run build
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: Ruff
+        working-directory: control-plane
+        run: uvx ruff@0.15.16 check .
+
   build:
     name: Build & Push
-    needs: [backend, web]
+    needs: [backend, web, lint]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:

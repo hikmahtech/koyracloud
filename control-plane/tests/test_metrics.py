@@ -9,19 +9,22 @@ def _seed(db):
     with db.session() as s:
         # alpha: live + failed deploy, probed UP, has a primary host
         a = App(name="alpha", repo_url="https://github.com/o/a")
-        s.add(a); s.flush()
+        s.add(a)
+        s.flush()
         s.add(Domain(app_id=a.id, host="alpha.example.com", is_primary=True))
         s.add(Deploy(app_id=a.id, status="live", ref="main"))
         s.add(Deploy(app_id=a.id, status="failed", ref="main"))
         s.add(UptimeState(app_id=a.id, up=True))
         # beta: probed DOWN
         b = App(name="beta", repo_url="https://github.com/o/b")
-        s.add(b); s.flush()
+        s.add(b)
+        s.flush()
         s.add(Domain(app_id=b.id, host="beta.example.com", is_primary=True))
         s.add(UptimeState(app_id=b.id, up=False))
         # gamma: never probed (up is None) -> must NOT emit an app_up line
         c = App(name="gamma", repo_url="https://github.com/o/c")
-        s.add(c); s.flush()
+        s.add(c)
+        s.flush()
         s.add(Domain(app_id=c.id, host="gamma.example.com", is_primary=True))
         s.commit()
 
@@ -46,7 +49,8 @@ def test_app_usage_views_and_visitors(env):
     now = dt.datetime(2026, 6, 17, 12, 0, tzinfo=dt.timezone.utc)
     with env["db"].session() as s:
         a = App(name="alpha", repo_url="https://github.com/o/a")
-        s.add(a); s.flush()
+        s.add(a)
+        s.flush()
         # 3 views in the last 24h from 2 distinct visitors, + 1 old view (>24h)
         s.add(Hit(app_id=a.id, ts=now - dt.timedelta(hours=1), path="/", visitor="v1"))
         s.add(Hit(app_id=a.id, ts=now - dt.timedelta(hours=2), path="/x", visitor="v1"))
