@@ -145,6 +145,3 @@ class CronScheduler:
 
     def start(self) -> None:
         threading.Thread(target=self.run, daemon=True).start()
-
-    def stop(self) -> None:
-        self._stop.set()

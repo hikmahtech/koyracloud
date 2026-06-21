@@ -118,8 +118,6 @@ class Settings:
     redis_port: int = field(default_factory=lambda: int(os.environ.get("KOYRA_REDIS_PORT", "6379")))
     redis_admin_password: str = field(
         default_factory=lambda: _secret("KOYRA_REDIS_ADMIN_PASSWORD", ""))
-    redis_maxmemory: str = field(
-        default_factory=lambda: os.environ.get("KOYRA_REDIS_MAXMEMORY", "256mb"))
     # Cron scheduler
     cron_enabled: bool = field(
         default_factory=lambda: os.environ.get("KOYRA_CRON_ENABLED", "1") != "0")
