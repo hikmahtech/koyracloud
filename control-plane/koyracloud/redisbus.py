@@ -98,18 +98,3 @@ def provision(db: Database, crypto: CryptoBox, settings: Settings,
     # The key/channel prefix is the app name (the contract surfaced to authors).
     admin.set_user(username, password, app_name)
     return redis_url(username, password, settings.redis_host, settings.redis_port)
-
-
-def deprovision(db: Database, admin: RedisAdmin, app_id: int) -> None:
-    """Drop the app's ACL user + stored credential (best-effort)."""
-    with db.session() as s:
-        row = s.get(AppRedis, app_id)
-        if row is None:
-            return
-        username = row.username
-        s.delete(row)
-        s.commit()
-    try:
-        admin.delete_user(username)
-    except Exception:  # noqa: BLE001 — teardown is best-effort
-        pass
