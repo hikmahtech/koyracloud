@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { PublicNav, Footer } from "../components/Chrome.jsx";
+import { joinWaitlist } from "../api.js";
 
 const REPO_URL = "https://github.com/hikmahtech/koyracloud";
 
@@ -40,6 +42,69 @@ const CLIENTS = [
   { name: "manasrealty.com", url: "https://manasrealty.com", desc: "Real estate" },
   { name: "vcsolutions.co.in", url: "https://vcsolutions.co.in", desc: "VC solutions" },
 ];
+
+function WaitlistSection() {
+  const [email, setEmail] = useState("");
+  const [siteCount, setSiteCount] = useState("");
+  const [state, setState] = useState("idle"); // idle | submitting | done | error
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!email || !siteCount) return;
+    setState("submitting");
+    try {
+      await joinWaitlist(email, siteCount);
+      setState("done");
+    } catch {
+      setState("error");
+    }
+  }
+
+  return (
+    <section className="max-w-6xl mx-auto px-6 py-16">
+      <div className="card p-10 relative overflow-hidden">
+        <div className="glow absolute inset-x-0 top-0 h-40 pointer-events-none" />
+        <div className="eyebrow">Managed koyracloud · coming soon</div>
+        <h2 className="font-display text-3xl sm:text-4xl mt-4">
+          Don't want to run the swarm? <span className="text-acid">We'll host it.</span>
+        </h2>
+        <p className="text-[var(--color-muted)] mt-3 max-w-xl">
+          A fully-managed koyracloud — we run the infrastructure, you deploy unlimited
+          sites from git. We're lining up the first users. Want in?
+        </p>
+
+        {state === "done" ? (
+          <p className="mt-7 text-acid font-medium">You're on the list — we'll be in touch. 🎉</p>
+        ) : (
+          <form onSubmit={submit} className="mt-7 flex flex-wrap gap-3 items-center max-w-xl">
+            <input
+              type="email" required value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@agency.com"
+              className="input flex-1 min-w-[220px]"
+            />
+            <select required value={siteCount} onChange={(e) => setSiteCount(e.target.value)}
+                    className="input">
+              <option value="" disabled>How many sites?</option>
+              <option value="1-2">1–2 sites</option>
+              <option value="3-9">3–9 sites</option>
+              <option value="10+">10+ sites</option>
+            </select>
+            <button disabled={!email || !siteCount || state === "submitting"}
+                    className="btn btn-primary shrink-0">
+              {state === "submitting" ? "Joining…" : "Join the waitlist"}
+            </button>
+            {state === "error" && (
+              <p className="w-full text-sm" style={{ color: "#ff5f57" }}>
+                Something went wrong — try again.
+              </p>
+            )}
+          </form>
+        )}
+      </div>
+    </section>
+  );
+}
 
 export default function Landing() {
   return (
@@ -133,6 +198,9 @@ export default function Landing() {
           ))}
         </div>
       </section>
+
+      {/* Managed waitlist */}
+      <WaitlistSection />
 
       {/* CTA */}
       <section className="max-w-6xl mx-auto px-6 py-20">

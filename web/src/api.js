@@ -30,6 +30,7 @@ const del = (path) => req("DELETE", path);
 
 export const getConfig = () => get("/config");
 export const getMe = () => get("/me");
+export const joinWaitlist = (email, site_count) => post("/waitlist", { email, site_count });
 export const logout = () => post("/auth/logout");
 
 export const listAllowedUsers = () => get("/allowed-users");

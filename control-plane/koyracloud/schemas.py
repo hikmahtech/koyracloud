@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
 _SAFE_REF = re.compile(r"^[A-Za-z0-9._/-]+$")
+# Loose email shape — enough to reject garbage without pulling in email-validator.
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # App name becomes a DNS label, a Traefik router/service name, and an NFS path
 # segment — keep it strictly lowercase-alnum + hyphen, no dots/slashes/underscores.
 _DNS_LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$")
@@ -104,6 +107,21 @@ class AllowedUserIn(BaseModel):
         v = v.strip().lstrip("@")
         if not v or not all(c.isalnum() or c == "-" for c in v):
             raise ValueError("invalid GitHub login")
+        return v
+
+
+class WaitlistIn(BaseModel):
+    """Public managed-koyracloud waitlist signup. ``site_count`` is the ICP
+    qualifier; Literal makes a bad bucket a 422 with no extra code."""
+    email: str
+    site_count: Literal["1-2", "3-9", "10+"]
+
+    @field_validator("email")
+    @classmethod
+    def _ve(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not _EMAIL.match(v):
+            raise ValueError("invalid email")
         return v
 
 
