@@ -725,11 +725,14 @@ def test_waitlist_signup_and_dedupe(client):
         "site_count": "10+",
         "created_at": listing["signups"][0]["created_at"],
     }
-    # Same email (different case) is a quiet no-op — no second row.
+    # Same email (different case) adds no second row, but refreshes the bucket
+    # to the latest value (an upgrade/downgrade isn't silently dropped).
     assert client.post("/api/waitlist",
                        json={"email": "agency@example.com", "site_count": "3-9"}
                        ).status_code == 201
-    assert client.get("/api/waitlist").json()["count"] == 1
+    after = client.get("/api/waitlist").json()
+    assert after["count"] == 1
+    assert after["signups"][0]["site_count"] == "3-9"
 
 
 def test_waitlist_rejects_bad_input(client):

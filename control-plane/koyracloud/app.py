@@ -376,10 +376,16 @@ def create_app(
         if not _waitlist_rl.allow(_client_ip(request)):
             raise HTTPException(status_code=429, detail="rate limited")
         with db.session() as s:
-            is_new = s.query(Waitlist).filter_by(email=body.email).first() is None
+            existing = s.query(Waitlist).filter_by(email=body.email).first()
+            is_new = existing is None
             if is_new:
                 s.add(Waitlist(email=body.email, site_count=body.site_count))
-                s.commit()
+            else:
+                # Re-submit: no new row, but keep the latest ICP bucket so an
+                # upgrade (e.g. 1-2 → 10+) isn't silently dropped. created_at
+                # stays at first signup.
+                existing.site_count = body.site_count
+            s.commit()
         if is_new and settings.default_notify_email:
             threading.Thread(
                 target=notifier.send_email,
