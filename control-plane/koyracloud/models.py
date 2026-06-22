@@ -249,3 +249,17 @@ class CronRun(Base):
     started_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
     finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     job: Mapped[CronJob] = relationship(back_populates="runs")
+
+
+class Waitlist(Base):
+    """A prospective managed-koyracloud user who joined the waitlist from the
+    public landing page — a demand-validation signal collected before any paid
+    product exists. ``email`` is unique so a re-submit is a quiet no-op;
+    ``site_count`` is the ICP qualifier bucket ("1-2"/"3-9"/"10+"). Own table so
+    create_all adds it without altering anything."""
+    __tablename__ = "waitlist"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    site_count: Mapped[str] = mapped_column(String(16), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)

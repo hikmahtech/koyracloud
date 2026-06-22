@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import html
 import json
 import os
 import secrets as _secrets
@@ -24,10 +25,11 @@ from koyracloud.deployer import Deployer
 from koyracloud.docker_ctl import CLIDockerControl, DockerControl
 from koyracloud.models import (AllowedUser, App, AppAnalytics, AppNotify,
                                 AppRedis, CronJob, CronRun, Deploy, Domain,
-                                DomainCert, EnvVar, Hit, Secret, User)
+                                DomainCert, EnvVar, Hit, Secret, User, Waitlist)
 from koyracloud.schemas import (AllowedUserIn, AppCreate, AppOut, AppUpdate,
                                 DeployOut, DeployTrigger, DnsRecord, DomainIn,
-                                DomainOut, EnvVarIn, RollbackRequest, SecretIn)
+                                DomainOut, EnvVarIn, RollbackRequest, SecretIn,
+                                WaitlistIn)
 from koyracloud.stack_render import auto_subdomain, worker_service_name
 
 import re as _re
@@ -165,6 +167,7 @@ def create_app(
 
     _collect_rl = RateLimiter(limit=600, window=60)   # per IP/min for /_k/e
     _webhook_rl = RateLimiter(limit=60, window=60)     # per IP/min for the webhook
+    _waitlist_rl = RateLimiter(limit=10, window=60)    # per IP/min for /api/waitlist
 
     def _client_ip(request: Request) -> str:
         fwd = request.headers.get("x-forwarded-for", "")
@@ -364,6 +367,36 @@ def create_app(
                 s.delete(u)
                 s.commit()
         return Response(status_code=204)
+
+    # ----- managed-koyracloud waitlist (public demand validation) ---------
+    @app.post("/api/waitlist", status_code=201)
+    def join_waitlist(body: WaitlistIn, request: Request):
+        # Public + unauthenticated. Rate-limited per IP; duplicate email is a
+        # quiet success (idempotent), so re-submits don't error or double-notify.
+        if not _waitlist_rl.allow(_client_ip(request)):
+            raise HTTPException(status_code=429, detail="rate limited")
+        with db.session() as s:
+            is_new = s.query(Waitlist).filter_by(email=body.email).first() is None
+            if is_new:
+                s.add(Waitlist(email=body.email, site_count=body.site_count))
+                s.commit()
+        if is_new and settings.default_notify_email:
+            threading.Thread(
+                target=notifier.send_email,
+                args=(settings, settings.default_notify_email,
+                      "New koyracloud waitlist signup",
+                      notifier._wrap("New waitlist signup",
+                                     f"{html.escape(body.email)} · {body.site_count} sites")),
+                daemon=True).start()
+        return {"ok": True}
+
+    @app.get("/api/waitlist")
+    def list_waitlist(login: str = AdminAuth):
+        with db.session() as s:
+            rows = s.query(Waitlist).order_by(Waitlist.id.desc()).all()
+        return {"count": len(rows),
+                "signups": [{"email": w.email, "site_count": w.site_count,
+                             "created_at": w.created_at.isoformat()} for w in rows]}
 
     # ----- apps -----------------------------------------------------------
     def _app_out(obj: App) -> AppOut:

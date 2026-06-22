@@ -711,3 +711,38 @@ def test_deploy_uses_repo_dockerfile(env):
     tag, context_dir, build_args, dockerfile = docker.builds[0]
     # built the repo's own Dockerfile (not the generated .koyra.Dockerfile)
     assert dockerfile.endswith("/Dockerfile") and not dockerfile.endswith(".koyra.Dockerfile")
+
+
+def test_waitlist_signup_and_dedupe(client):
+    # Public POST stores a signup; admin GET lists it.
+    assert client.post("/api/waitlist",
+                       json={"email": "Agency@Example.com", "site_count": "10+"}
+                       ).status_code == 201
+    listing = client.get("/api/waitlist").json()
+    assert listing["count"] == 1
+    assert listing["signups"][0] == {
+        "email": "agency@example.com",  # normalized lowercase
+        "site_count": "10+",
+        "created_at": listing["signups"][0]["created_at"],
+    }
+    # Same email (different case) is a quiet no-op — no second row.
+    assert client.post("/api/waitlist",
+                       json={"email": "agency@example.com", "site_count": "3-9"}
+                       ).status_code == 201
+    assert client.get("/api/waitlist").json()["count"] == 1
+
+
+def test_waitlist_rejects_bad_input(client):
+    assert client.post("/api/waitlist",
+                       json={"email": "not-an-email", "site_count": "10+"}
+                       ).status_code == 422
+    assert client.post("/api/waitlist",
+                       json={"email": "x@y.com", "site_count": "lots"}
+                       ).status_code == 422
+
+
+def test_waitlist_list_is_admin_only(scoped):
+    scoped["invite"]("member")
+    member = scoped["as_user"]("member")
+    # a member may sign in but must not read the waitlist
+    assert member.get("/api/waitlist").status_code == 403
