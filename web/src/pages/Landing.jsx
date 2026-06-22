@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PublicNav, Footer } from "../components/Chrome.jsx";
 import { joinWaitlist } from "../api.js";
@@ -61,7 +61,7 @@ function WaitlistSection() {
   }
 
   return (
-    <section className="max-w-6xl mx-auto px-6 py-16">
+    <section id="waitlist" className="max-w-6xl mx-auto px-6 py-16 scroll-mt-24">
       <div className="card p-10 relative overflow-hidden">
         <div className="glow absolute inset-x-0 top-0 h-40 pointer-events-none" />
         <div className="eyebrow">Managed koyracloud · coming soon</div>
@@ -107,6 +107,15 @@ function WaitlistSection() {
 }
 
 export default function Landing() {
+  // Deep-link target: a shared koyracloud.com/#waitlist should land on the
+  // signup form. The SPA renders after parse, so the browser's native anchor
+  // jump misses — scroll it in once the section is mounted.
+  useEffect(() => {
+    if (window.location.hash !== "#waitlist") return;
+    requestAnimationFrame(() =>
+      document.getElementById("waitlist")?.scrollIntoView({ behavior: "smooth" }));
+  }, []);
+
   return (
     <div className="grid-bg min-h-screen">
       <PublicNav />
