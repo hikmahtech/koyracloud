@@ -114,6 +114,39 @@ h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: -0
 /* Code/terminal surface — stays dark in both themes (intentional, like a real terminal). */
 .codeblock { background: #0b0f17; color: #cdd3dd; }
 
+/* Long-form article body (blog posts). Theme-aware via tokens; code stays dark. */
+.prose { color: var(--color-fg); font-size: 16px; line-height: 1.75; }
+.prose > * + * { margin-top: 1.15em; }
+.prose h2 { font-family: var(--font-display); font-size: 1.6rem; letter-spacing: -0.02em; margin-top: 2.2em; margin-bottom: 0.2em; }
+.prose h3 { font-family: var(--font-display); font-size: 1.25rem; letter-spacing: -0.01em; margin-top: 1.8em; margin-bottom: 0.2em; }
+.prose p, .prose li { color: var(--color-fg); }
+.prose a { color: var(--color-acid); text-decoration: none; }
+.prose a:hover { text-decoration: underline; }
+.prose strong { color: var(--color-fg); font-weight: 700; }
+.prose ul, .prose ol { padding-left: 1.4em; }
+.prose ul { list-style: disc; }
+.prose ol { list-style: decimal; }
+.prose li { margin-top: 0.4em; }
+.prose li::marker { color: var(--color-muted); }
+.prose code {
+  font-family: var(--font-mono); font-size: 0.86em;
+  background: var(--color-surface2); border: 1px solid var(--color-line);
+  border-radius: 5px; padding: 0.1em 0.4em;
+}
+.prose pre {
+  background: #0b0f17; border: 1px solid var(--color-line); border-radius: 12px;
+  padding: 1.1em 1.3em; overflow-x: auto; font-size: 13.5px; line-height: 1.6;
+}
+.prose pre code {
+  background: transparent; border: 0; padding: 0; color: #cdd3dd; font-size: inherit;
+}
+.prose blockquote {
+  border-left: 3px solid var(--color-acid); padding-left: 1em;
+  color: var(--color-muted); font-style: italic;
+}
+.prose hr { border: 0; border-top: 1px solid var(--color-line); margin: 2em 0; }
+.prose h2 + p, .prose h3 + p { margin-top: 0.6em; }
+
 /* Status dot */
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 
