@@ -23,3 +23,16 @@ def test_client_route_falls_back_to_index(client):
 def test_api_not_shadowed_by_spa(client):
     # /api routes still resolve even with the SPA catch-all registered
     assert client.get("/api/health").json() == {"status": "ok"}
+
+
+@pytest.mark.skipif(
+    not (WEB_DIST / "blog" / "self-hosted-paas-docker-swarm" / "index.html").is_file(),
+    reason="blog not prerendered",
+)
+def test_prerendered_route_serves_directory_index(client):
+    # A prerendered directory route (/blog/<slug>) serves its <dir>/index.html
+    # — real server-side content + per-route title — not the bare SPA shell.
+    r = client.get("/blog/self-hosted-paas-docker-swarm")
+    assert r.status_code == 200
+    assert "<title>Self-hosting a PaaS on your Docker Swarm" in r.text
+    assert '"@type":"BlogPosting"' in r.text

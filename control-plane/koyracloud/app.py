@@ -961,12 +961,17 @@ def create_app(
         def spa(full_path: str):
             # Serve a real static file only if it resolves INSIDE web/dist
             # (blocks ../ path traversal); otherwise fall back to the SPA shell.
+            # Directory paths (e.g. /blog/<slug>) resolve to their prerendered
+            # <dir>/index.html so crawlers get server-side HTML for those routes.
             if full_path:
                 candidate = (WEB_DIST / full_path).resolve()
                 if (candidate == _web_root or
-                        str(candidate).startswith(str(_web_root) + os.sep)) \
-                        and candidate.is_file():
-                    return FileResponse(candidate)
+                        str(candidate).startswith(str(_web_root) + os.sep)):
+                    if candidate.is_file():
+                        return FileResponse(candidate)
+                    prerendered = candidate / "index.html"
+                    if prerendered.is_file():
+                        return FileResponse(prerendered)
             return FileResponse(_web_root / "index.html")
 
     # Background uptime monitor (production only; run_async gates real bg work).
