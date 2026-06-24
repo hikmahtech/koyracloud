@@ -2,19 +2,46 @@
 
 /* Fonts are loaded via <link> in index.html (Clash Display, Satoshi, JetBrains Mono). */
 
+/* Tailwind @theme defines the DARK palette as the default token values; the
+   light theme overrides the same custom properties under [data-theme="light"]
+   below, so every `var(--color-*)` / `text-acid` usage swaps automatically.
+   ponytail: token name `--color-acid` kept (now blue) to avoid touching ~55 JSX refs. */
 @theme {
-  --color-ink: #0a0b0d;
-  --color-surface: #101319;
-  --color-surface2: #151922;
-  --color-line: #232834;
-  --color-fg: #e9ecf1;
-  --color-muted: #8a909c;
-  --color-acid: #c8f04e;
-  --color-acid-dim: #9bbf36;
+  --color-ink: #0b0f17;
+  --color-surface: #111725;
+  --color-surface2: #161d2d;
+  --color-line: #232c3d;
+  --color-line-strong: #33405a;
+  --color-fg: #e8edf4;
+  --color-muted: #94a0b4;
+  --color-acid: #4f7cff;
+  --color-acid-dim: #6f93ff;
   --color-danger: #ff6b6b;
+  --color-nav: rgba(11, 15, 23, 0.72);
+  --color-dot-grid: rgba(255, 255, 255, 0.05);
+  --color-glow: rgba(79, 124, 255, 0.16);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
   --font-display: "Clash Display", ui-sans-serif, sans-serif;
   --font-sans: "Satoshi", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+:root[data-theme="light"] {
+  --color-ink: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface2: #f1f5f9;
+  --color-line: #e2e8f0;
+  --color-line-strong: #cbd5e1;
+  --color-fg: #0f172a;
+  --color-muted: #5a6678;
+  --color-acid: #3b5bdb;
+  --color-acid-dim: #3349c0;
+  --color-danger: #dc2626;
+  --color-nav: rgba(248, 250, 252, 0.78);
+  --color-dot-grid: rgba(15, 23, 42, 0.06);
+  --color-glow: rgba(59, 91, 219, 0.1);
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.05);
+  color-scheme: light;
 }
 
 :root { color-scheme: dark; }
@@ -27,16 +54,17 @@ body {
   color: var(--color-fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  transition: background .2s ease, color .2s ease;
 }
 
 /* Dotted-grid atmosphere behind everything */
 .grid-bg {
   background-image:
-    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.045) 1px, transparent 0);
+    radial-gradient(circle at 1px 1px, var(--color-dot-grid) 1px, transparent 0);
   background-size: 26px 26px;
 }
 .glow {
-  background: radial-gradient(60% 50% at 50% 0%, rgba(200, 240, 78, 0.14), transparent 70%);
+  background: radial-gradient(60% 50% at 50% 0%, var(--color-glow), transparent 70%);
 }
 
 h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
@@ -54,16 +82,16 @@ h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: -0
   display: inline-flex; align-items: center; gap: 8px;
   padding: 10px 18px; border-radius: 10px; font-weight: 600;
   font-size: 14px; cursor: pointer; border: 1px solid transparent;
-  transition: transform .12s ease, background .15s ease, border-color .15s ease;
+  transition: transform .12s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
   text-decoration: none;
 }
 .btn:active { transform: translateY(1px); }
-.btn-primary { background: var(--color-acid); color: #11140a; }
-.btn-primary:hover { background: #d6fb63; box-shadow: 0 0 0 3px rgba(200,240,78,.18); }
+.btn-primary { background: var(--color-acid); color: #fff; }
+.btn-primary:hover { background: var(--color-acid-dim); box-shadow: 0 0 0 3px rgba(79,124,255,.22); }
 .btn-ghost { background: transparent; color: var(--color-fg); border-color: var(--color-line); }
-.btn-ghost:hover { border-color: #3a4150; background: var(--color-surface); }
-.btn-danger { background: transparent; color: var(--color-danger); border-color: rgba(255,107,107,.35); }
-.btn-danger:hover { background: rgba(255,107,107,.1); }
+.btn-ghost:hover { border-color: var(--color-line-strong); background: var(--color-surface); }
+.btn-danger { background: transparent; color: var(--color-danger); border-color: rgba(220,38,38,.35); }
+.btn-danger:hover { background: rgba(220,38,38,.1); }
 /* Bare text-link button reset; pair with text-color/size utilities at the call site. */
 .linkbtn { background: transparent; border: 0; cursor: pointer; }
 
@@ -72,24 +100,37 @@ h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: -0
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: 14px;
+  box-shadow: var(--shadow-card);
 }
 .input {
-  width: 100%; background: var(--color-ink); border: 1px solid var(--color-line);
+  width: 100%; background: var(--color-surface2); border: 1px solid var(--color-line);
   border-radius: 9px; padding: 9px 12px; color: var(--color-fg);
   font-size: 14px; font-family: var(--font-sans); outline: none;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
-.input:focus { border-color: var(--color-acid-dim); box-shadow: 0 0 0 3px rgba(200,240,78,.12); }
+.input:focus { border-color: var(--color-acid); box-shadow: 0 0 0 3px rgba(79,124,255,.16); }
 .mono { font-family: var(--font-mono); }
+
+/* Code/terminal surface — stays dark in both themes (intentional, like a real terminal). */
+.codeblock { background: #0b0f17; color: #cdd3dd; }
 
 /* Status dot */
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+/* Theme toggle button */
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 9px; cursor: pointer;
+  background: transparent; border: 1px solid var(--color-line); color: var(--color-muted);
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.theme-toggle:hover { color: var(--color-fg); border-color: var(--color-line-strong); background: var(--color-surface); }
 
 /* Reveal animation */
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 .rise { animation: rise .7s cubic-bezier(.2,.7,.2,1) both; }
 
-::selection { background: rgba(200,240,78,.28); }
+::selection { background: rgba(79,124,255,.28); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #232834; border-radius: 8px; }
+::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

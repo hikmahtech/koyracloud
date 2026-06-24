@@ -1,4 +1,42 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+
+// ponytail: one localStorage-backed theme hook; no provider/context for a single boolean.
+export function useTheme() {
+  const [theme, setTheme] = useState(
+    () => document.documentElement.dataset.theme || "dark"
+  );
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+  return [theme, () => setTheme((t) => (t === "dark" ? "light" : "dark"))];
+}
+
+export function ThemeToggle() {
+  const [theme, toggle] = useTheme();
+  const dark = theme === "dark";
+  return (
+    <button onClick={toggle} className="theme-toggle"
+            title={dark ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label="Toggle color theme">
+      {dark ? (
+        /* moon */
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+      ) : (
+        /* sun */
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+        </svg>
+      )}
+    </button>
+  );
+}
 
 export function Logo({ size = 22 }) {
   return (
@@ -16,7 +54,7 @@ export function Logo({ size = 22 }) {
 export function PublicNav() {
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--color-line)]
-                       bg-[rgba(10,11,13,0.72)] backdrop-blur">
+                       bg-[var(--color-nav)] backdrop-blur">
       <nav className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link to="/" className="text-[var(--color-fg)] no-underline"><Logo /></Link>
         <div className="flex items-center gap-7 text-sm">
@@ -24,6 +62,7 @@ export function PublicNav() {
           <Link to="/blog" className="text-[var(--color-muted)] hover:text-[var(--color-fg)] no-underline">Blog</Link>
           <a href="https://github.com/hikmahtech/koyracloud" target="_blank" rel="noreferrer"
              className="text-[var(--color-muted)] hover:text-[var(--color-fg)] no-underline">GitHub ↗</a>
+          <ThemeToggle />
           <a href="/api/auth/login" className="btn btn-primary">Sign in</a>
         </div>
       </nav>

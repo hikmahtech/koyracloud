@@ -8,7 +8,7 @@ function Code({ children, label }) {
           {label}
         </div>
       )}
-      <pre className="mono text-[12.5px] leading-relaxed p-4 overflow-auto text-[#cdd3dd] m-0">{children}</pre>
+      <pre className="mono text-[12.5px] leading-relaxed p-4 overflow-auto codeblock m-0">{children}</pre>
     </div>
   );
 }

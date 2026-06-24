@@ -156,7 +156,7 @@ export default function Landing() {
                 <span className="dot" style={{ background: "var(--color-acid)" }} />
                 <span className="ml-2 mono text-xs text-[var(--color-muted)]">.paas/app.yaml</span>
               </div>
-              <pre className="mono text-[12.5px] leading-relaxed p-5 overflow-auto text-[#cdd3dd] m-0">{MANIFEST}</pre>
+              <pre className="mono text-[12.5px] leading-relaxed p-5 overflow-auto codeblock m-0">{MANIFEST}</pre>
             </div>
           </div>
         </div>
@@ -181,7 +181,7 @@ export default function Landing() {
         <div className="eyebrow">What you get</div>
         <div className="mt-8 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {FEATURES.map(([t, d]) => (
-            <div key={t} className="card p-6 hover:border-[#3a4150] transition">
+            <div key={t} className="card p-6 hover:border-[var(--color-line-strong)] transition">
               <div className="font-display text-lg leading-snug">{t}</div>
               <p className="text-[var(--color-muted)] text-sm mt-2 leading-relaxed">{d}</p>
             </div>
@@ -200,7 +200,7 @@ export default function Landing() {
         <div className="mt-8 flex flex-wrap justify-center gap-4">
           {CLIENTS.map((c) => (
             <a key={c.name} href={c.url} target="_blank" rel="noreferrer noopener"
-               className="card px-6 py-4 no-underline hover:border-[#3a4150] transition text-center min-w-[160px]">
+               className="card px-6 py-4 no-underline hover:border-[var(--color-line-strong)] transition text-center min-w-[160px]">
               <div className="font-display text-sm font-medium text-[var(--color-fg)]">{c.name}</div>
               <div className="text-xs text-[var(--color-muted)] mt-1">{c.desc}</div>
             </a>

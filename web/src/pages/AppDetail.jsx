@@ -226,7 +226,7 @@ function RuntimeLogs({ id }) {
           {isFetching ? "refreshing…" : "refresh"}
         </button>
       </div>
-      <pre ref={box} className="mono text-[12px] leading-relaxed p-4 h-[28rem] overflow-auto text-[#cdd3dd] m-0">
+      <pre ref={box} className="mono text-[12px] leading-relaxed p-4 h-[28rem] overflow-auto codeblock m-0">
         {data?.logs || "loading…"}
       </pre>
     </div>
@@ -252,7 +252,7 @@ function LiveLogs({ deployId, onDone }) {
         <span className="mono text-xs text-[var(--color-muted)]">deploy #{deployId}</span>
         {done && <StatusBadge status={done} />}
       </div>
-      <pre ref={box} className="mono text-[12px] leading-relaxed p-4 h-64 overflow-auto text-[#cdd3dd] m-0">
+      <pre ref={box} className="mono text-[12px] leading-relaxed p-4 h-64 overflow-auto codeblock m-0">
         {lines.join("\n") || "waiting for logs…"}
       </pre>
     </div>
@@ -397,7 +397,7 @@ function WorkerLogs({ id, worker }) {
   const box = useRef(null);
   useEffect(() => { if (box.current) box.current.scrollTop = box.current.scrollHeight; }, [data]);
   return (
-    <pre ref={box} className="mono text-[11px] leading-relaxed p-3 h-56 overflow-auto text-[#cdd3dd] bg-[var(--color-ink)] border border-[var(--color-line)] rounded m-0 mt-3">
+    <pre ref={box} className="mono text-[11px] leading-relaxed p-3 h-56 overflow-auto codeblock bg-[var(--color-ink)] border border-[var(--color-line)] rounded m-0 mt-3">
       {data?.logs || "loading…"}
     </pre>
   );
@@ -470,7 +470,7 @@ function CronRunLog({ id, jobId, runId }) {
     queryKey: ["cron-run-log", id, jobId, runId], queryFn: () => getCronRunLog(id, jobId, runId),
   });
   return (
-    <pre className="mono text-[11px] leading-relaxed p-3 max-h-72 overflow-auto text-[#cdd3dd] bg-[var(--color-ink)] border border-[var(--color-line)] rounded m-0 mb-2">
+    <pre className="mono text-[11px] leading-relaxed p-3 max-h-72 overflow-auto codeblock bg-[var(--color-ink)] border border-[var(--color-line)] rounded m-0 mb-2">
       {data?.log || "loading…"}
     </pre>
   );
