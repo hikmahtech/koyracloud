@@ -62,7 +62,7 @@ export default function AppsList() {
         <div className="grid gap-3">
           {apps.map((app) => (
             <Link key={app.id} to={`/apps/${app.id}`}
-                  className="card p-5 flex items-center justify-between hover:border-[#3a4150] transition no-underline text-[var(--color-fg)]">
+                  className="card p-5 flex items-center justify-between hover:border-[var(--color-line-strong)] transition no-underline text-[var(--color-fg)]">
               <div className="min-w-0">
                 <div className="font-display text-lg">{app.name}</div>
                 {app.primary_host ? (

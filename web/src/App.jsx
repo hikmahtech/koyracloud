@@ -1,7 +1,7 @@
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getMe, logout } from "./api";
-import { Logo } from "./components/Chrome.jsx";
+import { Logo, ThemeToggle } from "./components/Chrome.jsx";
 import Landing from "./pages/Landing.jsx";
 import AppsList from "./pages/AppsList.jsx";
 import NewApp from "./pages/NewApp.jsx";
@@ -12,7 +12,7 @@ function AppShell({ me, children }) {
   const nav = useNavigate();
   return (
     <div className="grid-bg min-h-screen">
-      <header className="border-b border-[var(--color-line)] bg-[rgba(10,11,13,0.7)] backdrop-blur sticky top-0 z-30">
+      <header className="border-b border-[var(--color-line)] bg-[var(--color-nav)] backdrop-blur sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link to="/" className="text-[var(--color-fg)] no-underline"><Logo /></Link>
           <div className="flex items-center gap-6 text-sm">
@@ -20,6 +20,7 @@ function AppShell({ me, children }) {
             {me.is_admin && (
               <Link to="/team" className="text-[var(--color-muted)] hover:text-[var(--color-fg)] no-underline">Team</Link>
             )}
+            <ThemeToggle />
             <Link to="/apps/new" className="btn btn-primary">New App</Link>
             <div className="flex items-center gap-2 mono text-xs text-[var(--color-muted)]">
               <span className="dot" style={{ background: "var(--color-acid)" }} />@{me.login}

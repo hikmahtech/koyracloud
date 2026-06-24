@@ -3,6 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Set theme before first paint to avoid a flash; honors saved choice then OS preference. -->
+    <script>
+      (function () {
+        var t = localStorage.getItem("theme");
+        if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        document.documentElement.dataset.theme = t;
+      })();
+    </script>
     <title>koyracloud — your own Vercel, self-hosted</title>
     <meta name="description" content="koyracloud is an open-source, self-hosted PaaS for your Docker Swarm. Connect a git repo with a small manifest — it builds a container image, runs it behind HTTPS, and handles secrets, persistence, custom domains, background workers, cron jobs and a Redis bus. A self-hosted alternative to Vercel, Render and Heroku." />
     <meta name="keywords" content="self-hosted PaaS, Docker Swarm PaaS, open source Vercel alternative, Render alternative, Heroku alternative, deploy git repo, homelab PaaS, background workers, cron jobs, self-hosted platform as a service" />
