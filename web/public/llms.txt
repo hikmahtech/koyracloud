@@ -38,9 +38,24 @@ side projects. Not a multi-tenant public cloud.
 - Quick start: clone the repo, configure `deploy/koyracloud.env` and the Docker secrets
   documented in `deploy/README.md`, then run `./deploy/deploy.sh` against your swarm.
 
+## Writing
+
+Long-form posts on self-hosting a PaaS, Docker Swarm, and moving apps off managed
+platforms. Index: https://koyracloud.com/blog
+
+- Self-hosting a PaaS on your Docker Swarm — what it is, why Swarm over Kubernetes, what you get over hand-rolling it: https://koyracloud.com/blog/self-hosted-paas-docker-swarm
+- An open-source Vercel alternative for your own hardware — what you keep and give up self-hosting the git-push-to-URL loop: https://koyracloud.com/blog/open-source-vercel-alternative
+- The self-hosted version of the Heroku workflow — Procfile/dynos/config-vars/Scheduler/Redis mapped onto your own cluster: https://koyracloud.com/blog/self-hosted-heroku-alternative
+- Push-to-deploy, without the CI yak-shave — how a GitHub webhook builds an image and ships it (or waits for green CI): https://koyracloud.com/blog/push-to-deploy-git
+- Why we build each app into its own image, off NFS — an engineering post-mortem on per-app images and an internal registry: https://koyracloud.com/blog/apps-into-images-not-nfs
+- Background workers and cron from the same repo — workers, run-to-completion cron jobs, and a per-app Redis bus in one manifest: https://koyracloud.com/blog/background-workers-and-cron
+- Custom domains and automatic HTTPS, the boring way — Traefik + Let's Encrypt for subdomains, Cloudflare for SaaS for custom domains: https://koyracloud.com/blog/custom-domains-automatic-https
+- A homelab that pays rent — closing the gap between "I have servers" and "I can ship to them like a small cloud": https://koyracloud.com/blog/homelab-paas
+
 ## Links
 
 - Source code: https://github.com/hikmahtech/koyracloud
 - Documentation: https://koyracloud.com/docs
+- Blog: https://koyracloud.com/blog
 - Architecture & design: https://github.com/hikmahtech/koyracloud/blob/main/docs/ARCHITECTURE.md
 - Migrating from Vercel: https://github.com/hikmahtech/koyracloud/blob/main/docs/MIGRATING-FROM-VERCEL.md

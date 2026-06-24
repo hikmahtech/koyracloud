@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 
 // ponytail: one localStorage-backed theme hook; no provider/context for a single boolean.
 export function useTheme() {
+  // ponytail: guard for SSR/prerender (no document at build-render time).
   const [theme, setTheme] = useState(
-    () => document.documentElement.dataset.theme || "dark"
+    () => (typeof document !== "undefined" && document.documentElement.dataset.theme) || "dark"
   );
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
