@@ -73,6 +73,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Bakes the GA4 gtag into index.html at build time. Unset secret =>
+          # empty => no analytics tag (the self-host-friendly default).
+          build-args: |
+            KOYRA_GA_MEASUREMENT_ID=${{ secrets.KOYRA_GA_MEASUREMENT_ID }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build && vite build --ssr src/entry-server.jsx --outDir dist-server && node prerender.js",
     "build:spa": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "seo:indexnow": "node scripts/indexnow-submit.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.59.0",
