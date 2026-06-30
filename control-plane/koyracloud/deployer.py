@@ -201,6 +201,11 @@ class Deployer:
             analytics_site = an.token if an.enabled else ""
 
         def emit(line: str, status: str | None = None) -> None:
+            # Prefix every log line with a UTC wall-clock time so the build/deploy
+            # log itself shows when each step ran (the deploy's date is in the
+            # history row's created_at). ponytail: HH:MM:SS UTC — a deploy spans
+            # seconds/minutes, so a per-line date would just repeat noise.
+            line = f"{dt.datetime.now(dt.timezone.utc):%H:%M:%S} {line}"
             # Atomic single-statement UPDATE (no prior SELECT): a read-then-write
             # in one transaction can hit SQLite's WAL read->write upgrade
             # deadlock (SQLITE_BUSY_SNAPSHOT, which busy_timeout does NOT retry)

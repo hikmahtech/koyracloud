@@ -249,7 +249,7 @@ function LiveLogs({ deployId, onDone }) {
   return (
     <div className="card overflow-hidden mb-7">
       <div className="px-4 py-2.5 border-b border-[var(--color-line)] flex items-center justify-between">
-        <span className="mono text-xs text-[var(--color-muted)]">deploy #{deployId}</span>
+        <span className="mono text-xs text-[var(--color-muted)]">deploy #{deployId} · times UTC</span>
         {done && <StatusBadge status={done} />}
       </div>
       <pre ref={box} className="mono text-[12px] leading-relaxed p-4 h-64 overflow-auto codeblock m-0">
@@ -265,13 +265,17 @@ function DeployHistory({ deploys, onRollback }) {
     <div className="card overflow-hidden">
       <table className="w-full text-sm">
         <thead><tr className="text-left mono text-xs text-[var(--color-muted)]">
-          <th className="px-4 py-3">#</th><th>Status</th><th>Ref</th><th>Commit</th><th></th>
+          <th className="px-4 py-3">#</th><th>Status</th><th>When</th><th>Took</th><th>Ref</th><th>Commit</th><th></th>
         </tr></thead>
         <tbody>
           {deploys.map((d) => (
             <tr key={d.id} className="border-t border-[var(--color-line)]">
               <td className="px-4 py-3 mono">{d.id}</td>
               <td><StatusBadge status={d.status} /></td>
+              <td className="mono text-xs text-[var(--color-muted)] whitespace-nowrap" title={fmtTime(d.created_at)}>
+                {d.created_at ? fmtAgo(d.created_at) : "—"}
+              </td>
+              <td className="mono text-xs text-[var(--color-muted)] whitespace-nowrap">{fmtDuration(d.created_at, d.finished_at)}</td>
               <td className="mono text-xs text-[var(--color-muted)]">{d.ref?.slice(0, 12)}</td>
               <td className="mono text-xs text-[var(--color-muted)]">{d.commit?.slice(0, 12) || "—"}</td>
               <td className="text-right pr-4">
@@ -290,6 +294,14 @@ function DeployHistory({ deploys, onRollback }) {
 }
 
 function fmtTime(iso) { try { return new Date(iso).toLocaleString(); } catch { return iso; } }
+// Elapsed time between two ISO timestamps, e.g. "1m 12s". "—" if not finished yet.
+function fmtDuration(startIso, endIso) {
+  if (!startIso || !endIso) return "—";
+  const s = Math.round((new Date(endIso) - new Date(startIso)) / 1000);
+  if (s < 0) return "—";
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
 function fmtAgo(iso) {
   const s = Math.floor((Date.now() - new Date(iso)) / 1000);
   if (s < 60) return `${s}s ago`;
