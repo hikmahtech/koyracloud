@@ -15,6 +15,13 @@ def _csv(name: str, default: str = "") -> list[str]:
     return [x.strip() for x in os.environ.get(name, default).split(",") if x.strip()]
 
 
+def _int(name: str, default: int) -> int:
+    """Like int(os.environ[name]) but treats unset/blank as the default — the
+    swarm stack passes optional vars through as empty strings (${VAR:-})."""
+    raw = os.environ.get(name, "").strip()
+    return int(raw) if raw else default
+
+
 def _secret(name: str, default: str = "") -> str:
     """Read a sensitive value from ``<NAME>_FILE`` (a mounted Docker secret) if
     set, else from ``<NAME>``. Keeps secrets out of the process env / inspect."""
@@ -97,9 +104,14 @@ class Settings:
     backup_enabled: bool = field(
         default_factory=lambda: os.environ.get("KOYRA_BACKUP_ENABLED", "1") != "0")
     backup_interval_hours: int = field(
-        default_factory=lambda: int(os.environ.get("KOYRA_BACKUP_INTERVAL_HOURS", "12")))
+        default_factory=lambda: _int("KOYRA_BACKUP_INTERVAL_HOURS", 12))
     backup_keep: int = field(
-        default_factory=lambda: int(os.environ.get("KOYRA_BACKUP_KEEP", "14")))
+        default_factory=lambda: _int("KOYRA_BACKUP_KEEP", 14))
+    # Where snapshots land. Defaults to <db>/backups (same volume as the DB),
+    # but point this at a separate mount so a volume loss doesn't take the DB
+    # and its backups together. Empty => the <db-dir>/backups default.
+    backup_dir: str = field(
+        default_factory=lambda: os.environ.get("KOYRA_BACKUP_DIR", ""))
     # Optional: pin deployed apps to a single node (e.g. "node-1"). Needed when
     # the runtime image is only present locally on that node (no registry push).
     # Empty = no placement constraint (apps schedule anywhere; image must be

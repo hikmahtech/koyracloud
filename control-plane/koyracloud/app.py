@@ -996,7 +996,7 @@ def create_app(
         from koyracloud import backup
         dbf = backup.sqlite_file(settings.db_url)
         if dbf:
-            backup.BackupLoop(dbf, dbf.parent / "backups",
+            backup.BackupLoop(dbf, backup.backup_dir_for(dbf, settings.backup_dir),
                               settings.backup_interval_hours * 3600,
                               settings.backup_keep).start()
 
