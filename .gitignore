@@ -27,3 +27,6 @@ deploy/koyracloud.env
 
 # Private growth/distribution playbook — never publish to the public repo
 DISTRIBUTION.md
+
+# Private marketing/launch drafts — keep out of the public repo
+marketing/
