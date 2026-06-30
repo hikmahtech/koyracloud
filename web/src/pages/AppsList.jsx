@@ -12,6 +12,16 @@ const STATUS = {
   superseded: ["#5a6070", "superseded"],
 };
 
+// ponytail: 5-line relative time, inlined rather than a shared util for 2 callers.
+function timeAgo(iso) {
+  if (!iso) return null;
+  const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
 export function StatusBadge({ status }) {
   const [color, label] = STATUS[status] || ["#5a6070", status || "never deployed"];
   return (
@@ -72,6 +82,12 @@ export default function AppsList() {
                 )}
               </div>
               <div className="flex items-center gap-5 shrink-0">
+                {app.last_deployed_at && (
+                  <span className="mono text-xs text-[var(--color-muted)] hidden sm:inline"
+                        title={new Date(app.last_deployed_at).toLocaleString()}>
+                    deployed {timeAgo(app.last_deployed_at)}
+                  </span>
+                )}
                 <span className="mono text-xs text-[var(--color-muted)] hidden sm:inline">{app.branch}</span>
                 <RunningDot st={status[String(app.id)]} />
                 <StatusBadge status={app.latest_status} />

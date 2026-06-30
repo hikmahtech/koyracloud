@@ -408,6 +408,7 @@ def create_app(
     def _app_out(obj: App) -> AppOut:
         out = AppOut.model_validate(obj)
         out.latest_status = obj.deploys[0].status if obj.deploys else None
+        out.last_deployed_at = obj.deploys[0].created_at if obj.deploys else None
         primary = next((d for d in obj.domains if d.is_primary), None) \
             or (obj.domains[0] if obj.domains else None)
         out.primary_host = primary.host if primary else None

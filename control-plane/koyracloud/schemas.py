@@ -65,6 +65,7 @@ class AppOut(BaseModel):
     auto_deploy: bool
     created_at: dt.datetime
     latest_status: str | None = None
+    last_deployed_at: dt.datetime | None = None
     primary_host: str | None = None
 
     model_config = {"from_attributes": True}
