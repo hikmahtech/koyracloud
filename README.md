@@ -9,6 +9,11 @@ built-in registry, and runs it behind HTTPS — with persistent storage, injecte
 secrets, live deploy logs, custom domains, push-to-deploy and rollback. Bring a
 small manifest **or your own `Dockerfile`**; apps run on any node, pinned to none.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="hero-dark.png" />
+  <img alt="koyracloud dashboard — connect a repo, build an image, run it behind HTTPS" src="hero-light.png" width="860" />
+</picture>
+
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-c8f04e.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.12-3776ab.svg)
