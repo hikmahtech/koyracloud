@@ -1,6 +1,10 @@
 // Blog posts. Body markdown lives in sibling .md files, imported raw (Vite ?raw).
 // Metadata (title/description/date/tag) is kept here so it stays consistent and
 // SEO-controlled; the .md files are pure prose with no frontmatter or H1.
+import buildingInPublic from "./building-koyracloud-in-public.md?raw";
+import deployFastapiReact from "./deploy-fastapi-react-homelab.md?raw";
+import noKubernetes from "./you-dont-need-kubernetes.md?raw";
+import migratingOffVercel from "./migrating-off-vercel.md?raw";
 import selfHostedPaas from "./self-hosted-paas-docker-swarm.md?raw";
 import vercelAlt from "./open-source-vercel-alternative.md?raw";
 import herokuAlt from "./self-hosted-heroku-alternative.md?raw";
@@ -11,6 +15,42 @@ import appsIntoImages from "./apps-into-images-not-nfs.md?raw";
 import homelabPaas from "./homelab-paas.md?raw";
 
 export const POSTS = [
+  {
+    slug: "building-koyracloud-in-public",
+    title: "I built my own Vercel in a month — here's the architecture",
+    description:
+      "Building a self-hosted PaaS solo: the two-half control-plane/pipeline architecture, the NFS design I got wrong first, and every feature I said no to on purpose.",
+    date: "2026-06-30",
+    tag: "Build log",
+    body: buildingInPublic,
+  },
+  {
+    slug: "deploy-fastapi-react-homelab",
+    title: "Deploy a FastAPI + React app to your homelab",
+    description:
+      "A concrete walkthrough: the .paas/app.yaml manifest for a full-stack Python+Node app, build vs predeploy, build-time env traps, push-to-deploy, and adding a worker later.",
+    date: "2026-06-28",
+    tag: "Tutorial",
+    body: deployFastapiReact,
+  },
+  {
+    slug: "you-dont-need-kubernetes",
+    title: "You don't need Kubernetes to self-host your apps",
+    description:
+      "The push-a-repo-get-a-URL loop most people want doesn't require Kubernetes. Why Docker Swarm plus a thin PaaS layer is the right amount of machinery for a homelab.",
+    date: "2026-06-26",
+    tag: "Opinion",
+    body: noKubernetes,
+  },
+  {
+    slug: "migrating-off-vercel",
+    title: "Migrating a Next.js app off Vercel, the honest version",
+    description:
+      "The two genuinely fiddly parts of moving Next.js to your own hardware — the Dockerfile and the apex domain — plus the build-env, pnpm, and email traps that bite everyone.",
+    date: "2026-06-25",
+    tag: "Guide",
+    body: migratingOffVercel,
+  },
   {
     slug: "self-hosted-paas-docker-swarm",
     title: "Self-hosting a PaaS on your Docker Swarm",
