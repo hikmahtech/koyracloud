@@ -24,3 +24,6 @@ dist/
 
 # Instance deploy config (never commit)
 deploy/koyracloud.env
+
+# Private growth/distribution playbook — never publish to the public repo
+DISTRIBUTION.md

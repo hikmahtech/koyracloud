@@ -11,7 +11,11 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dist = join(__dirname, "dist");
 
-const { render, getRoutes } = await import("./dist-server/entry-server.js");
+const { render, getRoutes, POSTS } = await import("./dist-server/entry-server.js");
+
+const SITE = "https://koyracloud.com";
+const escXml = (s) =>
+  String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 // The pristine SPA shell, read once and used as the template for every route.
 const template = readFileSync(join(dist, "index.html"), "utf-8");
@@ -67,6 +71,47 @@ for (const route of routes) {
   writeFileSync(out, html);
   console.log(`prerendered ${route.path} -> ${out.replace(dist, "dist")}`);
 }
+
+// sitemap.xml — generated from the same routes the prerenderer just wrote, so a
+// new post is in the sitemap automatically (no hand-maintained list to drift).
+const dateBySlug = Object.fromEntries(POSTS.map((p) => [p.slug, p.date]));
+const sitemap =
+  `<?xml version="1.0" encoding="UTF-8"?>\n` +
+  `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+  routes
+    .map((r) => {
+      const slug = r.path.startsWith("/blog/") ? r.path.slice(6) : null;
+      const lastmod = slug && dateBySlug[slug] ? `\n    <lastmod>${dateBySlug[slug]}</lastmod>` : "";
+      const priority = r.path === "/" ? "1.0" : r.path === "/docs" ? "0.9" : slug ? "0.8" : "0.7";
+      return `  <url>\n    <loc>${r.canonical}</loc>${lastmod}\n    <changefreq>${slug ? "monthly" : "weekly"}</changefreq>\n    <priority>${priority}</priority>\n  </url>`;
+    })
+    .join("\n") +
+  `\n</urlset>\n`;
+writeFileSync(join(dist, "sitemap.xml"), sitemap);
+console.log(`wrote sitemap.xml (${routes.length} urls)`);
+
+// blog/rss.xml — POSTS is already newest-first.
+const rss =
+  `<?xml version="1.0" encoding="UTF-8"?>\n` +
+  `<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">\n  <channel>\n` +
+  `    <title>koyracloud blog</title>\n` +
+  `    <link>${SITE}/blog</link>\n` +
+  `    <atom:link href="${SITE}/blog/rss.xml" rel="self" type="application/rss+xml" />\n` +
+  `    <description>Self-hosting a PaaS on Docker Swarm — push-to-deploy, custom domains, workers, and moving off Vercel and Heroku onto your own hardware.</description>\n` +
+  `    <language>en</language>\n` +
+  POSTS.map((p) =>
+    `    <item>\n` +
+    `      <title>${escXml(p.title)}</title>\n` +
+    `      <link>${SITE}/blog/${p.slug}</link>\n` +
+    `      <guid>${SITE}/blog/${p.slug}</guid>\n` +
+    `      <pubDate>${new Date(p.date).toUTCString()}</pubDate>\n` +
+    `      <description>${escXml(p.description)}</description>\n` +
+    `    </item>`,
+  ).join("\n") +
+  `\n  </channel>\n</rss>\n`;
+mkdirSync(join(dist, "blog"), { recursive: true });
+writeFileSync(join(dist, "blog", "rss.xml"), rss);
+console.log(`wrote blog/rss.xml (${POSTS.length} items)`);
 
 // The SSR bundle is a build artifact, not something to ship in the image.
 rmSync(join(__dirname, "dist-server"), { recursive: true, force: true });

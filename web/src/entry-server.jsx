@@ -11,6 +11,10 @@ import Blog from "./pages/Blog.jsx";
 import BlogPost from "./pages/BlogPost.jsx";
 import { POSTS } from "./posts/index.js";
 
+// Re-exported so the prerenderer can build the sitemap + RSS feed from the same
+// post list, instead of a hand-maintained sitemap that drifts when posts change.
+export { POSTS };
+
 const SITE = "https://koyracloud.com";
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
