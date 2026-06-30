@@ -6,6 +6,16 @@ version: "3.8"
 services:
   control-plane:
     image: ${KOYRA_IMAGE:-koyracloud:local}
+    # Gates the `start-first` rollout below: swarm only shifts traffic to a new
+    # task once /api/health answers, so a self-deploy no longer 502s the API
+    # while uvicorn is still booting (running create_all + migrations first).
+    # python (not curl) — it's already in the image; no extra dependency.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     environment:
       DB_URL: sqlite:////data/koyracloud.db
       KOYRA_SECRET_KEY_FILE: /run/secrets/koyra_secret_key
@@ -58,6 +68,12 @@ services:
       KOYRA_REDIS_MAXMEMORY: ${KOYRA_REDIS_MAXMEMORY:-256mb}
       # Cron scheduler (launches due jobs as Swarm run-to-completion jobs).
       KOYRA_CRON_ENABLED: ${KOYRA_CRON_ENABLED:-}
+      # SQLite backups. KOYRA_BACKUP_DIR should be a mount separate from the DB
+      # volume (mount it below if you set it). Blank => <db-dir>/backups.
+      KOYRA_BACKUP_ENABLED: ${KOYRA_BACKUP_ENABLED:-}
+      KOYRA_BACKUP_INTERVAL_HOURS: ${KOYRA_BACKUP_INTERVAL_HOURS:-}
+      KOYRA_BACKUP_KEEP: ${KOYRA_BACKUP_KEEP:-}
+      KOYRA_BACKUP_DIR: ${KOYRA_BACKUP_DIR:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${KOYRA_NFS_BASE:-/mnt/koyracloud}/cp:/data

@@ -1,4 +1,6 @@
 """Unit tests for the pure modules: manifest, crypto, auth, stack_render."""
+from pathlib import Path
+
 import pytest
 
 from koyracloud import auth
@@ -533,6 +535,56 @@ def test_sqlite_file_parsing():
     from koyracloud import backup
     assert str(backup.sqlite_file("sqlite:////data/koyracloud.db")) == "/data/koyracloud.db"
     assert backup.sqlite_file("postgresql://x/y") is None
+
+
+def test_services_overview_cached(monkeypatch):
+    from koyracloud import docker_ctl
+
+    calls = []
+
+    class _R:
+        stdout = "koyra-web_web\t1/1\n"
+
+    def fake_run(*a, **k):
+        calls.append(1)
+        return _R()
+
+    monkeypatch.setattr(docker_ctl.subprocess, "run", fake_run)
+    d = docker_ctl.CLIDockerControl()
+    assert d.services_overview() == {"koyra-web_web": {"running": 1, "desired": 1}}
+    d.services_overview()  # within 5s TTL -> served from cache
+    assert len(calls) == 1
+    # past the TTL it re-shells
+    monkeypatch.setattr(docker_ctl.time, "monotonic", lambda: d._overview_ts + 6)
+    d.services_overview()
+    assert len(calls) == 2
+
+
+def test_backup_dir_for():
+    from koyracloud import backup
+    db = Path("/data/koyracloud.db")
+    assert backup.backup_dir_for(db) == Path("/data/backups")
+    assert backup.backup_dir_for(db, "/mnt/offsite") == Path("/mnt/offsite")
+
+
+def test_restore_round_trip(tmp_path):
+    import sqlite3
+
+    from koyracloud import backup
+    db = tmp_path / "koyracloud.db"
+    sqlite3.connect(str(db)).execute("create table t(x)")
+    bdir = tmp_path / "backups"
+    snap = backup.backup_once(db, bdir, keep=3, stamp="20260101-000000")
+    # mutate the live DB, then a stale WAL sidecar that must be dropped on restore
+    sqlite3.connect(str(db)).execute("drop table t")
+    db.with_name(db.name + "-wal").write_bytes(b"stale")
+    assert backup.latest_backup(bdir) == snap
+    backup.restore(db, snap)
+    assert not db.with_name(db.name + "-wal").exists()
+    # restored snapshot still has table t
+    rows = sqlite3.connect(str(db)).execute(
+        "select name from sqlite_master where name='t'").fetchall()
+    assert rows == [("t",)]
 
 
 def test_rate_limiter():

@@ -60,6 +60,8 @@ class CLIDockerControl:
         ctx = ["--context", context] if context else []
         self._base = [docker_bin, *ctx]
         self._resolve_image_never = resolve_image_never
+        self._overview_cache: dict | None = None
+        self._overview_ts = 0.0
 
     def _stream(self, args: list[str]) -> Iterator[str]:
         proc = subprocess.Popen(
@@ -153,6 +155,13 @@ class CLIDockerControl:
                 "tasks": tasks[:6]}
 
     def services_overview(self) -> dict:
+        # ponytail: 5s TTL cache. The dashboard polls this for every app's
+        # replica dots; during a deploy `service ls` crawls toward its timeout
+        # and, on the single uvicorn worker, can starve other requests. Stale-by-
+        # 5s is fine for status dots. Single worker => no lock needed.
+        now = time.monotonic()
+        if self._overview_cache is not None and now - self._overview_ts < 5:
+            return self._overview_cache
         r = subprocess.run(
             [*self._base, "service", "ls", "--format", "{{.Name}}\t{{.Replicas}}"],
             capture_output=True, text=True, timeout=15)
@@ -167,6 +176,8 @@ class CLIDockerControl:
                 out[name] = {"running": int(run_s), "desired": int(des_s)}
             except ValueError:
                 continue
+        self._overview_cache = out
+        self._overview_ts = now
         return out
 
     def run_job(self, name: str, image: str, command: str,
