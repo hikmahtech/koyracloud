@@ -9,6 +9,8 @@ built-in registry, and runs it behind HTTPS — with persistent storage, injecte
 secrets, live deploy logs, custom domains, push-to-deploy and rollback. Bring a
 small manifest **or your own `Dockerfile`**; apps run on any node, pinned to none.
 
+<img alt="30-second demo — connect a repo, watch the build, app goes live behind HTTPS" src="demo.gif" width="860" />
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="hero-dark.png" />
   <img alt="koyracloud dashboard — connect a repo, build an image, run it behind HTTPS" src="hero-light.png" width="860" />
@@ -234,7 +236,7 @@ internal-apps platform — kept small on purpose.
 
 ## Built by
 
-koyracloud is built and maintained by **[Hikmah Technologies](https://hikmahtechnologies.com)** and is running in production for clients including [ansaar.in](https://ansaar.in), [domainposture.com](https://domainposture.com), [quantamentary.com](https://quantamentary.com), [manasrealty.com](https://manasrealty.com), and [vcsolutions.co.in](https://vcsolutions.co.in).
+koyracloud is built and maintained by **[Hikmah Technologies](https://hikmahtechnologies.com)** and is running in production for clients including [ansaar.in](https://ansaar.in), [domainposture.com](https://domainposture.com), [quantamentry.com](https://quantamentry.com), [manasrealty.com](https://manasrealty.com), and [vcsolutions.co.in](https://vcsolutions.co.in).
 
 ## Contributing
 
