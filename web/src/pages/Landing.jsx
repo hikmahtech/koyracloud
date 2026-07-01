@@ -38,7 +38,7 @@ const FEATURES = [
 const CLIENTS = [
   { name: "ansaar.in", url: "https://ansaar.in", desc: "Islamic reference platform" },
   { name: "domainposture.com", url: "https://domainposture.com", desc: "Domain security posture" },
-  { name: "quantamentary.com", url: "https://quantamentary.com", desc: "Quantamental investing" },
+  { name: "quantamentry.com", url: "https://quantamentry.com", desc: "Quantamental investing" },
   { name: "manasrealty.com", url: "https://manasrealty.com", desc: "Real estate" },
   { name: "vcsolutions.co.in", url: "https://vcsolutions.co.in", desc: "VC solutions" },
 ];
