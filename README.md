@@ -193,9 +193,11 @@ repo URL, and **Deploy**. Your app comes up at `<name>-<token>.<your apps domain
 > every secret command spelled out? **[`deploy/README.md`](deploy/README.md)**.
 
 For the design and the reasoning behind the build/registry/no-pinning choices, see
-**[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**. Moving an existing Next.js app off
-Vercel? The field-tested playbook (strategies, Dockerfiles, env/secrets, the apex
-problem and its four solutions, email preservation) is in
+**[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**. Running a locked-down setup and want
+to know exactly what access the control plane needs (Docker socket, NFS, registry,
+GitHub OAuth scopes)? See **[`docs/PERMISSIONS.md`](docs/PERMISSIONS.md)**. Moving an
+existing Next.js app off Vercel? The field-tested playbook (strategies, Dockerfiles,
+env/secrets, the apex problem and its four solutions, email preservation) is in
 **[`docs/MIGRATING-FROM-VERCEL.md`](docs/MIGRATING-FROM-VERCEL.md)**.
 
 ## Local development

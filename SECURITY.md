@@ -25,6 +25,9 @@ known and out of scope. Reports about breaking *out* of the intended access cont
 (auth bypass, secret exposure, SSRF, injection, path traversal, etc.) are in scope
 and appreciated.
 
+For the exact minimum permissions each credential needs (Docker socket, NFS,
+registry, GitHub OAuth scopes), see [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md).
+
 ## Handling secrets
 
 App secrets are encrypted at rest (Fernet) and injected at deploy. The Fernet master
