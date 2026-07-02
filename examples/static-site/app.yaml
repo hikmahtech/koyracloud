@@ -1,0 +1,24 @@
+# Example .paas/app.yaml for a plain static site — Vite/React or Vue SPA,
+# Astro (static output), Hugo, or any other static-site generator.
+# Drop this at .paas/app.yaml in your repo.
+name: my-static-site
+runtime: static
+subdomain: my-static-site.apps.example.com   # optional; defaults to <name>.<apps domain>
+build:
+  - npm ci
+  - npm run build
+# No `start:` needed for runtime: static — koyracloud serves the built
+# output directly with koyra_static.py (SPA fallback + static-file serving).
+#
+# Output directory convention:
+# koyracloud auto-detects the build output dir by checking, in order:
+#   dist -> build -> public -> out -> _site
+# This covers Vite/React/Vue (dist), Create React App (build), Astro static
+# output (dist), Hugo (public), Next.js static export (out), Jekyll (_site).
+#
+# If your generator writes somewhere else, set it explicitly:
+# static_dir: dist
+#
+# healthcheck defaults to "/" for runtime: static (the static server always
+# answers with 200), so you don't need to set it unless you want a different path.
+secrets: []
