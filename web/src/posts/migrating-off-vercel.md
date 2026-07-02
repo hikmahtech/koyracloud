@@ -16,7 +16,7 @@ Vercel never made you write one, so here's the shape that works: a multi-stage b
 - **Public env vars must be inlined at build.** Anything `NEXT_PUBLIC_*` is baked into the client bundle when `next build` runs — not read at runtime. koyracloud passes your app env as `--build-arg`, so declare and `ENV` each `NEXT_PUBLIC_*` in the build stage. Miss one and it ships as `undefined` in the browser.
 - **Pin your package manager.** The single most common failure is a pnpm/npm version mismatch between your machine and the build. Pin it (`packageManager` field, or a corepack step) so the lockfile resolves identically. Also budget for `next/font/google` reaching out at build, and `sharp` needing its platform binary in the runner stage.
 
-One koyracloud-specific note: **don't set `healthcheck:` on an own-Dockerfile `node:alpine` app** unless you've added a tool to hit it — alpine ships without curl/wget and the check will fail the app that's actually healthy.
+One koyracloud-specific note: **don't set `healthcheck:` on an own-Dockerfile `node:alpine` app** unless your image ships python3 — koyracloud runs healthchecks as a `python3 -c "urllib.request.urlopen(…)"` exec inside the container (python3 is present in its generated runtime images, not in `node:alpine`), so the check will fail an app that's actually healthy.
 
 ## The manifest
 
