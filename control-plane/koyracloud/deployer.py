@@ -23,11 +23,13 @@ from typing import Callable
 from sqlalchemy import text
 
 from koyracloud import redisbus
+from koyracloud.build_hints import detect_log_hints
 from koyracloud.config import Settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.docker_ctl import DockerControl
 from koyracloud.dockerfile import render_dockerfile
+from koyracloud.healthcheck_preflight import detect_healthcheck_hint
 from koyracloud.manifest import Manifest, parse_manifest
 from koyracloud.models import AppAnalytics, BuiltImage, CronJob, Deploy
 from koyracloud.stack_render import render_stack
@@ -226,6 +228,7 @@ class Deployer:
                 s.commit()
 
         dest: Path | None = None
+        build_log_lines: list[str] = []
         try:
             emit(f"[koyra] deploy #{deploy_id} for {app_name} @ {ref}", "building")
             # Clone to LOCAL disk (build_dir), never NFS: the build runs here and
@@ -266,10 +269,22 @@ class Deployer:
             # VITE_*) go in as build-args; secrets stay runtime-only (not baked).
             if manifest.uses_dockerfile:
                 dockerfile = manifest.dockerfile or "Dockerfile"
-                if not (build_ctx / dockerfile).is_file():
+                dockerfile_path = build_ctx / dockerfile
+                if not dockerfile_path.is_file():
                     raise FileNotFoundError(
                         f"manifest references {dockerfile} but it's not in the build context")
                 emit(f"[koyra] building image from {dockerfile}", "building")
+                # Best-effort: a healthcheck against a python3-less alpine final
+                # stage never fails the build/deploy, so this must fire on the
+                # happy path, not just in the except block below (unlike
+                # detect_log_hints) — swarm kills the container 30-60s later.
+                try:
+                    dockerfile_text = dockerfile_path.read_text(errors="replace")
+                except OSError:
+                    dockerfile_text = ""
+                hint = detect_healthcheck_hint(manifest, dockerfile_text)
+                if hint:
+                    emit(f"[koyra] Hint: {hint}")
             else:
                 dockerfile = ".koyra.Dockerfile"
                 (build_ctx / dockerfile).write_text(
@@ -301,12 +316,15 @@ class Deployer:
             else:
                 for line in self.docker.image_build(image, str(build_ctx), build_args,
                                                     str(build_ctx / dockerfile)):
+                    build_log_lines.append(line)
                     emit(line)
                 self.docker.image_tag(image, f"{base}:latest")
                 emit(f"[koyra] pushing {image} → registry", "building")
                 for line in self.docker.image_push(image):
+                    build_log_lines.append(line)
                     emit(line)
                 for line in self.docker.image_push(f"{base}:latest"):
+                    build_log_lines.append(line)
                     emit(line)
                 with db.session() as s:
                     s.add(BuiltImage(app_id=app_id, tag=image))
@@ -367,6 +385,8 @@ class Deployer:
             if self.settings.github_pat:
                 msg = msg.replace(self.settings.github_pat, "***")
             emit(f"[koyra] FAILED: {msg}", "failed")
+            for hint in detect_log_hints(build_log_lines):
+                emit(f"[koyra] Hint: {hint}")
             # Full traceback goes to the server's stderr only, never the UI log.
             print(traceback.format_exc(), file=sys.stderr)
             self._fire(app_id, "deploy_failed", msg, hosts[0] if hosts else "")
