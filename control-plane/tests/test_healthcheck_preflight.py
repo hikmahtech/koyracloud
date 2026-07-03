@@ -69,6 +69,30 @@ def test_python3_lookalikes_are_not_treated_as_installed():
     assert hint is not None
 
 
+def test_commented_out_apk_add_does_not_count_as_installed():
+    # A commented-out RUN line contains the real install substring but never
+    # executes — the RUN anchor must reject it, not just the bare substring.
+    dockerfile_text = (
+        "FROM node:22-alpine\n"
+        "# RUN apk add python3\n"
+        "CMD [\"node\"]\n"
+    )
+    hint = detect_healthcheck_hint(_manifest(), dockerfile_text)
+    assert hint is not None
+
+
+def test_apk_add_inside_env_string_does_not_count_as_installed():
+    # The install substring appears inside an ENV value, not an actual RUN
+    # instruction — it never installs anything at build time.
+    dockerfile_text = (
+        "FROM node:22-alpine\n"
+        "ENV INSTALL_CMD=\"apk add python3\"\n"
+        "CMD [\"node\"]\n"
+    )
+    hint = detect_healthcheck_hint(_manifest(), dockerfile_text)
+    assert hint is not None
+
+
 def test_non_alpine_final_stage_no_warn():
     hint = detect_healthcheck_hint(
         _manifest(), "FROM node:22-slim\nCMD [\"node\", \"server.js\"]\n")

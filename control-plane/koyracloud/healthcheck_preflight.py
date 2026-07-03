@@ -12,11 +12,17 @@ import re
 from koyracloud.manifest import Manifest
 
 _FROM_RE = re.compile(r"^\s*FROM\s+(\S+)", re.IGNORECASE | re.MULTILINE)
-# Matches an actual apk install of python3 (any flags/other packages on the
-# same line, e.g. `apk add --no-cache python3`, `apk add --update python3`,
-# `apk add git python3 make`) — not a comment, ENV var, or filename that
-# merely contains the substring "python3".
-_APK_PYTHON3_RE = re.compile(r"apk\s+add\b[^\n]*\bpython3\b")
+# Matches an actual apk install of python3 in a real `RUN` instruction (any
+# flags/other packages on the same line, e.g. `apk add --no-cache python3`,
+# `apk add --update python3`, `apk add git python3 make`, or a `RUN` chain
+# like `RUN set -e && apk add python3`). Anchored to the start of the line so
+# a `# RUN apk add python3` comment or an `ENV FOO="apk add python3"` value
+# — neither of which installs anything — can't be mistaken for a real
+# install.
+_APK_PYTHON3_RE = re.compile(
+    r"^\s*run(?:\s+--[^\n]+)?\b.*?\bapk\s+add\b[^\n]*\bpython3\b",
+    re.MULTILINE,
+)
 _LINE_CONTINUATION_RE = re.compile(r"\\\s*\n\s*")
 
 
