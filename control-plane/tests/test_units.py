@@ -604,6 +604,139 @@ def test_deployer_lock_per_app():
     assert d._lock_for(1) is not d._lock_for(2)  # different app → different lock
 
 
+def test_deploy_failure_appends_log_hint(env, monkeypatch):
+    """A build failure whose output matches a known signature (here, the pnpm/
+    node ERR_UNKNOWN_BUILTIN_MODULE case) gets a Hint: line appended after
+    FAILED in the deploy log."""
+    from koyracloud.models import App, Deploy
+
+    def failing_build(tag, context_dir, build_args=None, dockerfile=None):
+        yield "Step 1/6 : FROM node:22-alpine"
+        yield "ERR_UNKNOWN_BUILTIN_MODULE: node:sea"
+        raise RuntimeError("`docker build` exited 1")
+
+    monkeypatch.setattr(env["docker"], "image_build", failing_build)
+
+    with env["db"].session() as s:
+        app = App(name="lens-inventory", repo_url="https://github.com/o/r",
+                  branch="main", owner_login="tester", subdomain_token="abc123")
+        s.add(app)
+        s.flush()
+        dep = Deploy(app_id=app.id, ref="main", status="pending")
+        s.add(dep)
+        s.commit()
+        deploy_id = dep.id
+
+    env["deployer"].run_deploy(env["db"], deploy_id)
+
+    with env["db"].session() as s:
+        d = s.get(Deploy, deploy_id)
+        assert d.status == "failed"
+        assert "FAILED" in d.log
+        assert "Hint: pnpm/node version mismatch" in d.log
+
+
+def test_deploy_failure_without_signature_has_no_hint(env, monkeypatch):
+    """A build failure that doesn't match any known signature gets no Hint:
+    line — the heuristics shouldn't invent a hint from unrelated output."""
+    from koyracloud.models import App, Deploy
+
+    def failing_build(tag, context_dir, build_args=None, dockerfile=None):
+        yield "some unrelated build output"
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(env["docker"], "image_build", failing_build)
+
+    with env["db"].session() as s:
+        app = App(name="a", repo_url="https://github.com/o/r", branch="main",
+                  owner_login="tester", subdomain_token="xyz789")
+        s.add(app)
+        s.flush()
+        dep = Deploy(app_id=app.id, ref="main", status="pending")
+        s.add(dep)
+        s.commit()
+        deploy_id = dep.id
+
+    env["deployer"].run_deploy(env["db"], deploy_id)
+
+    with env["db"].session() as s:
+        d = s.get(Deploy, deploy_id)
+        assert d.status == "failed"
+        assert "Hint:" not in d.log
+
+
+def test_deploy_dockerfile_healthcheck_alpine_hint_appended(env, monkeypatch):
+    """A successful deploy of an own-Dockerfile app with healthcheck: set and
+    an alpine final stage lacking python3 gets a Hint: line in the log — this
+    is the pre-flight case, so unlike the build_hints cases it fires even
+    though the deploy itself succeeds (status ends up 'live')."""
+    from koyracloud.models import App, Deploy
+
+    def cloner(repo_url, ref, token, dest: Path) -> str:
+        (dest / ".paas").mkdir(parents=True, exist_ok=True)
+        (dest / ".paas" / "app.yaml").write_text(
+            "name: alpine-app\nruntime: dockerfile\ndockerfile: Dockerfile\n"
+            "port: 3000\nhealthcheck: /health\n")
+        (dest / "Dockerfile").write_text(
+            "FROM node:22-alpine\nCMD [\"node\", \"server.js\"]\n")
+        return "deadbeefcafef00dba5eba11c0ffee0011223344"
+
+    monkeypatch.setattr(env["deployer"], "cloner", cloner)
+
+    with env["db"].session() as s:
+        app = App(name="alpine-app", repo_url="https://github.com/o/r",
+                  branch="main", owner_login="tester", subdomain_token="alp123")
+        s.add(app)
+        s.flush()
+        dep = Deploy(app_id=app.id, ref="main", status="pending")
+        s.add(dep)
+        s.commit()
+        deploy_id = dep.id
+
+    env["deployer"].run_deploy(env["db"], deploy_id)
+
+    with env["db"].session() as s:
+        d = s.get(Deploy, deploy_id)
+        assert d.status == "live"
+        assert "Hint: healthcheck is set" in d.log
+
+
+def test_deploy_dockerfile_healthcheck_python3_present_no_hint(env, monkeypatch):
+    """Same as above, but the final stage installs python3 — no Hint: line,
+    proving the pre-flight check doesn't fire unconditionally on every
+    own-Dockerfile + healthcheck deploy."""
+    from koyracloud.models import App, Deploy
+
+    def cloner(repo_url, ref, token, dest: Path) -> str:
+        (dest / ".paas").mkdir(parents=True, exist_ok=True)
+        (dest / ".paas" / "app.yaml").write_text(
+            "name: alpine-app-ok\nruntime: dockerfile\ndockerfile: Dockerfile\n"
+            "port: 3000\nhealthcheck: /health\n")
+        (dest / "Dockerfile").write_text(
+            "FROM node:22-alpine\nRUN apk add --no-cache python3\n"
+            "CMD [\"node\", \"server.js\"]\n")
+        return "deadbeefcafef00dba5eba11c0ffee0011223344"
+
+    monkeypatch.setattr(env["deployer"], "cloner", cloner)
+
+    with env["db"].session() as s:
+        app = App(name="alpine-app-ok", repo_url="https://github.com/o/r",
+                  branch="main", owner_login="tester", subdomain_token="alp456")
+        s.add(app)
+        s.flush()
+        dep = Deploy(app_id=app.id, ref="main", status="pending")
+        s.add(dep)
+        s.commit()
+        deploy_id = dep.id
+
+    env["deployer"].run_deploy(env["db"], deploy_id)
+
+    with env["db"].session() as s:
+        d = s.get(Deploy, deploy_id)
+        assert d.status == "live"
+        assert "Hint:" not in d.log
+
+
 def test_render_stack_healthcheck_optional():
     m = parse_manifest("name: x\nstart: y\nport: 9000\n")  # no healthcheck
     stack = render_stack(m, app_name="x", image="img",
