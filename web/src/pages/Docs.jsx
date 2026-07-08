@@ -23,6 +23,7 @@ const NAV = [
   ["analytics", "Analytics & uptime"],
   ["secrets", "Secrets & env"],
   ["persistence", "Persistence"],
+  ["pinning", "Pinning stateful apps"],
   ["background", "Workers, cron & Redis"],
   ["architecture", "How it works"],
 ];
@@ -238,6 +239,21 @@ CNAME  _acme-challenge.yourdomain   <shown in the Domains tab>`}</Code>
               Directories under <span className="mono">persist:</span> live on the NFS-backed volume and
               survive redeploys and reschedules. A SQLite database at <span className="mono">./data/app.db</span>,
               for example, persists across deploys when <span className="mono">data</span> is listed.
+            </p>
+          </Section>
+
+          <Section id="pinning" title="Pinning stateful apps">
+            <p className="text-[var(--color-muted)]">
+              By default an app isn't pinned to any node — Swarm can run or reschedule it
+              anywhere. That's fine as long as its state lives under <span className="mono">persist:</span>,
+              but an app that keeps state on the <b className="text-[var(--color-fg)]">node's local disk</b> instead
+              would have that data orphaned by a reschedule.
+            </p>
+            <p className="text-[var(--color-muted)] mt-3">
+              Turn on <b className="text-[var(--color-fg)]">Pin to node</b> in the app's <b>Settings</b> tab to keep
+              it on the one node it's already running on. It takes effect on the app's <b>next deploy</b> — it
+              won't move or restart a container that's already running, so redeploy the app to enforce it
+              immediately.
             </p>
           </Section>
 

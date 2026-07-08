@@ -3,6 +3,19 @@
 Notable changes to koyracloud. The project is in **alpha** (`0.1.0`); these notes
 track functional changes by theme rather than tagged semver releases. Newest first.
 
+## 2026-07
+
+### Added
+
+- **Opt-in per-app node pinning** (#62) — a **Pin to node** toggle in the app's Settings
+  tab keeps a stateful app (one with data on the node's local disk rather than an NFS
+  `persist:` volume) on the single Swarm node it's already running on, so a reschedule
+  can't orphan that data. The default is unchanged — apps still run on any node and
+  reschedule freely unless pinned. Enabling it records the node and enforces the
+  constraint on the app's next deploy (it doesn't move a running container); web and
+  workers co-locate, and a per-app pin takes precedence over the operator-wide
+  `KOYRA_APP_NODE`. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## 2026-06
 
 ### Added

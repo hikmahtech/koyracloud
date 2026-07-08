@@ -7,7 +7,8 @@
 Connect a git repo and koyracloud builds it into a container image, pushes it to a
 built-in registry, and runs it behind HTTPS — with persistent storage, injected
 secrets, live deploy logs, custom domains, push-to-deploy and rollback. Bring a
-small manifest **or your own `Dockerfile`**; apps run on any node, pinned to none.
+small manifest **or your own `Dockerfile`**; apps run on any node, pinned to none by
+default (opt-in pinning is available for stateful apps).
 
 <img alt="30-second demo — connect a repo, watch the build, app goes live behind HTTPS" src="demo.gif" width="860" />
 
@@ -129,16 +130,17 @@ swarm pulls the image + runs the app on any node   ·   https://<host>
 The control plane is a FastAPI + React app running as one Swarm service, driving the
 cluster through the mounted docker socket. It builds images on local disk (fast,
 layer-cached) instead of on NFS, and the running container serves from the image —
-so apps don't depend on the build node and aren't pinned anywhere.
+so apps don't depend on the build node and aren't pinned anywhere by default (stateful
+apps can opt in to pinning — see [ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 
 ## Features
 
 - **Bring a repo or a Dockerfile** — generated buildpack image (`python:3.12` +
   `node:22`) or your repo's own `Dockerfile`, built locally and layer-cached.
 - **Built-in registry, run anywhere** — images are pushed to an internal `registry:2`
-  service and pulled by Swarm on whichever node runs the app. Nothing is pinned;
-  registry storage and `persist:` data use Docker NFS-driver volumes so they work on
-  any node.
+  service and pulled by Swarm on whichever node runs the app. Nothing is pinned by
+  default; registry storage and `persist:` data use Docker NFS-driver volumes so they
+  work on any node. Stateful apps with node-local data can opt in to pinning instead.
 - **Auto-TLS subdomains + custom domains** — platform subdomains get Traefik /
   Let's Encrypt; users' own domains are registered as **Cloudflare for SaaS** custom
   hostnames (the edge mints + renews the cert, so the user just adds two CNAMEs at
