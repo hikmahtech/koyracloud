@@ -46,6 +46,7 @@ def render_stack(
     hosts: list[str] | None = None,
     analytics_site: str = "",
     redis_url: str = "",
+    pin_node: str = "",
 ) -> dict:
     # ``image`` is the per-app image already built + pushed to the internal
     # registry; the container serves the app from it (no NFS workspace).
@@ -136,12 +137,11 @@ def render_stack(
         else:
             service_volumes.append(f"{device}:/app/{d}")
 
-    placement = None
-    if settings.app_node:
-        # Pin only if an operator explicitly sets app_node (e.g. the runtime
-        # image lives only on that node). Otherwise swarm runs/reschedules the
-        # image-from-registry app on any node.
-        placement = {"constraints": [f"node.hostname == {settings.app_node}"]}
+    # Per-app pin (this app is stateful, keep it on its recorded node) takes
+    # precedence over the operator-wide app_node pin. With neither set, swarm
+    # runs/reschedules the image-from-registry app on any node.
+    node = pin_node or settings.app_node
+    placement = {"constraints": [f"node.hostname == {node}"]} if node else None
 
     def _deploy(replicas: int, cpu: str, memory: str,
                 labels: list[str] | None = None) -> dict:

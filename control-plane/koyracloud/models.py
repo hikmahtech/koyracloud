@@ -45,6 +45,8 @@ class App(Base):
         cascade="all, delete-orphan", uselist=False)
     notify: Mapped["AppNotify | None"] = relationship(
         cascade="all, delete-orphan", uselist=False)
+    pin: Mapped["AppPin | None"] = relationship(
+        cascade="all, delete-orphan", uselist=False)
 
 
 class Domain(Base):
@@ -263,3 +265,16 @@ class Waitlist(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     site_count: Mapped[str] = mapped_column(String(16), default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AppPin(Base):
+    """Pins a stateful app to a single swarm node. Presence of the row = pinned;
+    ``node`` is the recorded hostname the app runs on (empty until the first
+    pinned deploy reads back where swarm placed it). From then on the stack
+    carries a ``node.hostname ==`` constraint so a reschedule can't orphan the
+    app's node-local data. Own table so create_all adds it without altering the
+    apps table."""
+    __tablename__ = "app_pins"
+
+    app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), primary_key=True)
+    node: Mapped[str] = mapped_column(String(255), default="")

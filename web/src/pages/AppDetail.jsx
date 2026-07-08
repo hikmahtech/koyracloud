@@ -678,7 +678,8 @@ function SettingsTab({ id, app }) {
   const nav = useNavigate();
   const [branch, setBranch] = useState(app.branch);
   const [auto, setAuto] = useState(app.auto_deploy);
-  const save = useMutation({ mutationFn: () => updateApp(id, { branch, auto_deploy: auto }), onSuccess: () => qc.invalidateQueries({ queryKey: ["app", id] }) });
+  const [pinned, setPinned] = useState(app.pinned);
+  const save = useMutation({ mutationFn: () => updateApp(id, { branch, auto_deploy: auto, pinned }), onSuccess: () => qc.invalidateQueries({ queryKey: ["app", id] }) });
   const del = useMutation({ mutationFn: () => deleteApp(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ["apps"] }); nav("/"); } });
   return (
     <div className="max-w-2xl space-y-6">
@@ -695,6 +696,19 @@ function SettingsTab({ id, app }) {
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="accent-[var(--color-acid)]" />
           <span className="text-[var(--color-muted)]">Auto-deploy on push / CI</span>
         </label>
+        <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+          <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} className="accent-[var(--color-acid)]" />
+          <span className="text-[var(--color-muted)]">
+            Pin to node{" "}
+            {pinned && (app.pinned_node
+              ? <span className="mono text-[var(--color-fg)]">({app.pinned_node})</span>
+              : <span className="text-[var(--color-muted)]">(set on next deploy)</span>)}
+          </span>
+        </label>
+        <p className="text-xs text-[var(--color-muted)] -mt-1">
+          For stateful apps: keeps every container on the one node it runs on, so
+          node-local data isn’t orphaned by a reschedule.
+        </p>
         <button onClick={() => save.mutate()} className="btn btn-primary text-sm">{save.isPending ? "Saving…" : "Save"}</button>
       </div>
 

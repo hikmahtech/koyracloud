@@ -67,6 +67,8 @@ class AppOut(BaseModel):
     latest_status: str | None = None
     last_deployed_at: dt.datetime | None = None
     primary_host: str | None = None
+    pinned: bool = False
+    pinned_node: str | None = None  # recorded node once learned (null until then)
 
     model_config = {"from_attributes": True}
 
@@ -92,6 +94,7 @@ class RollbackRequest(BaseModel):
 class AppUpdate(BaseModel):
     branch: str | None = None
     auto_deploy: bool | None = None
+    pinned: bool | None = None
 
     @field_validator("branch")
     @classmethod

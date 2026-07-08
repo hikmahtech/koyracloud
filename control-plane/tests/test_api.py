@@ -31,6 +31,29 @@ def test_app_crud(client):
                        "repo_url": "https://github.com/o/r"}).status_code == 409
 
 
+def test_pin_toggle(client, env):
+    from koyracloud.models import AppPin
+    app_id = client.post("/api/apps", json={"name": "a", "repo_url": "https://github.com/o/r"}).json()["id"]
+    assert client.get(f"/api/apps/{app_id}").json()["pinned"] is False
+
+    # Enable: row created, node not yet known.
+    r = client.patch(f"/api/apps/{app_id}", json={"pinned": True}).json()
+    assert r["pinned"] is True and r["pinned_node"] is None
+    with env["db"].session() as s:
+        assert s.get(AppPin, app_id) is not None
+
+    # A recorded node surfaces on the app.
+    with env["db"].session() as s:
+        s.get(AppPin, app_id).node = "lam"
+        s.commit()
+    assert client.get(f"/api/apps/{app_id}").json()["pinned_node"] == "lam"
+
+    # Disable: row removed.
+    assert client.patch(f"/api/apps/{app_id}", json={"pinned": False}).json()["pinned"] is False
+    with env["db"].session() as s:
+        assert s.get(AppPin, app_id) is None
+
+
 def test_env_and_secrets(client):
     app_id = client.post("/api/apps", json={"name": "a", "repo_url": "https://github.com/o/r"}).json()["id"]
 

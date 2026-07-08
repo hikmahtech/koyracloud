@@ -336,6 +336,24 @@ def test_render_stack_pins_to_app_node():
         ["node.hostname == node1"]
 
 
+def test_render_stack_pins_to_per_app_node():
+    m = parse_manifest(VALID)
+    stack = render_stack(m, app_name="demo", image="img", env_overrides={},
+                         secret_values={}, settings=_settings(), pin_node="lam")
+    assert stack["services"]["demo"]["deploy"]["placement"]["constraints"] == \
+        ["node.hostname == lam"]
+
+
+def test_render_stack_per_app_pin_overrides_app_node():
+    from dataclasses import replace
+    s = replace(_settings(), app_node="node1")
+    m = parse_manifest(VALID)
+    stack = render_stack(m, app_name="demo", image="img", env_overrides={},
+                         secret_values={}, settings=s, pin_node="lam")
+    assert stack["services"]["demo"]["deploy"]["placement"]["constraints"] == \
+        ["node.hostname == lam"]
+
+
 def test_docker_control_resolve_image_never_flag():
     from koyracloud.docker_ctl import CLIDockerControl
     calls = []

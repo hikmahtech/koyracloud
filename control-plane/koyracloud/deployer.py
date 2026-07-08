@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,7 +32,7 @@ from koyracloud.docker_ctl import DockerControl
 from koyracloud.dockerfile import render_dockerfile
 from koyracloud.healthcheck_preflight import detect_healthcheck_hint
 from koyracloud.manifest import Manifest, parse_manifest
-from koyracloud.models import AppAnalytics, BuiltImage, CronJob, Deploy
+from koyracloud.models import AppAnalytics, AppPin, BuiltImage, CronJob, Deploy
 from koyracloud.stack_render import render_stack
 
 
@@ -180,6 +181,26 @@ class Deployer:
                     job.schedule, job.command = spec.schedule, spec.command
             s.commit()
 
+    def _service_node(self, app_name: str) -> str:
+        """Hostname of the node the app's web task is placed on, or '' if the
+        service isn't scheduled yet. Best-effort — any docker error returns ''."""
+        try:
+            st = self.docker.service_status(f"koyra-{app_name}_{app_name}")
+        except Exception:  # noqa: BLE001
+            return ""
+        for t in st.get("tasks", []):
+            if t.get("node"):
+                return t["node"]
+        return ""
+
+    def _save_pin_node(self, db: Database, app_id: int, node: str) -> None:
+        """Record the node a pinned app landed on (no-op if it got unpinned)."""
+        with db.session() as s:
+            pin = s.get(AppPin, app_id)
+            if pin is not None:
+                pin.node = node
+                s.commit()
+
     def _run_deploy(self, db: Database, deploy_id: int) -> None:
         """Execute a deploy end-to-end, updating the Deploy row as it goes."""
         with db.session() as s:
@@ -201,6 +222,8 @@ class Deployer:
                 s.add(an)
                 s.commit()
             analytics_site = an.token if an.enabled else ""
+            pinned = app.pin is not None
+            pin_node = app.pin.node if app.pin else ""
 
         def emit(line: str, status: str | None = None) -> None:
             # Prefix every log line with a UTC wall-clock time so the build/deploy
@@ -354,6 +377,15 @@ class Deployer:
             if manifest.workers:
                 emit(f"[koyra] {len(manifest.workers)} worker(s) in this stack")
 
+            # Pinned but node not yet recorded: if the app is already running
+            # (a redeploy), learn its current node now so this deploy pins it;
+            # a brand-new app has no task yet and gets pinned after it converges.
+            if pinned and not pin_node:
+                pin_node = self._service_node(app_name)
+                if pin_node:
+                    self._save_pin_node(db, app_id, pin_node)
+                    emit(f"[koyra] pinned to node {pin_node}")
+
             stack = render_stack(
                 manifest,
                 app_name=app_name,
@@ -364,6 +396,7 @@ class Deployer:
                 hosts=hosts or None,
                 analytics_site=analytics_site,
                 redis_url=redis_url,
+                pin_node=pin_node,
             )
             emit("[koyra] image ready; deploying service to swarm", "deploying")
             for line in self.docker.deploy(f"koyra-{app_name}", stack):
@@ -379,6 +412,19 @@ class Deployer:
                                "status = 'live' WHERE id = :i"),
                           {"l": "[koyra] deploy complete — live\n", "i": deploy_id})
                 s.commit()
+            # Brand-new pinned app: record the node swarm just placed it on, so
+            # future deploys carry the constraint. Swarm assigns the node at
+            # schedule time (before the container is up), but `service ps` can lag
+            # the deploy by a beat — retry briefly, else learn on the next deploy.
+            if pinned and not pin_node:
+                for _ in range(5):
+                    pin_node = self._service_node(app_name)
+                    if pin_node:
+                        break
+                    time.sleep(1.0)
+                if pin_node:
+                    self._save_pin_node(db, app_id, pin_node)
+                    emit(f"[koyra] pinned to node {pin_node} (recorded for future deploys)")
             self._fire(app_id, "deploy_live", "", hosts[0] if hosts else "")
         except Exception as exc:  # noqa: BLE001 — surface a scrubbed error
             msg = str(exc)
