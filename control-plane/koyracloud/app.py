@@ -24,8 +24,9 @@ from koyracloud.db import Database
 from koyracloud.deployer import Deployer
 from koyracloud.docker_ctl import CLIDockerControl, DockerControl
 from koyracloud.models import (AllowedUser, App, AppAnalytics, AppNotify,
-                                AppRedis, CronJob, CronRun, Deploy, Domain,
-                                DomainCert, EnvVar, Hit, Secret, User, Waitlist)
+                                AppPin, AppRedis, CronJob, CronRun, Deploy,
+                                Domain, DomainCert, EnvVar, Hit, Secret, User,
+                                Waitlist)
 from koyracloud.schemas import (AllowedUserIn, AppCreate, AppOut, AppUpdate,
                                 DeployOut, DeployTrigger, DnsRecord, DomainIn,
                                 DomainOut, EnvVarIn, RollbackRequest, SecretIn,
@@ -412,6 +413,8 @@ def create_app(
         primary = next((d for d in obj.domains if d.is_primary), None) \
             or (obj.domains[0] if obj.domains else None)
         out.primary_host = primary.host if primary else None
+        out.pinned = obj.pin is not None
+        out.pinned_node = (obj.pin.node or None) if obj.pin else None
         return out
 
     from urllib.parse import urlparse
@@ -551,6 +554,14 @@ def create_app(
                 obj.branch = body.branch
             if body.auto_deploy is not None:
                 obj.auto_deploy = body.auto_deploy
+            if body.pinned is not None:
+                # Toggle the pin row. Enabling leaves node empty; the next deploy
+                # reads back where swarm placed the app and records it. Disabling
+                # drops the constraint from the next deploy (app free to move).
+                if body.pinned and obj.pin is None:
+                    obj.pin = AppPin(app_id=obj.id)
+                elif not body.pinned and obj.pin is not None:
+                    obj.pin = None
             s.commit()
             return _app_out(obj)
 

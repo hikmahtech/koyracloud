@@ -6,7 +6,7 @@ import pytest
 
 from koyracloud import redisbus, scheduler
 from koyracloud.deployer import Deployer
-from koyracloud.models import App, AppRedis, CronJob, CronRun, Deploy
+from koyracloud.models import App, AppPin, AppRedis, CronJob, CronRun, Deploy
 
 from conftest import make_fake_cloner
 
@@ -193,6 +193,35 @@ def test_deploy_renders_workers_provisions_redis_persists_cron(env):
         assert s.get(AppRedis, app_id) is not None
         jobs = s.query(CronJob).filter_by(app_id=app_id).all()
         assert [j.name for j in jobs] == ["nightly"]
+
+
+def test_deploy_pins_stateful_app_and_records_node(env):
+    with env["db"].session() as s:
+        app = App(name="pinned", repo_url="https://github.com/o/r", branch="main",
+                  owner_login="tester", subdomain_token="pin123")
+        s.add(app)
+        s.flush()
+        s.add(AppPin(app_id=app.id))  # pinned, node not yet learned
+        dep = Deploy(app_id=app.id, ref="main", status="pending")
+        s.add(dep)
+        s.commit()
+        app_id, deploy_id = app.id, dep.id
+
+    deployer = Deployer(settings=env["settings"], docker=env["docker"],
+                        crypto=env["crypto"],
+                        cloner=make_fake_cloner("name: pinned\nruntime: python\n"
+                                                "start: uvicorn app:app\nport: 8000\n"),
+                        redis_admin=env["redis_admin"])
+    deployer.run_deploy(env["db"], deploy_id)
+
+    # The node the (fake) running service reports gets recorded...
+    with env["db"].session() as s:
+        assert s.get(Deploy, deploy_id).status == "live"
+        assert s.get(AppPin, app_id).node == "node1"
+    # ...and the deployed stack carries the swarm placement constraint.
+    _, stack = env["docker"].deployed[-1]
+    assert stack["services"]["pinned"]["deploy"]["placement"]["constraints"] == \
+        ["node.hostname == node1"]
 
 
 def test_deploy_fails_when_redis_requested_but_unconfigured(env):
