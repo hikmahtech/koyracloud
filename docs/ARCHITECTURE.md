@@ -109,6 +109,35 @@ The control plane pre-creates each `persist:` directory on the NFS so the volume
 `device` path resolves. Without `KOYRA_NFS_SERVER` set (local/dev), `stack_render` falls
 back to plain bind mounts.
 
+This is still the default for every app. The one opt-in exception — apps with
+*node-local* state that NFS can't cover — is below.
+
+## Decision: opt-in per-app node pinning
+
+The default above (nothing pinned) breaks for an app whose state lives on the *node's
+local disk* rather than an NFS-driver `persist:` volume — a Swarm reschedule to another
+node would orphan that data. Pinning is the opt-in escape hatch: an `AppPin` row (own
+table, `app_pins`) whose mere presence means "pinned," with a `node` column holding the
+recorded hostname — empty until learned.
+
+On a pinned deploy, `deployer._run_deploy` resolves the node before rendering the stack:
+if it's already recorded, use it; otherwise read where the app currently runs via
+`docker service ps` (a redeploy of an existing app), or deploy free once and read back
+where Swarm landed it (a brand-new app), then record it in `AppPin.node` so every deploy
+after carries the constraint. `stack_render.render_stack`'s `pin_node` param turns a
+resolved node into `deploy.placement.constraints: [node.hostname == <node>]` on **both**
+the web service and its workers, since they share the app's persist volumes and must
+co-locate. A per-app pin takes precedence over the operator-wide `KOYRA_APP_NODE` env var.
+
+Toggled via `PATCH /api/apps/{id}` (`pinned: bool`; `AppOut.pinned` / `pinned_node`
+mirror it back) from the dashboard's Settings tab. Turning it on only takes effect on the
+**next** deploy — it doesn't move or restart whatever's already running.
+
+**Caveat, not a bug:** the pin binds to a node *hostname*. Rename or replace that node and
+a pinned app's constraint can no longer be satisfied — it sits `Pending` until you unpin
+(or repin to the new hostname). That's the intended fail-safe for node-local data;
+silently rescheduling it elsewhere would be the actual bug.
+
 ## Decision: custom domains via Cloudflare for SaaS, validated over DNS
 
 A user attaches their own domain; koyracloud registers it as a **Cloudflare for SaaS
