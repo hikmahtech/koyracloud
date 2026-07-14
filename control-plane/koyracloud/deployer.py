@@ -33,7 +33,7 @@ from koyracloud.dockerfile import render_dockerfile
 from koyracloud.healthcheck_preflight import detect_healthcheck_hint
 from koyracloud.manifest import Manifest, parse_manifest
 from koyracloud.models import AppAnalytics, AppPin, BuiltImage, CronJob, Deploy
-from koyracloud.stack_render import render_stack
+from koyracloud.stack_render import render_stack, worker_service_name
 
 
 _SAFE_REF = re.compile(r"^[A-Za-z0-9._/-]+$")
@@ -192,6 +192,97 @@ class Deployer:
             if t.get("node"):
                 return t["node"]
         return ""
+
+    @staticmethod
+    def _running_new(st: dict, image: str) -> int:
+        """Running tasks of THIS deploy's image. During a start-first update the
+        old task keeps serving (and counting as Running) until the new one is
+        healthy, and after an automatic rollback only old-image tasks remain —
+        so plain replica counting lies; image identity is what distinguishes
+        \"new task live\" from \"previous deployment still serving\". A task
+        with no image field (test fakes) counts as new."""
+        n = 0
+        for t in st.get("tasks", []):
+            img = t.get("image", "")
+            if t.get("state", "").startswith("Running") and (
+                    not img or img == image or img.startswith(image + "@")):
+                n += 1
+        return n
+
+    def _wait_converged(self, emit: Callable[[str], None],
+                        app_name: str, manifest: Manifest, image: str) -> None:
+        """Block until every service in the app's stack converges — all desired
+        replicas Running ON THIS DEPLOY'S IMAGE (with a healthcheck, swarm only
+        reports Running once the container is healthy) — or raise with the real
+        task error from `service ps --no-trunc`.
+
+        `docker stack deploy` returns as soon as tasks are *created*; whether
+        they ever start is a separate question, and answering it here is what
+        keeps the deploy status truthful. Failure modes:
+        - swarm rolled back / paused THIS update (guarded on having seen it
+          start, since UpdateStatus persists from previous deploys) → the
+          previous deployment is still serving; fail immediately and say so.
+        - no task left with desired-state Running but errors recorded → swarm
+          exhausted the restart policy; fail immediately with the task error.
+        - anything else (restart-looping, stuck Starting, never scheduled) →
+          fail at the timeout, surfacing the last task error seen.
+        """
+        services = [f"koyra-{app_name}_{app_name}"] + [
+            f"koyra-{app_name}_{worker_service_name(app_name, w.name)}"
+            for w in manifest.workers]
+        deadline = time.monotonic() + self.settings.deploy_converge_timeout
+        last_err: dict[str, str] = {}
+        emitted: set[str] = set()
+        saw_updating: set[str] = set()
+        pending = services
+        while True:
+            still = []
+            for svc in pending:
+                st = self.docker.service_status(svc)
+                errs = st.get("errors") or [
+                    t["error"] for t in st.get("tasks", []) if t.get("error")]
+                if errs:
+                    last_err[svc] = errs[0]
+                    if errs[0] not in emitted:  # surface while still retrying
+                        emitted.add(errs[0])
+                        emit(f"[koyra] {svc} task error: {errs[0]}")
+                update = st.get("update_state", "")
+                if update == "updating":
+                    saw_updating.add(svc)
+                elif svc in saw_updating and (
+                        update == "paused" or update.startswith("rollback")):
+                    raise RuntimeError(
+                        f"swarm rolled back the update to {svc} — the previous "
+                        f"deployment is still running and serving traffic. "
+                        f"Task error: {last_err.get(svc) or 'unknown'}")
+                desired = st.get("desired", 0)
+                if st.get("exists") and desired > 0 \
+                        and self._running_new(st, image) >= desired:
+                    emit(f"[koyra] {svc} converged ({desired}/{desired} running)")
+                    continue
+                if st.get("exists") and not st.get("tasks") and last_err.get(svc):
+                    # No task is even trying anymore: restart attempts exhausted.
+                    raise RuntimeError(
+                        f"{svc} failed to start (swarm gave up retrying): "
+                        f"{last_err[svc]}")
+                still.append(svc)
+            if not still:
+                return
+            if time.monotonic() >= deadline:
+                svc = still[0]
+                st = self.docker.service_status(svc)
+                detail = last_err.get(svc) or (
+                    "no task error reported — check the service logs (task "
+                    f"state: {(st.get('tasks') or [{}])[0].get('state', 'not scheduled')})")
+                old_serving = st.get("running", 0) > self._running_new(st, image)
+                raise RuntimeError(
+                    f"{svc} did not converge within "
+                    f"{self.settings.deploy_converge_timeout}s "
+                    f"({self._running_new(st, image)}/{st.get('desired', 0)} on the new "
+                    f"image{'; the previous deployment is still serving traffic' if old_serving else ''}): "
+                    f"{detail}")
+            time.sleep(self.settings.deploy_converge_poll)
+            pending = still
 
     def _save_pin_node(self, db: Database, app_id: int, node: str) -> None:
         """Record the node a pinned app landed on (no-op if it got unpinned)."""
@@ -401,6 +492,12 @@ class Deployer:
             emit("[koyra] image ready; deploying service to swarm", "deploying")
             for line in self.docker.deploy(f"koyra-{app_name}", stack):
                 emit(line)
+            # `stack deploy` only CREATES tasks — success means nothing until
+            # the service actually converges (task Running + healthy). Wait for
+            # it; on failure this raises with the real task error and the
+            # except path below marks the deploy failed.
+            emit("[koyra] stack deployed; waiting for the service to converge")
+            self._wait_converged(emit, app_name, manifest, image)
             # Only the newest live deploy actually serves traffic — each deploy
             # replaces the running container — so demote any prior live row for
             # this app in the same transaction that marks this one live.

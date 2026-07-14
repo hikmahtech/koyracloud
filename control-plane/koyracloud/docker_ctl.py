@@ -35,7 +35,10 @@ class DockerControl(Protocol):
         """Recent runtime logs of a running service."""
 
     def service_status(self, service: str) -> dict:
-        """Live swarm status: running/desired replicas + per-task state."""
+        """Live swarm status: running/desired replicas, per-task state, the
+        service's update state ('' / updating / completed / paused /
+        rollback_*), and recent task error strings (untruncated, including
+        tasks swarm already gave up on)."""
 
     def services_overview(self) -> dict:
         """One-shot {service_name: {running, desired}} for all services."""
@@ -130,29 +133,40 @@ class CLIDockerControl:
 
     def service_status(self, service: str) -> dict:
         desired = subprocess.run(
-            [*self._base, "service", "inspect", service,
-             "--format", "{{.Spec.Mode.Replicated.Replicas}}"],
+            [*self._base, "service", "inspect", service, "--format",
+             "{{.Spec.Mode.Replicated.Replicas}}"
+             "||{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}"],
             capture_output=True, text=True, timeout=15)
         if desired.returncode != 0:
-            return {"exists": False, "running": 0, "desired": 0, "tasks": []}
+            return {"exists": False, "running": 0, "desired": 0, "tasks": [],
+                    "update_state": "", "errors": []}
+        desired_s, _, update_state = (desired.stdout or "").strip().partition("||")
         try:
-            desired_n = int((desired.stdout or "0").strip() or 0)
+            desired_n = int(desired_s or 0)
         except ValueError:
             desired_n = 0
         ps = subprocess.run(
-            [*self._base, "service", "ps", service, "--no-trunc",
-             "--format", "{{.CurrentState}}||{{.DesiredState}}||{{.Error}}||{{.Node}}"],
+            [*self._base, "service", "ps", service, "--no-trunc", "--format",
+             "{{.CurrentState}}||{{.DesiredState}}||{{.Error}}||{{.Node}}||{{.Image}}"],
             capture_output=True, text=True, timeout=15)
-        tasks, running = [], 0
+        tasks, running, errors = [], 0, []
         for line in ps.stdout.splitlines():
-            parts = (line.split("||") + ["", "", "", ""])[:4]
-            cur, des, err, node = parts
+            parts = (line.split("||") + ["", "", "", "", ""])[:5]
+            cur, des, err, node, img = parts
+            # Task errors are collected from EVERY task, history included — a
+            # Rejected/Failed task leaves the desired-Running set almost
+            # immediately, and its error string is exactly what makes a
+            # non-converging deploy debuggable.
+            if err and err not in errors:
+                errors.append(err)
             if des == "Running":  # current desired-state tasks only (skip history)
-                tasks.append({"state": cur, "desired": des, "error": err, "node": node})
+                tasks.append({"state": cur, "desired": des, "error": err,
+                              "node": node, "image": img})
                 if cur.startswith("Running"):
                     running += 1
         return {"exists": True, "running": running, "desired": desired_n,
-                "tasks": tasks[:6]}
+                "tasks": tasks[:6], "update_state": update_state,
+                "errors": errors[:3]}
 
     def services_overview(self) -> dict:
         # ponytail: 5s TTL cache. The dashboard polls this for every app's

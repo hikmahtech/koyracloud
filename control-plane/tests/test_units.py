@@ -683,6 +683,154 @@ def test_deploy_failure_without_signature_has_no_hint(env, monkeypatch):
         assert "Hint:" not in d.log
 
 
+# --- deploy convergence ------------------------------------------------------
+# `docker stack deploy` returns as soon as tasks are CREATED; a deploy is only
+# live once the swarm service converges. These cover the wait + failure paths.
+
+def _make_deploy(env, name="lens-inventory"):
+    from koyracloud.models import App, Deploy
+    with env["db"].session() as s:
+        app = App(name=name, repo_url="https://github.com/o/r", branch="main",
+                  owner_login="tester", subdomain_token="abc123")
+        s.add(app)
+        s.flush()
+        dep = Deploy(app_id=app.id, ref="main", status="pending")
+        s.add(dep)
+        s.commit()
+        return app.id, dep.id
+
+
+def _fast_timeout(env, seconds=0):
+    from dataclasses import replace
+    env["deployer"].settings = replace(env["settings"],
+                                       deploy_converge_timeout=seconds)
+
+
+def test_deploy_waits_until_service_converges(env):
+    """A task still Starting on the first poll must not be declared live; the
+    deploy converges on a later poll and only then goes live."""
+    from koyracloud.models import Deploy
+    svc = "koyra-lens-inventory_lens-inventory"
+    env["docker"].service_statuses[svc] = [
+        {"exists": True, "running": 0, "desired": 1, "update_state": "",
+         "errors": [], "tasks": [{"state": "Starting 1 second ago",
+                                  "desired": "Running", "error": "", "node": "n1"}]},
+        {"exists": True, "running": 1, "desired": 1, "update_state": "",
+         "errors": [], "tasks": [{"state": "Running 1 second ago",
+                                  "desired": "Running", "error": "", "node": "n1"}]},
+    ]
+    _, deploy_id = _make_deploy(env)
+    env["deployer"].run_deploy(env["db"], deploy_id)
+    with env["db"].session() as s:
+        d = s.get(Deploy, deploy_id)
+        assert d.status == "live"
+        assert "waiting for the service to converge" in d.log
+        assert "converged (1/1 running)" in d.log
+
+
+def test_deploy_failed_when_task_rejected(env):
+    """The real order-finder incident: every task Rejected by an NFS volume
+    chown error, service stuck at 0/1 — the deploy must be FAILED and the log
+    must carry the actual task error from `service ps --no-trunc`."""
+    from koyracloud.models import Deploy
+    _fast_timeout(env)
+    lchown = ("failed to copy file info for /var/lib/docker/volumes/"
+              "koyra-lens-inventory-data/_data: lchown: operation not permitted")
+    env["docker"].service_statuses["koyra-lens-inventory_lens-inventory"] = {
+        "exists": True, "running": 0, "desired": 1, "update_state": "",
+        "errors": [lchown],
+        "tasks": [{"state": "Rejected 2 seconds ago", "desired": "Running",
+                   "error": lchown, "node": "n1"}]}
+    _, deploy_id = _make_deploy(env)
+    env["deployer"].run_deploy(env["db"], deploy_id)
+    with env["db"].session() as s:
+        d = s.get(Deploy, deploy_id)
+        assert d.status == "failed"
+        assert "lchown: operation not permitted" in d.log
+        assert "did not converge" in d.log
+        assert "deploy complete — live" not in d.log
+
+
+def test_deploy_failed_when_swarm_gives_up_retrying(env):
+    """Restart attempts exhausted (no task left with desired-state Running):
+    fail immediately with the recorded task error — no need to sit out the
+    full convergence timeout."""
+    from koyracloud.models import Deploy
+    env["docker"].service_statuses["koyra-lens-inventory_lens-inventory"] = {
+        "exists": True, "running": 0, "desired": 1, "update_state": "",
+        "errors": ["oci runtime error: exec: \"gunicorn\": not found"],
+        "tasks": []}
+    _, deploy_id = _make_deploy(env)
+    env["deployer"].run_deploy(env["db"], deploy_id)
+    with env["db"].session() as s:
+        d = s.get(Deploy, deploy_id)
+        assert d.status == "failed"
+        assert "gave up retrying" in d.log
+        assert "gunicorn" in d.log
+
+
+def test_deploy_rollback_marks_failed_and_keeps_prior_live(env):
+    """Swarm rolled this update back (start-first update: the OLD task kept
+    serving; replica count alone would look converged). The deploy must fail,
+    say the previous deployment is still serving, and the prior live row must
+    STAY live — it really is what's running."""
+    from koyracloud.models import Deploy
+    app_id, d1 = _make_deploy(env)
+    env["deployer"].run_deploy(env["db"], d1)
+
+    svc = "koyra-lens-inventory_lens-inventory"
+    old_task = {"state": "Running 5 minutes ago", "desired": "Running",
+                "error": "", "node": "n1",
+                "image": "reg:5000/koyra-app-lens-inventory:00000000-old"}
+    env["docker"].service_statuses[svc] = [
+        {"exists": True, "running": 1, "desired": 1, "update_state": "updating",
+         "errors": ["task: non-zero exit (1)"], "tasks": [old_task]},
+        {"exists": True, "running": 1, "desired": 1,
+         "update_state": "rollback_completed",
+         "errors": ["task: non-zero exit (1)"], "tasks": [old_task]},
+    ]
+    with env["db"].session() as s:
+        dep = Deploy(app_id=app_id, ref="main", status="pending")
+        s.add(dep)
+        s.commit()
+        d2 = dep.id
+    env["deployer"].run_deploy(env["db"], d2)
+    with env["db"].session() as s:
+        assert s.get(Deploy, d2).status == "failed"
+        assert "previous deployment is still running" in s.get(Deploy, d2).log
+        assert s.get(Deploy, d1).status == "live"  # NOT superseded
+
+
+def test_deploy_waits_for_worker_services_too(env):
+    """Workers are one swarm service each — a worker that never starts must
+    fail the deploy even when the web service converged."""
+    from koyracloud.models import Deploy
+
+    def cloner(repo_url, ref, token, dest: Path) -> str:
+        (dest / ".paas").mkdir(parents=True, exist_ok=True)
+        (dest / ".paas" / "app.yaml").write_text(
+            "name: lens-inventory\nruntime: python\nport: 8000\n"
+            "start: uvicorn app:app\n"
+            "workers:\n  - name: poller\n    start: python poll.py\n")
+        return "deadbeefcafef00dba5eba11c0ffee0011223344"
+
+    env["deployer"].cloner = cloner
+    _fast_timeout(env)
+    env["docker"].service_statuses["koyra-lens-inventory_lens-inventory-poller"] = {
+        "exists": True, "running": 0, "desired": 1, "update_state": "",
+        "errors": ["exec: \"python\": executable file not found"],
+        "tasks": [{"state": "Failed 1 second ago", "desired": "Running",
+                   "error": "exec: \"python\": executable file not found",
+                   "node": "n1"}]}
+    _, deploy_id = _make_deploy(env)
+    env["deployer"].run_deploy(env["db"], deploy_id)
+    with env["db"].session() as s:
+        d = s.get(Deploy, deploy_id)
+        assert d.status == "failed"
+        assert "lens-inventory-poller" in d.log
+        assert "executable file not found" in d.log
+
+
 def test_deploy_dockerfile_healthcheck_alpine_hint_appended(env, monkeypatch):
     """A successful deploy of an own-Dockerfile app with healthcheck: set and
     an alpine final stage lacking python3 gets a Hint: line in the log — this
