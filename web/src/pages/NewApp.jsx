@@ -43,6 +43,12 @@ export default function NewApp() {
           <input type="checkbox" checked={form.auto_deploy} onChange={set("auto_deploy")} className="accent-[var(--color-acid)]" />
           <span className="text-[var(--color-muted)]">Auto-deploy on push</span>
         </label>
+        {form.auto_deploy && (
+          <p className="text-xs text-[var(--color-muted)] -mt-2">
+            Needs a GitHub webhook on the repo — setup instructions are on the
+            app’s Settings tab after create.
+          </p>
+        )}
         {mut.isError && (
           <p className="text-[var(--color-danger)] text-sm">{mut.error?.response?.data?.detail || "Failed to create app"}</p>
         )}

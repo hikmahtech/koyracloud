@@ -59,6 +59,9 @@ class Database:
                     conn.execute(
                         text("UPDATE apps SET subdomain_token = :t WHERE id = :i"),
                         {"t": secrets.token_hex(3), "i": app_id})
+        if "webhook_seen_at" not in cols:
+            with self.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE apps ADD COLUMN webhook_seen_at DATETIME"))
         if "owner_login" not in cols:
             with self.engine.begin() as conn:
                 conn.execute(text(

@@ -63,6 +63,7 @@ class AppOut(BaseModel):
     repo_url: str
     branch: str
     auto_deploy: bool
+    webhook_seen_at: dt.datetime | None = None
     created_at: dt.datetime
     latest_status: str | None = None
     last_deployed_at: dt.datetime | None = None

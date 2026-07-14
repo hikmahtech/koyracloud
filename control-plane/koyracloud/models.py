@@ -28,6 +28,11 @@ class App(Base):
     # so app names never collide and the URL isn't trivially enumerable.
     subdomain_token: Mapped[str] = mapped_column(String(16), default="", index=True)
     auto_deploy: Mapped[bool] = mapped_column(default=False)
+    # Last time a verified GitHub webhook (ping/push/workflow_run) arrived for
+    # this repo. Null means the repo's webhook was never set up, so auto-deploy
+    # can't fire — the UI warns on that combination.
+    webhook_seen_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None)
     owner_login: Mapped[str] = mapped_column(String(128), default="", index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

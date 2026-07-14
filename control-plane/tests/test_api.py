@@ -447,12 +447,34 @@ def test_webhook_push_triggers_autodeploy(client, env):
     assert r.status_code == 200 and r.json()["triggered"] == ["hooky"]
     # a deploy was created + ran (fake docker)
     assert client.get(f"/api/apps/{aid}/deploys").json()[0]["status"] == "live"
+    # the verified event also recorded webhook connectivity
+    assert client.get(f"/api/apps/{aid}").json()["webhook_seen_at"] is not None
 
 
 def test_webhook_bad_signature_rejected(client):
     r = client.post("/api/webhooks/github", content=b"{}",
                     headers={"X-Hub-Signature-256": "sha256=nope", "X-GitHub-Event": "push"})
     assert r.status_code == 401
+
+
+def test_webhook_ping_marks_webhook_seen(client, env):
+    """GitHub pings the hook the moment it's saved on the repo — that alone
+    must flip webhook_seen_at (proof the hook is wired up), without deploying."""
+    import hashlib
+    import hmac
+    aid = client.post("/api/apps", json={"name": "pingy",
+                      "repo_url": "https://github.com/acme/Pingy.git", "branch": "main",
+                      "auto_deploy": True}).json()["id"]
+    assert client.get(f"/api/apps/{aid}").json()["webhook_seen_at"] is None
+    body = json.dumps({"zen": "ok", "repository": {"full_name": "acme/pingy"}}).encode()
+    sig = "sha256=" + hmac.new(env["settings"].webhook_secret.encode(), body,
+                               hashlib.sha256).hexdigest()
+    r = client.post("/api/webhooks/github", content=body,
+                    headers={"X-Hub-Signature-256": sig, "X-GitHub-Event": "ping",
+                             "content-type": "application/json"})
+    assert r.status_code == 200 and r.json() == {"ok": True}
+    assert client.get(f"/api/apps/{aid}").json()["webhook_seen_at"] is not None
+    assert client.get(f"/api/apps/{aid}/deploys").json() == []
 
 
 def _hdr(login, secret="sek"):

@@ -254,12 +254,23 @@ def create_app(
                                          request.headers.get("X-Hub-Signature-256")):
             raise HTTPException(status_code=401, detail="invalid signature")
         event = request.headers.get("X-GitHub-Event", "")
-        if event == "ping":
-            return {"ok": True}
         try:
             payload = json.loads(body)
         except ValueError:
             raise HTTPException(status_code=400, detail="invalid payload")
+        # Any verified event — including the ping GitHub fires when the hook is
+        # first saved — proves the repo's webhook is wired to us. Stamp every
+        # app on that repo so the UI can distinguish "webhook connected" from
+        # "auto-deploy on but GitHub was never told" (which silently never fires).
+        full_name = ((payload.get("repository") or {}).get("full_name") or "").lower()
+        if full_name:
+            with db.session() as s:
+                for a in s.query(App).all():
+                    if webhooks.repo_slug(a.repo_url) == full_name:
+                        a.webhook_seen_at = dt.datetime.now(dt.timezone.utc)
+                s.commit()
+        if event == "ping":
+            return {"ok": True}
         # push → deploy now (no-CI repos); workflow_run(success) → deploy after
         # CI passes. The repo's webhook sends whichever event suits it.
         target = webhooks.deploy_target(event, payload)
