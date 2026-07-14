@@ -74,6 +74,16 @@ class Settings:
     # kills the container mid-build and it never converges.
     healthcheck_start_period: str = field(default_factory=lambda: os.environ.get(
         "KOYRA_HEALTHCHECK_START_PERIOD", "600s"))
+    # How long a deploy waits for the swarm service(s) to actually converge
+    # (every desired replica Running — which, with a healthcheck, means healthy)
+    # before marking the deploy failed. Must exceed healthcheck_start_period:
+    # a buildless runtime legitimately sits in Starting for the whole start
+    # period. Hard failures (rollback, restart attempts exhausted) fail early
+    # regardless of this ceiling.
+    deploy_converge_timeout: int = field(default_factory=lambda: _int(
+        "KOYRA_DEPLOY_CONVERGE_TIMEOUT", 660))
+    deploy_converge_poll: int = field(default_factory=lambda: _int(
+        "KOYRA_DEPLOY_CONVERGE_POLL", 3))
     apps_domain: str = field(default_factory=lambda: os.environ.get(
         "KOYRA_APPS_DOMAIN", "apps.example.com"))
     # When the apps_domain sits behind a TLS-terminating proxy — e.g. Cloudflare

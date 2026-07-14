@@ -41,6 +41,10 @@ class FakeDocker:
         self.jobs = []     # run_job calls (cron)
         self.removed_services = []
         self.job_exit = 0  # exit code job_wait returns
+        # service_status override: service name -> status dict, or a LIST of
+        # dicts consumed one per poll (the last repeats) to simulate a service
+        # converging/failing over time. Unset -> healthy 1/1.
+        self.service_statuses = {}
 
     def image_build(self, tag, context_dir, build_args=None, dockerfile=None):
         self.builds.append((tag, context_dir, build_args or {}, dockerfile))
@@ -68,7 +72,13 @@ class FakeDocker:
         return f"log line for {service} (tail={tail})"
 
     def service_status(self, service):
+        st = self.service_statuses.get(service)
+        if isinstance(st, list):
+            st = st.pop(0) if len(st) > 1 else st[0]
+        if st is not None:
+            return st
         return {"exists": True, "running": 1, "desired": 1,
+                "update_state": "", "errors": [],
                 "tasks": [{"state": "Running 2 minutes ago", "desired": "Running",
                            "error": "", "node": "node1"}]}
 
@@ -124,6 +134,7 @@ def settings(tmp_path):
         github_pat="",
         webhook_secret="testhooksecret",
         redis_admin_password="testredisadmin",
+        deploy_converge_poll=0,   # convergence polls never sleep in tests
     )
 
 
