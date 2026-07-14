@@ -696,6 +696,12 @@ function SettingsTab({ id, app }) {
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="accent-[var(--color-acid)]" />
           <span className="text-[var(--color-muted)]">Auto-deploy on push / CI</span>
         </label>
+        {auto && !app.webhook_seen_at && (
+          <p className="text-xs -mt-1" style={{ color: "#febc2e" }}>
+            ⚠ No GitHub webhook has ever reached this instance for this repo, so
+            auto-deploy won’t fire. Set it up in <b>Push-to-deploy</b> below.
+          </p>
+        )}
         <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
           <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} className="accent-[var(--color-acid)]" />
           <span className="text-[var(--color-muted)]">
@@ -714,6 +720,16 @@ function SettingsTab({ id, app }) {
 
       <div className="card p-6 space-y-2">
         <div className="text-sm font-medium">Push-to-deploy</div>
+        {app.webhook_seen_at ? (
+          <p className="mono text-xs" style={{ color: "var(--color-acid)" }}>
+            ✓ webhook connected · last event {new Date(app.webhook_seen_at).toLocaleString()}
+          </p>
+        ) : (
+          <p className="mono text-xs" style={{ color: "#febc2e" }}>
+            ⚠ no webhook received yet — GitHub pings this URL the moment you save
+            the webhook, so this turns green within seconds of adding it.
+          </p>
+        )}
         <p className="text-xs text-[var(--color-muted)]">
           With auto-deploy on, point a GitHub webhook at the URL below (content-type
           <span className="mono"> application/json</span>, secret = <span className="mono">KOYRA_WEBHOOK_SECRET</span>),
