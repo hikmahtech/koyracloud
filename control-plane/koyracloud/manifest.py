@@ -107,9 +107,9 @@ class Manifest(BaseModel):
     @field_validator("runtime")
     @classmethod
     def _runtime_valid(cls, v: str) -> str:
-        if v not in {"python", "node", "python+node", "static", "dockerfile"}:
+        if v not in {"python", "node", "python+node", "static", "dockerfile", "go"}:
             raise ValueError(
-                f"runtime must be python|node|python+node|static|dockerfile, got {v!r}")
+                f"runtime must be python|node|python+node|static|dockerfile|go, got {v!r}")
         return v
 
     @property
@@ -120,10 +120,20 @@ class Manifest(BaseModel):
 
     @model_validator(mode="after")
     def _defaults(self):
-        if not self.uses_dockerfile and self.runtime != "static" and not self.start:
-            raise ValueError("start is required (except for runtime: static / dockerfile)")
+        if not self.uses_dockerfile and self.runtime not in ("static", "go") and not self.start:
+            raise ValueError("start is required (except for runtime: static / go / dockerfile)")
         if self.runtime == "static" and not self.healthcheck:
             self.healthcheck = "/"   # the static server answers / with 200
+        if self.runtime == "go" and self.healthcheck:
+            raise ValueError(
+                "healthcheck is not supported for runtime: go — the probe execs "
+                "python3 inside the container, and the distroless runner image has "
+                "none; drop healthcheck (or bring your own Dockerfile with python3)")
+        if self.runtime == "go" and self.predeploy:
+            raise ValueError(
+                "predeploy is not supported for runtime: go — the distroless "
+                "runner image has no shell to chain commands; do startup work "
+                "(e.g. migrations) from the Go binary itself")
         # Worker + cron names share one namespace (they become distinct service
         # names) and must be unique so status/logs/launch are unambiguous.
         names = [w.name for w in self.workers] + [c.name for c in self.cron]

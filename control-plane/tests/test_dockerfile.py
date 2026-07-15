@@ -1,4 +1,6 @@
 """Unit tests for the per-app Dockerfile renderer (pure)."""
+import pytest
+
 from koyracloud.dockerfile import render_dockerfile
 from koyracloud.manifest import parse_manifest
 
@@ -34,6 +36,22 @@ build:
   - npm run build
 """
 
+GO = """
+name: gopher
+runtime: go
+port: 8080
+"""
+
+GO_CUSTOM = """
+name: gopher
+runtime: go
+port: 8080
+build:
+  - go vet ./...
+  - CGO_ENABLED=0 go build -o /app/server ./cmd/gopher
+start: /app/server --port 8080
+"""
+
 
 def test_node_dockerfile():
     df = render_dockerfile(parse_manifest(NODE), "koyra-runtime:latest")
@@ -60,3 +78,36 @@ def test_static_dockerfile_serves_detected_dir():
     assert "RUN npm ci" in df
     cmd = next(lbl for lbl in df.splitlines() if lbl.startswith("CMD "))
     assert "/koyra_static.py" in cmd and "--port 8000" in cmd
+
+
+def test_go_dockerfile_two_stages_default_build_and_cmd():
+    df = render_dockerfile(parse_manifest(GO), "koyra-runtime:latest")
+    # base_image is ignored entirely — go doesn't build on the shared runtime image
+    assert "koyra-runtime:latest" not in df
+    assert "FROM golang:1.23 AS build" in df
+    assert "FROM gcr.io/distroless/static-debian12" in df
+    assert "COPY . ." in df
+    assert "RUN CGO_ENABLED=0 go build -o /app/server ." in df
+    assert "COPY --from=build /app/server /app/server" in df
+    # distroless has no shell: CMD must be exec-form, not ["sh", "-c", ...]
+    cmd = next(lbl for lbl in df.splitlines() if lbl.startswith("CMD "))
+    assert cmd == 'CMD ["/app/server"]'
+
+
+def test_go_dockerfile_custom_build_and_start():
+    df = render_dockerfile(parse_manifest(GO_CUSTOM), "koyra-runtime:latest")
+    assert "RUN go vet ./..." in df
+    assert "RUN CGO_ENABLED=0 go build -o /app/server ./cmd/gopher" in df
+    # a custom `start:` is exec-split (no shell to run it through)
+    cmd = next(lbl for lbl in df.splitlines() if lbl.startswith("CMD "))
+    assert cmd == 'CMD ["/app/server", "--port", "8080"]'
+
+
+def test_go_healthcheck_rejected():
+    with pytest.raises(Exception, match="healthcheck"):
+        parse_manifest(GO + "healthcheck: /health\n")
+
+
+def test_go_predeploy_rejected():
+    with pytest.raises(Exception, match="predeploy"):
+        parse_manifest(GO + "predeploy:\n  - echo hi\n")
