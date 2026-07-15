@@ -138,6 +138,7 @@ secrets:
                   <Field name="redis"><span className="mono">true</span> provisions a scoped Redis and injects <span className="mono">REDIS_URL</span>. Namespace keys + channels as <span className="mono">&lt;name&gt;:</span> (see below).</Field>
                   <Field name="workers">Always-on background processes off the same image — <span className="mono">[{`{name, start, replicas?, cpu?, memory?}`}]</span>. No HTTP port.</Field>
                   <Field name="cron">Scheduled jobs — <span className="mono">[{`{name, schedule, command}`}]</span>. 5-field cron, UTC, run to completion.</Field>
+                  <Field name="notify">Deploy-failure webhook — <span className="mono">{`{on_failure: <https url>}`}</span>. On a failed deploy koyracloud POSTs JSON <span className="mono">{`{app, deploy_id, status, error, log_tail}`}</span> to it (best-effort). The old service keeps running.</Field>
                 </tbody>
               </table>
             </div>

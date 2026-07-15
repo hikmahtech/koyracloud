@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+import httpx
 from sqlalchemy import text
 
 from koyracloud import redisbus
@@ -208,6 +209,24 @@ class Deployer:
             except Exception:  # noqa: BLE001
                 pass
 
+    def _post_failure_webhook(self, db: Database, deploy_id: int, url: str,
+                              app_name: str, error: str) -> None:
+        """Best-effort machine-readable failure notification (issue #61): POST
+        the failure + log tail to the manifest's ``notify.on_failure`` URL. This
+        is the structured sibling of the email alert (notifier, fired via
+        on_event) — an automation/webhook target, not a human inbox. Strictly
+        fire-and-forget: any error (bad URL, timeout, DB hiccup) is swallowed so
+        a broken webhook can never crash or delay the deploy-failure path."""
+        try:
+            with db.session() as s:
+                log = s.get(Deploy, deploy_id).log or ""
+            tail = "\n".join(log.splitlines()[-50:])
+            httpx.post(url, json={"app": app_name, "deploy_id": deploy_id,
+                                  "status": "failed", "error": error,
+                                  "log_tail": tail}, timeout=10)
+        except Exception:  # noqa: BLE001 — never let a webhook break the deploy
+            pass
+
     def _get_redis_admin(self) -> "redisbus.RedisAdmin":
         if self.redis_admin is None:
             self.redis_admin = redisbus.RedisClientAdmin(
@@ -374,6 +393,7 @@ class Deployer:
         emit = dlog.emit
 
         dest: Path | None = None
+        manifest: Manifest | None = None
         build_log_lines: list[str] = []
         try:
             emit(f"[koyra] deploy #{deploy_id} for {app_name} @ {ref}", "building")
@@ -567,6 +587,14 @@ class Deployer:
             # Full traceback goes to the server's stderr only, never the UI log.
             print(traceback.format_exc(), file=sys.stderr)
             self._fire(app_id, "deploy_failed", msg, hosts[0] if hosts else "")
+            # Machine-readable failure webhook (issue #61). Only reachable once
+            # the manifest parsed — a failure before that (e.g. a clone error)
+            # can't know the URL. Flush first so the log tail we POST includes
+            # the FAILED line + hints just emitted.
+            if manifest is not None and manifest.notify and manifest.notify.on_failure:
+                dlog.flush()
+                self._post_failure_webhook(db, deploy_id,
+                                           manifest.notify.on_failure, app_name, msg)
         finally:
             dlog.flush()   # tail of the log (e.g. failure hints past the last status)
             if dest is not None:
