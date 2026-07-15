@@ -114,6 +114,60 @@ def git_clone(repo_url: str, ref: str, token: str, dest: Path) -> str:
     return _git(["rev-parse", "HEAD"], dest).stdout.strip()
 
 
+class _DeployLog:
+    """Batched deploy-log writer (#67): image pushes emit a line storm (one
+    "Preparing/Pushing" per layer) and one UPDATE per line made deploys.log the
+    DB's hottest write path. Lines buffer in memory and flush as ONE UPDATE
+    every FLUSH_LINES lines or FLUSH_SECONDS seconds, whichever first. A call
+    carrying a status change flushes immediately (building/deploying/live/failed
+    must never lag), and _run_deploy flushes the tail on every exit path so a
+    crashed build still shows its last lines. One instance per deploy, owned by
+    that deploy's worker thread — no shared state."""
+
+    FLUSH_LINES = 25
+    FLUSH_SECONDS = 1.0
+
+    def __init__(self, db: Database, deploy_id: int):
+        self.db = db
+        self.deploy_id = deploy_id
+        self._buf: list[str] = []
+        self._last_flush = time.monotonic()
+
+    def emit(self, line: str, status: str | None = None) -> None:
+        # Prefix every log line with a UTC wall-clock time so the build/deploy
+        # log itself shows when each step ran (the deploy's date is in the
+        # history row's created_at). ponytail: HH:MM:SS UTC — a deploy spans
+        # seconds/minutes, so a per-line date would just repeat noise.
+        self._buf.append(f"{dt.datetime.now(dt.timezone.utc):%H:%M:%S} {line}\n")
+        if (status or len(self._buf) >= self.FLUSH_LINES
+                or time.monotonic() - self._last_flush >= self.FLUSH_SECONDS):
+            self.flush(status)
+
+    def flush(self, status: str | None = None) -> None:
+        if not self._buf and not status:
+            return
+        chunk = "".join(self._buf)
+        self._buf.clear()
+        self._last_flush = time.monotonic()
+        # Atomic single-statement UPDATE (no prior SELECT): a read-then-write
+        # in one transaction can hit SQLite's WAL read->write upgrade deadlock
+        # (SQLITE_BUSY_SNAPSHOT, which busy_timeout does NOT retry) when a
+        # concurrent connection — e.g. an app's analytics ingest — commits
+        # between the SELECT and the UPDATE.
+        with self.db.session() as s:
+            if status:
+                s.execute(text(
+                    "UPDATE deploys SET log = COALESCE(log, '') || :l, "
+                    "status = :st WHERE id = :i"),
+                    {"l": chunk, "st": status, "i": self.deploy_id})
+            else:
+                s.execute(text(
+                    "UPDATE deploys SET log = COALESCE(log, '') || :l "
+                    "WHERE id = :i"),
+                    {"l": chunk, "i": self.deploy_id})
+            s.commit()
+
+
 @dataclass
 class Deployer:
     settings: Settings
@@ -316,30 +370,8 @@ class Deployer:
             pinned = app.pin is not None
             pin_node = app.pin.node if app.pin else ""
 
-        def emit(line: str, status: str | None = None) -> None:
-            # Prefix every log line with a UTC wall-clock time so the build/deploy
-            # log itself shows when each step ran (the deploy's date is in the
-            # history row's created_at). ponytail: HH:MM:SS UTC — a deploy spans
-            # seconds/minutes, so a per-line date would just repeat noise.
-            line = f"{dt.datetime.now(dt.timezone.utc):%H:%M:%S} {line}"
-            # Atomic single-statement UPDATE (no prior SELECT): a read-then-write
-            # in one transaction can hit SQLite's WAL read->write upgrade
-            # deadlock (SQLITE_BUSY_SNAPSHOT, which busy_timeout does NOT retry)
-            # when a concurrent connection — e.g. an app's analytics ingest —
-            # commits between the SELECT and the UPDATE. This is the deploy's
-            # hot write path (one call per build/push log line).
-            with db.session() as s:
-                if status:
-                    s.execute(text(
-                        "UPDATE deploys SET log = COALESCE(log, '') || :l, "
-                        "status = :st WHERE id = :i"),
-                        {"l": line + "\n", "st": status, "i": deploy_id})
-                else:
-                    s.execute(text(
-                        "UPDATE deploys SET log = COALESCE(log, '') || :l "
-                        "WHERE id = :i"),
-                        {"l": line + "\n", "i": deploy_id})
-                s.commit()
+        dlog = _DeployLog(db, deploy_id)
+        emit = dlog.emit
 
         dest: Path | None = None
         build_log_lines: list[str] = []
@@ -497,10 +529,12 @@ class Deployer:
             # it; on failure this raises with the real task error and the
             # except path below marks the deploy failed.
             emit("[koyra] stack deployed; waiting for the service to converge")
+            dlog.flush()   # the wait may emit nothing for minutes — show this now
             self._wait_converged(emit, app_name, manifest, image)
             # Only the newest live deploy actually serves traffic — each deploy
             # replaces the running container — so demote any prior live row for
             # this app in the same transaction that marks this one live.
+            dlog.flush()   # buffered lines must land before "deploy complete"
             with db.session() as s:
                 s.execute(text("UPDATE deploys SET status = 'superseded' "
                                "WHERE app_id = :a AND status = 'live' AND id != :i"),
@@ -534,6 +568,7 @@ class Deployer:
             print(traceback.format_exc(), file=sys.stderr)
             self._fire(app_id, "deploy_failed", msg, hosts[0] if hosts else "")
         finally:
+            dlog.flush()   # tail of the log (e.g. failure hints past the last status)
             if dest is not None:
                 shutil.rmtree(dest, ignore_errors=True)   # free the local build dir
             with db.session() as s:
