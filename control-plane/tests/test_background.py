@@ -391,3 +391,67 @@ def test_deploy_log_crash_flushes_buffered_lines_in_order(env):
     # drains the tail, so a crashed build still shows its last lines.
     assert row.log.index("half-deployed") < row.log.index("FAILED: boom mid-deploy")
     assert row.log.index("FAILED:") < row.log.index("Hint:")
+
+
+# --- notify.on_failure webhook (#61) -----------------------------------------
+NOTIFY_MANIFEST = """
+name: bg
+runtime: python
+start: uvicorn app:app
+port: 8000
+notify:
+  on_failure: https://hooks.example.com/deploy
+"""
+
+
+def test_manifest_notify_on_failure_valid():
+    from koyracloud.manifest import parse_manifest
+    m = parse_manifest(NOTIFY_MANIFEST)
+    assert m.notify is not None
+    assert m.notify.on_failure == "https://hooks.example.com/deploy"
+
+
+def test_manifest_notify_rejects_non_http_scheme():
+    from koyracloud.manifest import parse_manifest
+    with pytest.raises(ValueError):
+        parse_manifest("name: bg\nstart: y\nport: 8000\n"
+                       "notify:\n  on_failure: ftp://hooks.example.com/deploy\n")
+
+
+def test_deploy_failure_posts_notify_webhook(env, monkeypatch):
+    import koyracloud.deployer as dep_mod
+    posted = {}
+    monkeypatch.setattr(dep_mod.httpx, "post",
+                        lambda url, json=None, timeout=None: posted.update(
+                            url=url, json=json, timeout=timeout))
+
+    app_id = _make_app(env["db"])
+    deployer = Deployer(settings=env["settings"], docker=_CrashingDocker(),
+                        crypto=env["crypto"], cloner=make_fake_cloner(NOTIFY_MANIFEST),
+                        redis_admin=env["redis_admin"])
+    did = _mk_deploy(env["db"], app_id)
+    deployer.run_deploy(env["db"], did)
+
+    with env["db"].session() as s:
+        assert s.get(Deploy, did).status == "failed"
+    assert posted["url"] == "https://hooks.example.com/deploy"
+    assert posted["timeout"] == 10
+    body = posted["json"]
+    assert body["app"] == "bg" and body["deploy_id"] == did
+    assert body["status"] == "failed"
+    assert "boom mid-deploy" in body["error"]
+    assert "half-deployed" in body["log_tail"]  # last ~50 log lines
+
+
+def test_deploy_failure_no_webhook_without_notify(env, monkeypatch):
+    import koyracloud.deployer as dep_mod
+    calls = []
+    monkeypatch.setattr(dep_mod.httpx, "post",
+                        lambda *a, **k: calls.append(a))
+    app_id = _make_app(env["db"])
+    deployer = Deployer(settings=env["settings"], docker=_CrashingDocker(),
+                        crypto=env["crypto"], cloner=make_fake_cloner(BG_MANIFEST),
+                        redis_admin=env["redis_admin"])
+    did = _mk_deploy(env["db"], app_id)
+    deployer.run_deploy(env["db"], did)
+    assert calls == []  # BG_MANIFEST has no notify block

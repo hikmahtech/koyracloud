@@ -79,6 +79,20 @@ class CronJob(BaseModel):
         return v
 
 
+class Notify(BaseModel):
+    """Where to push deploy-failure signals (issue #61). ``on_failure`` is a
+    machine-readable webhook: on a failed deploy koyracloud POSTs failure JSON
+    to it best-effort (the structured sibling of the email alert)."""
+    on_failure: str = ""              # http(s) webhook fired on deploy failure
+
+    @field_validator("on_failure")
+    @classmethod
+    def _http_url(cls, v: str) -> str:
+        if v and not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("notify.on_failure must be an http:// or https:// URL")
+        return v
+
+
 class Manifest(BaseModel):
     name: str
     runtime: str = "python+node"
@@ -103,6 +117,7 @@ class Manifest(BaseModel):
     redis: bool = False               # provision a shared-Redis ACL user + inject REDIS_URL
     workers: list[Worker] = Field(default_factory=list)
     cron: list[CronJob] = Field(default_factory=list)
+    notify: Notify | None = None      # deploy-failure webhook (issue #61)
 
     @field_validator("runtime")
     @classmethod
