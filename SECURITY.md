@@ -25,6 +25,9 @@ known and out of scope. Reports about breaking *out* of the intended access cont
 (auth bypass, secret exposure, SSRF, injection, path traversal, etc.) are in scope
 and appreciated.
 
+See [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md) for exactly what each credential the
+control plane uses is scoped to and why.
+
 ## Handling secrets
 
 App secrets are encrypted at rest (Fernet) and injected at deploy. Everything

@@ -6,6 +6,9 @@ instance-specific values live in `deploy/koyracloud.env` (gitignored).
 
 ## Prerequisites
 
+For the minimum scope each credential below actually needs (fine-grained PAT scope,
+exact Cloudflare token permissions, etc.), see [`docs/PERMISSIONS.md`](../docs/PERMISSIONS.md).
+
 ### 1. A Docker Swarm with Traefik
 You need a swarm with Traefik as the edge: an external overlay network (default
 `traefik_public`), an HTTPS entrypoint (`websecure`), and an ACME cert resolver
