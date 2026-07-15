@@ -76,6 +76,13 @@ Build-time-inlined frameworks (`NEXT_PUBLIC_*`, `VITE_*`) get their values as
 
 Full reference: the **Docs** in-app (`/docs`) or [`examples/`](examples/).
 
+**Validate locally** before pushing — lints `.paas/app.yaml` against the exact rules
+the control plane uses, no checkout required:
+
+```bash
+uvx --from "git+https://github.com/hikmahtech/koyracloud#subdirectory=control-plane" koyra validate
+```
+
 ## Background workers, cron & Redis
 
 The same repo + the same built image can also run **background workers** (always-on,

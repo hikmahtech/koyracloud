@@ -19,6 +19,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.3", "ruff>=0.7"]
 
+[project.scripts]
+koyra = "koyracloud.cli:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
