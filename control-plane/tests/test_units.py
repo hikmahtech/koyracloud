@@ -1,4 +1,5 @@
 """Unit tests for the pure modules: manifest, crypto, auth, stack_render."""
+import json
 from pathlib import Path
 
 import pytest
@@ -48,6 +49,19 @@ def test_parse_manifest_missing_start():
 def test_parse_manifest_not_mapping():
     with pytest.raises(ValueError):
         parse_manifest("- a\n- b\n")
+
+
+def test_parse_manifest_static_spa_headers_default():
+    m = parse_manifest("name: site\nruntime: static\n")
+    assert m.spa is None and m.headers == {}
+
+
+def test_parse_manifest_static_spa_and_headers():
+    m = parse_manifest(
+        "name: site\nruntime: static\nspa: true\n"
+        "headers:\n  X-Frame-Options: DENY\n  Cache-Control: no-cache\n")
+    assert m.spa is True
+    assert m.headers == {"X-Frame-Options": "DENY", "Cache-Control": "no-cache"}
 
 
 # --- crypto -----------------------------------------------------------------
@@ -233,6 +247,25 @@ def test_analytics_render_injects_env():
                          settings=_settings(), analytics_site="tok123")
     env = stack["services"]["site"]["environment"]
     assert env["KOYRA_ANALYTICS_SITE"] == "tok123" and "KOYRA_ANALYTICS_URL" in env
+
+
+def test_static_spa_headers_render_injects_env():
+    m = parse_manifest(
+        "name: site\nruntime: static\nspa: false\n"
+        "headers:\n  Content-Security-Policy: \"default-src 'self'\"\n")
+    stack = render_stack(m, app_name="site", image="img", env_overrides={},
+                         secret_values={}, settings=_settings())
+    env = stack["services"]["site"]["environment"]
+    assert env["KOYRA_SPA"] == "0"
+    assert json.loads(env["KOYRA_HEADERS"]) == {"Content-Security-Policy": "default-src 'self'"}
+
+
+def test_static_no_spa_headers_env_by_default():
+    m = parse_manifest("name: site\nruntime: static\n")
+    stack = render_stack(m, app_name="site", image="img", env_overrides={},
+                         secret_values={}, settings=_settings())
+    env = stack["services"]["site"]["environment"]
+    assert "KOYRA_SPA" not in env and "KOYRA_HEADERS" not in env
 
 
 # --- stack_render -----------------------------------------------------------

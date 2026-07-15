@@ -9,6 +9,8 @@ are NOT in the stack; the scheduler launches them as run-to-completion jobs.
 """
 from __future__ import annotations
 
+import json
+
 from koyracloud.config import Settings
 from koyracloud.manifest import Manifest
 
@@ -71,6 +73,13 @@ def render_stack(
     if analytics_site:
         web_env["KOYRA_ANALYTICS_URL"] = settings.base_url
         web_env["KOYRA_ANALYTICS_SITE"] = analytics_site
+    # koyra_static.py reads its behaviour from env, same channel as the beacon:
+    # SPA-fallback mode + extra response headers. Only meaningful for static.
+    if manifest.runtime == "static":
+        if manifest.spa is not None:
+            web_env["KOYRA_SPA"] = "1" if manifest.spa else "0"
+        if manifest.headers:
+            web_env["KOYRA_HEADERS"] = json.dumps(manifest.headers)
 
     # Split hosts by zone. In-zone hosts are the app's own auto-subdomain under
     # apps_domain; custom Cloudflare-for-SaaS hosts are everything else. SaaS
