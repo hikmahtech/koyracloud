@@ -69,14 +69,24 @@ services:
       # Cron scheduler (launches due jobs as Swarm run-to-completion jobs).
       KOYRA_CRON_ENABLED: ${KOYRA_CRON_ENABLED:-}
       # SQLite backups. KOYRA_BACKUP_DIR should be a mount separate from the DB
-      # volume (mount it below if you set it). Blank => <db-dir>/backups.
+      # volume — with KOYRA_DB_DIR on local disk, point it at the NFS (the whole
+      # NFS base is mounted below, so <KOYRA_NFS_BASE>/cp/backups works as-is).
+      # Blank => <db-dir>/backups.
       KOYRA_BACKUP_ENABLED: ${KOYRA_BACKUP_ENABLED:-}
       KOYRA_BACKUP_INTERVAL_HOURS: ${KOYRA_BACKUP_INTERVAL_HOURS:-}
       KOYRA_BACKUP_KEEP: ${KOYRA_BACKUP_KEEP:-}
       KOYRA_BACKUP_DIR: ${KOYRA_BACKUP_DIR:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${KOYRA_NFS_BASE:-/mnt/koyracloud}/cp:/data
+      # DB directory. Set KOYRA_DB_DIR to a LOCAL path on KOYRA_CONTROL_NODE
+      # (e.g. /var/lib/koyracloud, created beforehand): SQLite runs in WAL mode,
+      # which is unsupported on network filesystems (the -shm file needs real
+      # shared-memory mmap semantics) — on NFS, concurrent writers hit
+      # intermittent "database is locked" (#67). deploy.sh defaults unset
+      # KOYRA_DB_DIR to the legacy <KOYRA_NFS_BASE>/cp so existing installs
+      # don't lose their DB on upgrade; migrate with docs/DISASTER-RECOVERY.md
+      # § "Moving the DB off NFS".
+      - ${KOYRA_DB_DIR:-/mnt/koyracloud/cp}:/data
       # builder writes app checkouts here; app containers mount the same tree
       - ${KOYRA_NFS_BASE:-/mnt/koyracloud}:${KOYRA_NFS_BASE:-/mnt/koyracloud}
     networks:

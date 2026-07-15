@@ -74,6 +74,9 @@ if [ -n "${KOYRA_NFS_SERVER:-}" ]; then
   warn "Create these once on your NFS export (${KOYRA_NFS_SERVER}:${KOYRA_NFS_BASE:-/mnt/koyracloud}):"
   warn "    ${KOYRA_NFS_BASE:-/mnt/koyracloud}/registry   ${KOYRA_NFS_BASE:-/mnt/koyracloud}/redis"
 fi
+if [ -n "${KOYRA_DB_DIR:-}" ]; then
+  warn "Create the DB dir once on ${KOYRA_CONTROL_NODE:-the control node} (local disk): sudo mkdir -p ${KOYRA_DB_DIR}"
+fi
 
 # --- 6. Base buildpack image (FROM for generated app images) -----------------
 RUNTIME="${KOYRA_RUNTIME_IMAGE:-koyracloud-runtime:latest}"

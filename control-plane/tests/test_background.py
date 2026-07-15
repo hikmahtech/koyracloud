@@ -5,10 +5,10 @@ from dataclasses import replace
 import pytest
 
 from koyracloud import redisbus, scheduler
-from koyracloud.deployer import Deployer
+from koyracloud.deployer import Deployer, _DeployLog
 from koyracloud.models import App, AppPin, AppRedis, CronJob, CronRun, Deploy
 
-from conftest import make_fake_cloner
+from conftest import FakeDocker, make_fake_cloner
 
 BG_MANIFEST = """
 name: bg
@@ -316,3 +316,78 @@ def test_delete_app_drops_cron_and_redis(client, env):
         assert s.get(AppRedis, app_id) is None
         assert s.query(CronJob).filter_by(app_id=app_id).count() == 0
     assert "app-bgdel" in env["redis_admin"].deleted
+
+
+# --- _DeployLog batching (#67) ------------------------------------------------
+def _mk_deploy(db, app_id):
+    with db.session() as s:
+        d = Deploy(app_id=app_id, ref="main", status="pending")
+        s.add(d)
+        s.commit()
+        return d.id
+
+
+def _log(db, deploy_id):
+    with db.session() as s:
+        return s.get(Deploy, deploy_id).log or ""
+
+
+def test_deploy_log_buffers_lines_and_flushes_at_threshold(env):
+    did = _mk_deploy(env["db"], _make_app(env["db"]))
+    dlog = _DeployLog(env["db"], did)
+    dlog.emit("first")
+    assert _log(env["db"], did) == ""          # buffered — no UPDATE per line
+    for i in range(_DeployLog.FLUSH_LINES - 1):  # cross the line threshold
+        dlog.emit(f"line-{i:02d}")
+    log = _log(env["db"], did)
+    assert log.index("first") < log.index("line-00") < log.index("line-23")
+
+
+def test_deploy_log_status_change_flushes_immediately(env):
+    did = _mk_deploy(env["db"], _make_app(env["db"]))
+    dlog = _DeployLog(env["db"], did)
+    dlog.emit("prep")
+    dlog.emit("building image", status="building")   # status must never lag
+    with env["db"].session() as s:
+        row = s.get(Deploy, did)
+    assert row.status == "building"
+    assert row.log.index("prep") < row.log.index("building image")
+
+
+def test_deploy_log_explicit_flush_drains_buffer(env):
+    did = _mk_deploy(env["db"], _make_app(env["db"]))
+    dlog = _DeployLog(env["db"], did)
+    dlog.emit("tail")
+    dlog.flush()
+    assert "tail" in _log(env["db"], did)
+    dlog.flush()                                     # empty flush is a no-op
+    assert _log(env["db"], did).count("tail") == 1
+
+
+class _CrashingDocker(FakeDocker):
+    """Build output carries a known hint signature, then the swarm deploy dies
+    mid-stream — exercises the except (status flush) + finally (tail flush)."""
+
+    def image_build(self, tag, context_dir, build_args=None, dockerfile=None):
+        yield "Failed to collect page data"          # triggers a build hint
+
+    def deploy(self, stack, stack_dict):
+        yield "half-deployed"
+        raise RuntimeError("boom mid-deploy")
+
+
+def test_deploy_log_crash_flushes_buffered_lines_in_order(env):
+    app_id = _make_app(env["db"])
+    deployer = Deployer(settings=env["settings"], docker=_CrashingDocker(),
+                        crypto=env["crypto"], cloner=make_fake_cloner(BG_MANIFEST),
+                        redis_admin=env["redis_admin"])
+    did = _mk_deploy(env["db"], app_id)
+    deployer.run_deploy(env["db"], did)
+    with env["db"].session() as s:
+        row = s.get(Deploy, did)
+    assert row.status == "failed"
+    # The pre-crash buffered line lands before FAILED (one ordered chunk), and
+    # the hint emitted AFTER the failed-status flush lands too — the finally
+    # drains the tail, so a crashed build still shows its last lines.
+    assert row.log.index("half-deployed") < row.log.index("FAILED: boom mid-deploy")
+    assert row.log.index("FAILED:") < row.log.index("Hint:")
