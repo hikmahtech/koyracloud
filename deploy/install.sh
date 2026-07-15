@@ -138,7 +138,7 @@ if [ -n "${KOYRA_NFS_SERVER:-}" ]; then
 fi
 
 # --- 6. Base buildpack image (FROM for generated app images) -----------------
-RUNTIME="${KOYRA_RUNTIME_IMAGE:-koyracloud-runtime:latest}"
+RUNTIME="${KOYRA_RUNTIME_IMAGE:-${KOYRA_REGISTRY:-127.0.0.1:5000}/koyracloud-runtime:latest}"
 say "Building the base buildpack image: $RUNTIME"
 docker build -f runtime-image/Dockerfile -t "$RUNTIME" runtime-image/
 if [ "$CTX" != default ]; then
@@ -149,5 +149,22 @@ fi
 # --- 7. Deploy the control plane + registry + redis --------------------------
 say "Deploying the koyracloud stack"
 DOCKER_CONTEXT="$CTX" bash deploy/deploy.sh
+
+# --- 8. Push the buildpack image into the instance registry ------------------
+# The image is a build-time-only FROM — no running container references it — so
+# a local-only copy is silently deleted by any `docker system prune` and every
+# manifest build then fails with "pull access denied" (#66). Pushing it to the
+# stack's own registry makes `docker build` re-pull it on demand. Skipped when
+# KOYRA_RUNTIME_IMAGE points outside the instance registry (you manage it).
+case "$RUNTIME" in
+  "${KOYRA_REGISTRY:-127.0.0.1:5000}"/*)
+    say "Pushing $RUNTIME to the instance registry"
+    for i in $(seq 1 30); do
+      if d push "$RUNTIME" >/dev/null 2>&1; then echo "  • pushed"; break; fi
+      [ "$i" = 30 ] && { warn "registry not answering — push it later: docker push $RUNTIME"; break; }
+      sleep 2
+    done;;
+  *) warn "KOYRA_RUNTIME_IMAGE is not in the instance registry — make sure it survives image prunes.";;
+esac
 
 say "Done. Open https://${KOYRA_HOST:-<your KOYRA_HOST>} and sign in with GitHub."

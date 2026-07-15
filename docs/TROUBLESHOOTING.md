@@ -77,12 +77,15 @@ failures don't count during `KOYRA_HEALTHCHECK_START_PERIOD` (default 600 s).
 A first start that compiles/installs for longer needs both raised — keep the
 converge timeout above the grace period.
 
-**Manifest builds fail with the runtime image missing**
+**Manifest builds fail with `pull access denied` on the runtime image**
 Generated app images build `FROM` the base buildpack image
-(`KOYRA_RUNTIME_IMAGE`), which lives only in the control node's local daemon —
-a `docker system prune` can delete it (#66). Rebuild it:
-`docker build -f runtime-image/Dockerfile -t koyracloud-runtime:latest runtime-image/`
-(or re-run `install.sh`, which is idempotent).
+(`KOYRA_RUNTIME_IMAGE`), which now defaults to the instance registry
+(`127.0.0.1:5000/koyracloud-runtime:latest`) so a prune can't kill it — docker
+re-pulls it on demand (#66). If you see this, the image was never pushed (or
+your `KOYRA_RUNTIME_IMAGE` points elsewhere). Rebuild + push:
+`docker build -f runtime-image/Dockerfile -t 127.0.0.1:5000/koyracloud-runtime:latest runtime-image/`
+then `docker push 127.0.0.1:5000/koyracloud-runtime:latest` on the control node
+(or re-run `install.sh`, which is idempotent and does both).
 
 **`http: server gave HTTP response to HTTPS client` when a node pulls an app
 image**

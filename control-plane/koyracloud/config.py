@@ -44,8 +44,13 @@ class Settings:
     session_secret: str = field(default_factory=lambda: _secret(
         "KOYRA_SESSION_SECRET", "dev-session-secret-change-me"))
     # Swarm / Traefik / NFS
+    # Registry-qualified by default: the buildpack image is a build-time-only
+    # FROM, so a local-only tag is deleted by any image prune and every
+    # manifest build then fails with "pull access denied" (#66). From the
+    # instance registry, docker build re-pulls it on demand (install.sh pushes
+    # it there).
     runtime_image: str = field(default_factory=lambda: os.environ.get(
-        "KOYRA_RUNTIME_IMAGE", "koyracloud-runtime:latest"))
+        "KOYRA_RUNTIME_IMAGE", "127.0.0.1:5000/koyracloud-runtime:latest"))
     # Internal Docker registry (a swarm service koyracloud owns). Per-app images
     # are built locally, pushed here, and pulled by swarm on whichever node runs
     # the service — so apps aren't pinned to the build node. Published on the
