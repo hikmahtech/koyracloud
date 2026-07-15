@@ -107,6 +107,11 @@ class Manifest(BaseModel):
     predeploy: list[str] = Field(default_factory=list)
     start: str = ""                   # required except for static / dockerfile
     static_dir: str = ""              # static runtime: dir to serve (auto-detected if blank)
+    # static runtime only. spa: True = always index.html fallback; False = real
+    # 404s (404.html if present, else bare); None = auto (404.html present -> 404s,
+    # else SPA fallback). headers: extra response headers sent on every response.
+    spa: bool | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
     persist: list[str] = Field(default_factory=list)
     cpu: str = ""                     # e.g. "0.5"; falls back to the instance default
     memory: str = ""                  # e.g. "256M"; falls back to the instance default
