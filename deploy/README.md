@@ -47,12 +47,16 @@ that ships in the stack (a `registry:2` service). Apps are pulled from there and
 run on any node — nothing is pinned.
 
 - The base buildpack image (`python:3.12 + node:22 + git`) is the `FROM` for
-  *generated* app images and serves static sites. Build + make it pullable by the
-  nodes (push to a registry, or load on each node):
+  *generated* app images and serves static sites. Build it and push it into the
+  instance registry (what `install.sh` does):
   ```bash
-  docker build -f runtime-image/Dockerfile -t koyracloud-runtime:latest runtime-image/
+  docker build -f runtime-image/Dockerfile -t 127.0.0.1:5000/koyracloud-runtime:latest runtime-image/
+  docker --context <ctx> push 127.0.0.1:5000/koyracloud-runtime:latest
   ```
-  Apps that ship their own `Dockerfile` don't use it.
+  It's a build-time-only `FROM` — a **local-only** tag gets deleted by any
+  `docker system prune` and every manifest build then fails with
+  `pull access denied` (#66); from the registry, `docker build` re-pulls it on
+  demand. Apps that ship their own `Dockerfile` don't use it.
 - Leave `KOYRA_APP_NODE` empty and `KOYRA_RESOLVE_IMAGE_NEVER=0` so apps schedule
   anywhere and pull from the registry. `KOYRA_REGISTRY` defaults to
   `127.0.0.1:5000` (the registry on the ingress mesh); `KOYRA_BUILD_DIR` is a
