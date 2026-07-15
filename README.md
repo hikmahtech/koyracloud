@@ -44,7 +44,7 @@ Describe build & run in a `.paas/app.yaml` committed to your repo:
 
 ```yaml
 name: my-app
-runtime: python+node          # python | node | python+node | static | dockerfile
+runtime: python+node          # python | node | python+node | static | dockerfile | go
 subdomain: my-app.apps.example.com
 port: 8000
 build:

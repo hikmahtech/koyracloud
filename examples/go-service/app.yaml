@@ -1,0 +1,26 @@
+# Example .paas/app.yaml for a Go HTTP service (runtime: go). Drop this at
+# .paas/app.yaml in your repo.
+#
+# koyracloud builds this as a two-stage image: `golang:1.23` compiles a
+# static binary, then a `gcr.io/distroless/static-debian12` runner just
+# copies it in — no shell, no libc, nothing but your binary.
+name: my-go-service
+runtime: go
+subdomain: my-go-service.apps.example.com   # optional; defaults to <name>.<apps domain>
+port: 8080
+# build: defaults to `CGO_ENABLED=0 go build -o /app/server .` when omitted.
+# If you set your own build steps, the last one must still produce a static
+# binary at /app/server (the runner stage only copies that one path).
+#
+# start: defaults to running /app/server. If you set start, it's exec-split
+# (quoting works; shell operators like && or | don't — there's no shell in
+# the distroless runner to run them through).
+
+# IMPORTANT: no healthcheck / predeploy for runtime: go.
+# - healthcheck execs python3 inside the container to probe it; distroless
+#   has no python3 (or shell), so it's rejected at manifest validation
+#   instead of deploying a container swarm silently kills 30-60s later.
+# - predeploy chains commands with `&&` before exec'ing start, which also
+#   needs a shell this image doesn't have. Do startup work (e.g. migrations)
+#   from the Go binary itself.
+secrets: []
