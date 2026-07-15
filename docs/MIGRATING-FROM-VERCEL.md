@@ -272,11 +272,12 @@ the SaaS registration; the customer zone's Universal SSL provides the cert.
 
 ## 7. Operational notes
 
-- **Don't poll `/api/deploys/{id}` aggressively during a build.** koyracloud's
-  control-plane DB is SQLite; the deployer streams build output as frequent log
-  writes, and heavy concurrent reads used to trip `database is locked`. (Fixed
-  now via WAL + busy_timeout + atomic single-statement log writes, but still:
-  trigger, wait ~150s, check once.)
+- **Polling `/api/deploys/{id}` during a build is fine now.** koyracloud's
+  control-plane DB is SQLite; heavy per-line log writes racing reads used to trip
+  `database is locked`. Fixed for real by moving the DB to the control node's
+  local disk (WAL is unsupported on NFS — `KOYRA_DB_DIR`, #67) and batching log
+  writes (~25 lines/1s per UPDATE). If you ever see that error again, the DB has
+  landed back on a network filesystem — see `TROUBLESHOOTING.md`.
 - **Recover a stuck/orphaned `building` deploy** by force-restarting the
   control-plane: `docker --context <your-swarm-context> service update --force
   koyracloud_control-plane` (clears in-memory locks/threads; running app

@@ -14,7 +14,7 @@ is. It complements the [README](../README.md) (what it is) and
 | **Base buildpack image** | `python:3.12 + node:22 + git` (`runtime-image/`). Used as the `FROM` for *generated* app images and to serve static sites. Apps that ship their own `Dockerfile` don't use it. |
 | **Traefik** | The HTTPS edge. The control plane renders per-app router labels; Traefik routes by `Host(...)`. |
 | **cloudflared tunnel** | Brings custom-domain traffic from the Cloudflare edge to Traefik (for the Cloudflare-for-SaaS flow). |
-| **NFS** | Shared storage for persisted app data, the registry's image store, and Redis's AOF. **Never** for application code. |
+| **NFS** | Shared storage for persisted app data, the registry's image store, and Redis's AOF. **Never** for application code — and **never** for the control plane's own SQLite DB (local disk; see the decision below). |
 
 ## The deploy pipeline
 
@@ -28,10 +28,16 @@ is. It complements the [README](../README.md) (what it is) and
                  redeploy then just re-deploys the existing image)
 5. push         docker push   → <registry>/koyra-app-<name>:<commit>-<argshash> and :latest
 6. deploy       docker stack deploy → Swarm service from the registry image
-7. run          Swarm pulls + runs the app on any node; clean up the local build dir
+7. converge     wait until every replica is Running (and healthy) on the NEW
+                image — only then is the deploy marked live; a task that can't
+                start fails the deploy with the real task error
+8. run          Swarm pulls + runs the app on any node; clean up the local build dir
 ```
 
 Each step streams to the deploy log (SSE) so you watch it live in the dashboard.
+(Log lines are written to the DB in batched chunks — one UPDATE per ~25 lines or
+~1s, with status changes flushed immediately — so an image push's per-layer line
+storm doesn't turn into hundreds of writes, #67.)
 
 The docker build context is the repo root by default, or a subdirectory when the
 manifest sets `root:` (monorepo apps — e.g. a Next site under `marketing/site/`
@@ -78,8 +84,10 @@ a `registry:2` service and tags images `<registry>/koyra-app-<name>:<commit>-<ar
 
 The registry is **published on the Swarm ingress mesh** (`5000:5000`), so every node
 reaches it as `127.0.0.1:5000`. Docker treats `127.0.0.1` as an insecure-OK registry
-**by default**, so there's no per-daemon config, no TLS, and no auth to manage — and the
-registry is **never reachable from outside the swarm**.
+**by default**, so there's no per-daemon config, no TLS, and no auth to manage. The
+flip side of the ingress mesh: port 5000 answers on **every node's public interface**,
+unauthenticated — treat it as internal-only by firewalling it from anything outside
+the swarm (see `SECURITY.md`).
 
 **Why not put the registry behind Traefik / a real domain?** Two reasons: the homelab
 reference setup proxies through Cloudflare, whose free tier **caps request bodies at
@@ -106,11 +114,30 @@ container, so:
 - the registry/app can run **and reschedule** anywhere.
 
 The control plane pre-creates each `persist:` directory on the NFS so the volume's
-`device` path resolves. Without `KOYRA_NFS_SERVER` set (local/dev), `stack_render` falls
-back to plain bind mounts.
+`device` path resolves. Without `KOYRA_NFS_SERVER` set (single node / local dev),
+`stack_render` falls back to plain bind mounts for app volumes, and `deploy.sh` skips
+the `koyracloud-nfs.yml` overlay so the registry/redis storage stays on plain local
+named volumes — nothing needs an NFS server on one machine.
 
 This is still the default for every app. The one opt-in exception — apps with
 *node-local* state that NFS can't cover — is below.
+
+## Decision: the control plane's SQLite lives on LOCAL disk, backups on NFS
+
+The one deliberate exception to "shared storage for state": the control plane's own
+database. SQLite runs in WAL mode, and WAL is **unsupported on network filesystems** —
+its `-shm` sidecar needs real shared-memory mmap semantics, so on NFS concurrent
+writers (deploy log appends racing analytics ingest) intermittently fail with
+`database is locked`, and `busy_timeout` can't save it (#67, learned in production).
+
+So the DB directory is a **local bind mount on the control node** (`KOYRA_DB_DIR`,
+default `/var/lib/koyracloud`). That doesn't re-introduce a single point of failure
+for *data*: the control plane is already node-sticky (local build dir, the docker
+socket), and `backup.py` snapshots the DB on an interval to `KOYRA_BACKUP_DIR` —
+pointed at the NFS — so losing the control node costs at most one backup interval,
+restored via `docs/DISASTER-RECOVERY.md`. The write path is also kept cool: deploy
+log lines are batched (`_DeployLog`, ~25 lines/1s per UPDATE) instead of one write
+per docker output line.
 
 ## Decision: opt-in per-app node pinning
 

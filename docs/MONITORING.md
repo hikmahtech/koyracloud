@@ -57,9 +57,14 @@ registered users — each app owns its own database.
 
 ## Wiring into Prometheus (homelab-gitops)
 
-The control plane joins the external `monitoring` overlay (so Prometheus can
-reach it) and is scraped by a dedicated static job — mirroring how grafana /
-postgres-exporter are scraped:
+The monitoring join is **opt-in**: set `KOYRA_MONITORING=1` in
+`deploy/koyracloud.env` so `deploy.sh` applies the
+`deploy/koyracloud-monitoring.yml` overlay — the control plane then joins the
+external `monitoring` overlay (which must already exist:
+`docker network create --driver overlay --attachable monitoring`) so Prometheus
+can reach it. Without the flag the stack never references that network, so
+fresh installs don't need it. It's scraped by a dedicated static job —
+mirroring how grafana / postgres-exporter are scraped:
 
 ```yaml
 # prometheus.yml.j2

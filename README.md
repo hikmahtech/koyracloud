@@ -165,10 +165,13 @@ apps can opt in to pinning — see [ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 
 **What you need first:**
 
-- A **Docker Swarm** (one or more nodes) with **Traefik** running as the HTTPS edge
+- A **Docker Swarm** (a single node is fine) with **Traefik** running as the HTTPS edge
   (a `websecure` entrypoint + an ACME/Let's Encrypt cert resolver), on an external
   overlay network — `traefik_public` by convention.
-- An **NFS export** the nodes can reach (for persistent app data + the image registry).
+- **Multi-node only:** an **NFS export** the nodes can reach (persistent app data + the
+  image registry + Redis). A single node needs no NFS — local volumes are used. Either
+  way, the control plane's own DB sits on the control node's **local disk**
+  (`KOYRA_DB_DIR`; the installer creates it).
 - A **domain** for your apps (e.g. `apps.example.com`) with a wildcard DNS record, and a
   **GitHub OAuth app** so you can sign in.
 
