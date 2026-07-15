@@ -28,6 +28,10 @@ docker save "$IMAGE" | docker --context "$CTX" load
 
 echo "==> deploying stack"
 export KOYRA_IMAGE="$IMAGE"
+# DB dir default: the legacy NFS path, so installs that predate KOYRA_DB_DIR
+# keep their DB. Set KOYRA_DB_DIR (koyracloud.env) to a local path on the
+# control node — SQLite WAL is unsupported on NFS (#67).
+export KOYRA_DB_DIR="${KOYRA_DB_DIR:-${KOYRA_NFS_BASE:-/mnt/koyracloud}/cp}"
 docker --context "$CTX" stack deploy --resolve-image=never \
   -c deploy/koyracloud-stack.yml koyracloud
 # Same image tag + unchanged spec won't recreate the task, so force a roll to
