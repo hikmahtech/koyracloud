@@ -27,6 +27,15 @@ and appreciated.
 
 ## Handling secrets
 
-App secrets are encrypted at rest (Fernet) and injected at deploy. The Fernet master
-key, session secret, OAuth client secret and clone token are Docker secrets — never
-commit them. `.env`/`deploy/koyracloud.env` are gitignored.
+App secrets are encrypted at rest (Fernet) and injected at deploy. Everything
+sensitive the instance itself needs — the Fernet master key, session secret, webhook
+secret, Redis admin password, OAuth client secret, clone token, Resend key and
+Cloudflare token (eight in all, see `deploy/README.md` §5) — is a Docker secret —
+never commit them. `.env`/`deploy/koyracloud.env` are gitignored.
+
+## The internal registry port
+
+The built-in image registry is published on the Swarm ingress mesh, so port **5000
+answers on every node's public interface, unauthenticated** (that's how each node
+pulls app images as `127.0.0.1:5000`). Firewall port 5000 from anything outside the
+swarm — an exposed registry allows image pull/push/delete by anyone who can reach it.

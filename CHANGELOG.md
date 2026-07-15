@@ -7,6 +7,25 @@ track functional changes by theme rather than tagged semver releases. Newest fir
 
 ### Added
 
+- **Single-node installs work out of the box** — the registry/redis NFS volumes and the
+  homelab `monitoring` network are now opt-in overlays (`deploy/koyracloud-nfs.yml` when
+  `KOYRA_NFS_SERVER` is set, `deploy/koyracloud-monitoring.yml` when `KOYRA_MONITORING=1`)
+  instead of hard requirements baked into the stack; the base stack runs on one machine
+  with local volumes and no NFS. `install.sh` now refuses placeholder config that used to
+  fail silently (empty control node / allowlist / host / OAuth client id), verifies the
+  context is a swarm manager and the secret generators exist, creates the host dirs on
+  the control node, and stores skipped optional secrets as a single space (some Docker
+  versions reject empty secrets). `KOYRA_TRAEFIK_NETWORK` now actually renames the edge
+  network in the core stack. New [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
+  maps every known first-run error to its fix.
+- **Webhook connectivity tracking** (#64) — the control plane records whether a repo's
+  GitHub webhook has ever reached it and the Settings tab warns when auto-deploy is on
+  with no webhook delivering.
+- **Deploys wait for convergence before "live"** (#65) — a deploy is marked live only
+  once every replica is Running (and healthy) on the new image; a task that can't start
+  fails the deploy with the real task error instead of reporting success.
+- **Static-site example manifests** (#56) — `examples/` ships runnable `.paas/app.yaml`
+  starters (FastAPI+React, and a static Vite/Astro/Hugo-style site).
 - **Opt-in per-app node pinning** (#62) — a **Pin to node** toggle in the app's Settings
   tab keeps a stateful app (one with data on the node's local disk rather than an NFS
   `persist:` volume) on the single Swarm node it's already running on, so a reschedule
@@ -15,6 +34,18 @@ track functional changes by theme rather than tagged semver releases. Newest fir
   constraint on the app's next deploy (it doesn't move a running container); web and
   workers co-locate, and a per-app pin takes precedence over the operator-wide
   `KOYRA_APP_NODE`. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+### Fixed
+
+- **Intermittent `database is locked` deploy failures** (#67, #68) — the control-plane
+  SQLite now lives on the control node's **local disk** (`KOYRA_DB_DIR`; WAL mode is
+  unsupported on NFS) with periodic backups on the NFS (`KOYRA_BACKUP_DIR`), and deploy
+  log writes are batched (~25 lines/1s per UPDATE, status changes immediate) instead of
+  one write per docker output line. Migration runbook:
+  [`docs/DISASTER-RECOVERY.md`](docs/DISASTER-RECOVERY.md) § "Moving the DB off NFS".
+- **Friendlier build-failure messages** (#58, #60) — known failure signatures (pnpm/node
+  version mismatch, missing `NEXT_PUBLIC_*`/`VITE_*` build args, python3-less alpine
+  healthchecks) surface a one-line `Hint:` in the deploy log.
 
 ## 2026-06
 

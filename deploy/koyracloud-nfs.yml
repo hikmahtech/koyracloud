@@ -1,0 +1,23 @@
+# NFS overlay — applied by deploy.sh (as a second -c file) when
+# KOYRA_NFS_SERVER is set. Redefines the registry + redis storage as Docker
+# NFS-driver volumes: Docker mounts the export on whichever node runs the
+# service, so nothing is pinned and a reschedule keeps the data. The
+# <KOYRA_NFS_BASE>/registry and <KOYRA_NFS_BASE>/redis dirs must exist on the
+# export (install.sh reminds you). Without this overlay the base stack uses
+# plain local named volumes — right for a single node, data-stranding on
+# multi-node.
+version: "3.8"
+
+volumes:
+  koyra_registry:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=${KOYRA_NFS_SERVER},rw,nfsvers=4"
+      device: ":${KOYRA_NFS_BASE:-/mnt/koyracloud}/registry"
+  koyra_redis:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=${KOYRA_NFS_SERVER},rw,nfsvers=4"
+      device: ":${KOYRA_NFS_BASE:-/mnt/koyracloud}/redis"

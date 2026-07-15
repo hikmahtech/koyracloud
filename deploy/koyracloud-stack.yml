@@ -68,6 +68,11 @@ services:
       KOYRA_REDIS_MAXMEMORY: ${KOYRA_REDIS_MAXMEMORY:-256mb}
       # Cron scheduler (launches due jobs as Swarm run-to-completion jobs).
       KOYRA_CRON_ENABLED: ${KOYRA_CRON_ENABLED:-}
+      # Deploy tuning: app-healthcheck grace period at start, and how long a
+      # deploy waits for swarm convergence before failing. Raise both when a
+      # slow first build/start trips deploys (converge must exceed the grace).
+      KOYRA_HEALTHCHECK_START_PERIOD: ${KOYRA_HEALTHCHECK_START_PERIOD:-600s}
+      KOYRA_DEPLOY_CONVERGE_TIMEOUT: ${KOYRA_DEPLOY_CONVERGE_TIMEOUT:-}
       # SQLite backups. KOYRA_BACKUP_DIR should be a mount separate from the DB
       # volume — with KOYRA_DB_DIR on local disk, point it at the NFS (the whole
       # NFS base is mounted below, so <KOYRA_NFS_BASE>/cp/backups works as-is).
@@ -91,9 +96,9 @@ services:
       - ${KOYRA_NFS_BASE:-/mnt/koyracloud}:${KOYRA_NFS_BASE:-/mnt/koyracloud}
     networks:
       - traefik_public
-      # Joined so the homelab Prometheus (on this external overlay) can scrape
-      # GET /metrics at tasks.koyracloud_control-plane:8000. See docs/MONITORING.md.
-      - monitoring
+      # To let a Prometheus scrape GET /metrics in-cluster, set KOYRA_MONITORING=1
+      # so deploy.sh also applies deploy/koyracloud-monitoring.yml (joins an
+      # existing external `monitoring` overlay). See docs/MONITORING.md.
     secrets:
       - koyra_secret_key
       - koyra_session_secret
@@ -134,9 +139,11 @@ services:
   # Internal Docker registry koyracloud owns. Per-app images are pushed here and
   # pulled by swarm on whichever node runs the app. Published on the ingress
   # mesh, so every node reaches it as 127.0.0.1:5000 (treated as insecure-OK by
-  # default) — it is never exposed outside the swarm. One instance, UNPINNED;
-  # storage is an NFS-driver volume (Docker mounts the NFS on whatever node it
-  # lands on), so a reschedule keeps the images and nothing is pinned.
+  # default). CAUTION: the ingress mesh binds 0.0.0.0:5000 on EVERY node — the
+  # registry is unauthenticated, so firewall port 5000 from anything outside
+  # the swarm (see SECURITY.md). One instance, UNPINNED; storage is a named
+  # volume (NFS-driver via deploy/koyracloud-nfs.yml on multi-node), so a
+  # reschedule keeps the images.
   registry:
     image: registry:2
     environment:
@@ -190,32 +197,24 @@ services:
       restart_policy:
         condition: on-failure
 
-# The Traefik edge network. Convention name; change here if your swarm differs.
+# The Traefik edge network. The KEY stays `traefik_public` (services reference
+# it); if your edge overlay has a different name, set KOYRA_TRAEFIK_NETWORK and
+# the external lookup follows it.
 networks:
   traefik_public:
     external: true
-  # The homelab monitoring stack's overlay (created by that stack); the control
-  # plane joins it so Prometheus can scrape /metrics.
-  monitoring:
-    external: true
+    name: ${KOYRA_TRAEFIK_NETWORK:-traefik_public}
 
-# Registry storage: a Docker NFS-driver volume. Docker mounts the export on the
-# node the registry runs on, so the registry service needs no pre-mounted NFS
-# and no node pin. The koyracloud/registry dir must exist on the NFS export.
+# Registry + Redis storage. Plain local named volumes by default — correct for
+# a single node, and the only thing that works without an NFS server. With
+# KOYRA_NFS_SERVER set (multi-node), deploy.sh also applies
+# deploy/koyracloud-nfs.yml, which redefines both as Docker NFS-driver volumes
+# (Docker mounts the export on whichever node runs the service → nothing
+# pinned). On multi-node WITHOUT NFS a reschedule strands this data on the old
+# node — set KOYRA_NFS_SERVER for multi-node swarms.
 volumes:
   koyra_registry:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: "addr=${KOYRA_NFS_SERVER},rw,nfsvers=4"
-      device: ":${KOYRA_NFS_BASE:-/mnt/koyracloud}/registry"
-  # Redis AOF storage. The koyracloud/redis dir must exist on the NFS export.
   koyra_redis:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: "addr=${KOYRA_NFS_SERVER},rw,nfsvers=4"
-      device: ":${KOYRA_NFS_BASE:-/mnt/koyracloud}/redis"
 
 secrets:
   koyra_secret_key:

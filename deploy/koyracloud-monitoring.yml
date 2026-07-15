@@ -1,0 +1,18 @@
+# Monitoring overlay — OPTIONAL; applied by deploy.sh (as a second -c file)
+# when KOYRA_MONITORING=1. Joins the control plane to an EXISTING external
+# `monitoring` overlay network so a Prometheus on it can scrape GET /metrics
+# in-cluster at tasks.koyracloud_control-plane:8000 (which bypasses Traefik —
+# the public router blocks /metrics). The network must exist before deploy:
+#   docker network create --driver overlay --attachable monitoring
+# See docs/MONITORING.md.
+version: "3.8"
+
+services:
+  control-plane:
+    networks:
+      - traefik_public
+      - monitoring
+
+networks:
+  monitoring:
+    external: true

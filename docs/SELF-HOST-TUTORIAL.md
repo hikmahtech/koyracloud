@@ -40,19 +40,32 @@ docker node ls
 
 > Single node? That's fine — the manager is also a worker. Everything below works.
 
-## 3. Shared storage (NFS)
+## 3. Storage
 
-Persistent app data, the image registry and Redis live on storage every node can
-reach. The simplest is an **NFS export**.
+Two kinds of state, two homes:
 
-- **Multiple nodes:** stand up an NFS server (or use your NAS) exporting e.g.
-  `/srv/koyracloud`, reachable from every node. Note its IP — it becomes
-  `KOYRA_NFS_SERVER`. Create these directories on the export now:
-  ```bash
-  mkdir -p /srv/koyracloud/{registry,redis}
-  ```
-- **Single node / trying it out:** leave `KOYRA_NFS_SERVER` blank — koyracloud
-  falls back to plain bind mounts under `KOYRA_NFS_BASE` (a local path).
+- **The control plane's own database — LOCAL disk on the control node.**
+  koyracloud's state (apps, deploys, secrets) is a SQLite file in WAL mode,
+  which is unsupported on network filesystems — on NFS it fails intermittently
+  with `database is locked`. It lives in `KOYRA_DB_DIR` (default
+  `/var/lib/koyracloud`), a local path on the node the control plane is pinned
+  to; `install.sh` creates it when it can (always on a single node). Point
+  `KOYRA_BACKUP_DIR` at the NFS so the periodic DB snapshots live *off* that
+  node — see [`DISASTER-RECOVERY.md`](DISASTER-RECOVERY.md).
+
+- **App data, the image registry and Redis — storage every node can reach.**
+  - **Multiple nodes:** stand up an NFS server (or use your NAS) exporting e.g.
+    `/srv/koyracloud`, reachable from every node. Note its IP — it becomes
+    `KOYRA_NFS_SERVER` (with it set, `deploy.sh` applies the NFS overlay and
+    Docker mounts the export on whichever node runs each service). Create these
+    directories on the export now:
+    ```bash
+    mkdir -p /srv/koyracloud/{registry,redis}
+    ```
+  - **Single node / trying it out:** leave `KOYRA_NFS_SERVER` blank — the
+    registry and Redis use plain local Docker volumes, and app `persist:` dirs
+    use bind mounts under `KOYRA_NFS_BASE` (a local path; `install.sh` creates
+    it). No NFS needed.
 
 ## 4. DNS
 
@@ -119,10 +132,14 @@ $EDITOR deploy/koyracloud.env
 DOCKER_CONTEXT=<your-swarm-context> ./deploy/install.sh
 ```
 
-`install.sh` creates the `traefik_public` network if missing, generates the random
-Docker secrets (Fernet key, session/webhook secrets, Redis admin password),
-prompts for the GitHub credentials, builds the base buildpack image, and runs the
-deploy. It's idempotent — re-run it any time.
+`install.sh` creates the `traefik_public` network if missing, refuses obvious
+misconfiguration up front (placeholder allowlist/host, missing OAuth client id,
+empty control node — each of which otherwise deploys "fine" and fails silently),
+generates the random Docker secrets (Fernet key, session/webhook secrets, Redis
+admin password), prompts for the GitHub credentials plus the optional Resend and
+Cloudflare tokens, creates the host directories on the control node when it can,
+builds the base buildpack image, and runs the deploy. It's idempotent — re-run
+it any time.
 
 > Prefer to do it by hand, or want every secret command spelled out? Follow
 > [`deploy/README.md`](../deploy/README.md) §5 instead, then run `./deploy/deploy.sh`.
@@ -143,6 +160,10 @@ docker --context <your-swarm-context> service ls --filter name=koyracloud
 
 Open `https://koyra.example.com`, sign in with GitHub (the account must be in
 `KOYRA_ALLOWED_LOGINS`).
+
+> A service stuck at `0/1`, a rejected task, or a failing first deploy? See
+> [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — it catalogs the common first-run
+> failures with their exact error messages and fixes.
 
 ## 10. Deploy your first app
 
@@ -172,6 +193,9 @@ watch the live build → push → run log. It comes up at
 - **Background work:** declare `workers:`, `cron:` and `redis: true` in the manifest
   — always-on workers, scheduled jobs and a per-app Redis bus, from the same repo.
   See the **Workers, cron & Redis** section of the docs.
+- **Metrics:** the control plane serves Prometheus metrics at `/metrics`
+  (in-cluster only). If your swarm runs a Prometheus on a shared `monitoring`
+  overlay, set `KOYRA_MONITORING=1` to join it — see [`MONITORING.md`](MONITORING.md).
 
 ---
 

@@ -29,6 +29,18 @@ cp deploy/koyracloud.env.example deploy/koyracloud.env
 $EDITOR deploy/koyracloud.env   # host, apps domain, public IP, allowlist, node…
 ```
 
+Two values deserve care:
+
+- **`KOYRA_DB_DIR`** — the control plane's SQLite DB must live on **local disk**
+  on the control node (WAL mode is unsupported on NFS → intermittent
+  `database is locked`, #67). Create the directory there once
+  (`sudo mkdir -p /var/lib/koyracloud`) — swarm bind mounts do *not* auto-create
+  host paths. Keep `KOYRA_BACKUP_DIR` pointed at the NFS so DB snapshots live
+  off-node.
+- **`KOYRA_CONTROL_NODE`** — a manager hostname exactly as `docker node ls`
+  prints it. Empty renders a placement constraint that matches no node and the
+  service silently never schedules.
+
 ### 4. The base buildpack image + the internal registry
 Each deploy builds a **per-app image** and pushes it to an **internal registry**
 that ships in the stack (a `registry:2` service). Apps are pulled from there and
@@ -45,21 +57,31 @@ run on any node — nothing is pinned.
   anywhere and pull from the registry. `KOYRA_REGISTRY` defaults to
   `127.0.0.1:5000` (the registry on the ingress mesh); `KOYRA_BUILD_DIR` is a
   **local** path (not NFS) where the control plane clones + builds.
-- Set `KOYRA_NFS_SERVER` to your NFS server IP so the registry's image store and
-  app `persist:` dirs use Docker NFS-driver volumes (mounted per-node, no pinning).
-  Create the registry's storage dir on the export once: `<nfs>/koyracloud/registry`.
-  Leave it empty for single-node / local (plain bind mounts).
-- The shared **Redis** service (the bus for app `redis: true`, workers and cron)
-  also stores its AOF on an NFS-driver volume — create `<nfs>/koyracloud/redis`
-  on the export once too.
+- Set `KOYRA_NFS_SERVER` to your NFS server IP so the registry's image store,
+  the Redis AOF and app `persist:` dirs use Docker NFS-driver volumes (mounted
+  per-node, no pinning) — `deploy.sh` then applies the
+  `deploy/koyracloud-nfs.yml` overlay. Create both storage dirs on the export
+  once: `<nfs>/koyracloud/registry` and `<nfs>/koyracloud/redis`. Leave it
+  empty on a **single node**: registry + redis use plain local volumes and
+  `persist:` dirs use bind mounts. (Multi-node *without* NFS is the one bad
+  combo — a reschedule strands the data on the old node.)
+- The registry is published on the ingress mesh so every node reaches it as
+  `127.0.0.1:5000` — which also means port **5000 answers on every node's
+  public interface, unauthenticated**. Firewall it from anything outside the
+  swarm (see `SECURITY.md`).
 
-### 5. Secrets (Docker secrets, created once)
+### 5. Secrets (all EIGHT Docker secrets, created once)
 ```bash
 python3 -c 'from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())' \
   | tr -d '\n' | docker --context <ctx> secret create koyra_secret_key -
 openssl rand -hex 32 | tr -d '\n' | docker --context <ctx> secret create koyra_session_secret -
+# Shared secret for verifying GitHub push webhooks (push-to-deploy).
+openssl rand -hex 32 | tr -d '\n' | docker --context <ctx> secret create koyra_webhook_secret -
 printf '%s' '<github oauth client secret>' | docker --context <ctx> secret create koyra_github_client_secret -
 printf '%s' '<github pat for cloning>'     | docker --context <ctx> secret create koyra_github_pat -
+# Resend API key for email alerts — optional feature, secret still required
+# (see the blank-secret note below).
+printf '%s' '<resend api key>' | docker --context <ctx> secret create koyra_resend_api_key -
 # Cloudflare for SaaS API token (Zone:SSL and Certificates:Edit + Zone:DNS:Read,
 # scoped to your SaaS zone). Registers user custom domains as custom hostnames.
 printf '%s' '<cloudflare for saas api token>' | docker --context <ctx> secret create koyra_cloudflare_api_token -
@@ -71,10 +93,12 @@ openssl rand -hex 24 | tr -d '\n' | docker --context <ctx> secret create koyra_r
 > Secrets are immutable. To rotate: detach, `secret rm`, recreate, redeploy.
 > Never rotate `koyra_secret_key` (the Fernet master key) without re-encrypting
 > stored app secrets.
-> Every secret is declared `external: true`, so it must exist before deploy. For
-> optional features you aren't using (Cloudflare for SaaS, Resend), create an
-> empty secret: `printf '' | docker --context <ctx> secret create koyra_cloudflare_api_token -`
-> — the control plane treats a blank token as "feature off".
+> Every secret is declared `external: true`, so ALL EIGHT must exist before
+> deploy — a missing one fails the deploy with `secret not found`. For optional
+> features you aren't using (Cloudflare for SaaS, Resend), store a single
+> space: `printf ' ' | docker --context <ctx> secret create koyra_resend_api_key -`
+> — the control plane strips whitespace and treats it as "feature off" (some
+> Docker versions reject zero-byte secrets, so a literal empty string may fail).
 
 ### 6. GitHub OAuth App
 Register an OAuth App with callback `https://<your host>/api/auth/callback`; put
@@ -130,9 +154,17 @@ and the app's SaaS-host router carries no cert resolver.
 DOCKER_CONTEXT=<your swarm context> ./deploy/deploy.sh
 ```
 Builds the image, loads it onto the manager, and deploys/force-rolls the stack.
+The base stack needs only the Traefik network; `deploy.sh` layers on opt-in
+overlays: `koyracloud-nfs.yml` when `KOYRA_NFS_SERVER` is set (NFS-backed
+registry/redis storage) and `koyracloud-monitoring.yml` when
+`KOYRA_MONITORING=1` (joins an existing `monitoring` overlay so Prometheus can
+scrape `/metrics` — see `docs/MONITORING.md`).
 
 ## Verify
 ```bash
 curl -s https://<your host>/api/health        # {"status":"ok"}
 docker --context <ctx> service logs -f koyracloud_control-plane
 ```
+
+Something 0/1 or erroring? [`docs/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md)
+maps the exact error messages to fixes.

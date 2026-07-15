@@ -18,10 +18,12 @@ const NAV = [
   ["manifest", "The manifest"],
   ["fields", "Manifest fields"],
   ["runtime", "Runtimes & build"],
+  ["dockerfile", "Bring your own Dockerfile"],
+  ["deploy", "Push-to-deploy"],
   ["static", "Static sites"],
   ["domains", "Custom domains"],
-  ["analytics", "Analytics & uptime"],
   ["secrets", "Secrets & env"],
+  ["analytics", "Analytics & uptime"],
   ["persistence", "Persistence"],
   ["pinning", "Pinning stateful apps"],
   ["background", "Workers, cron & Redis"],
@@ -82,8 +84,14 @@ export default function Docs() {
               <li>Sign in, click <b>New App</b>, paste the repo URL and branch.</li>
               <li>Open <b>Secrets</b> and set anything your app needs (e.g. <span className="mono">SECRET_KEY</span>).</li>
               <li>Hit <b>Deploy</b> and watch the live log. Your app comes up at
-                <span className="mono text-acid"> &lt;name&gt;.apps.example.com</span>.</li>
+                <span className="mono text-acid"> &lt;name&gt;-&lt;token&gt;.apps.example.com</span>.</li>
             </ol>
+            <p className="text-[var(--color-muted)] mt-3">
+              Prefer to start from something runnable? The{" "}
+              <a href="https://github.com/hikmahtech/koyracloud/tree/main/examples"
+                 target="_blank" rel="noreferrer" className="text-acid no-underline hover:underline">
+                examples</a> on GitHub have complete manifests for a FastAPI+React app and a static site.
+            </p>
           </Section>
 
           <Section id="manifest" title="The manifest">
@@ -122,7 +130,9 @@ secrets:
                   <Field name="predeploy">Commands run on every start before the app — e.g. migrations. Must be idempotent.</Field>
                   <Field name="subdomain">Default host. Falls back to <span className="mono">&lt;name&gt;-&lt;token&gt;.apps.example.com</span> (a random token keeps names from colliding). Manage more in the Domains tab.</Field>
                   <Field name="persist">Directories that survive redeploys (NFS-backed volumes, mounted into the container).</Field>
-                  <Field name="healthcheck">HTTP path probed for liveness, e.g. <span className="mono">/health</span>.</Field>
+                  <Field name="cpu">CPU limit for the web service, e.g. <span className="mono">"0.5"</span>. Falls back to the instance default (capped so one app can't starve a node).</Field>
+                  <Field name="memory">Memory limit for the web service, e.g. <span className="mono">256M</span>. Falls back to the instance default.</Field>
+                  <Field name="healthcheck">HTTP path probed for liveness, e.g. <span className="mono">/health</span>. The probe execs <span className="mono">python3</span> <i>inside your container</i> — with your own Dockerfile, an image without <span className="mono">python3</span> builds and starts fine, then swarm kills it when the probe fails (Alpine: <span className="mono">RUN apk add --no-cache python3</span>, or omit the field).</Field>
                   <Field name="env">Non-secret environment defaults baked into the deploy.</Field>
                   <Field name="secrets">Names of secrets to inject at deploy. Set their values in the UI — never commit them.</Field>
                   <Field name="redis"><span className="mono">true</span> provisions a scoped Redis and injects <span className="mono">REDIS_URL</span>. Namespace keys + channels as <span className="mono">&lt;name&gt;:</span> (see below).</Field>
@@ -160,6 +170,13 @@ port: 8000
 healthcheck: /health
 secrets:
   - DATABASE_URL`}</Code>
+            <p className="text-[var(--color-muted)]">
+              One gotcha: <span className="mono">healthcheck:</span> execs
+              <span className="mono"> python3</span> inside <i>your</i> container. A slim/alpine
+              image without it builds and starts fine — then swarm kills it when the probe fails.
+              Install it (<span className="mono">RUN apk add --no-cache python3</span>) or drop the
+              <span className="mono"> healthcheck</span> field.
+            </p>
           </Section>
 
           <Section id="deploy" title="Push-to-deploy">
@@ -195,7 +212,7 @@ static_dir: dist        # auto-detected if omitted`}</Code>
 
           <Section id="domains" title="Custom domains">
             <p className="text-[var(--color-muted)]">
-              Every app gets <span className="mono text-acid">&lt;name&gt;.apps.example.com</span> automatically.
+              Every app gets <span className="mono text-acid">&lt;name&gt;-&lt;token&gt;.apps.example.com</span> automatically.
               To attach your own domain, open the app's <b>Domains</b> tab and add it. If Cloudflare for SaaS
               is configured, koyracloud registers it as a custom hostname and shows the two CNAME records to
               add at <i>your</i> registrar — the Cloudflare edge then mints and auto-renews TLS (Vercel-style,
@@ -309,6 +326,9 @@ https://<host>  ·  TLS at the edge, or minted by Traefik`}</Code>
               stack from your manifest and drives the cluster. Each deploy builds your app into an
               image on local disk and runs the container from it — the app never reads code over
               NFS, so any node can pull, run and reschedule it. NFS is used only for persisted data.
+              A deploy is marked <b>live</b> only after the service actually converges — every
+              replica running (and healthy) on the new image; otherwise it fails with the real
+              task error instead of pretending.
             </p>
           </Section>
 

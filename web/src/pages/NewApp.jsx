@@ -25,8 +25,9 @@ export default function NewApp() {
       <div className="eyebrow mt-4">New app</div>
       <h1 className="font-display text-3xl mt-2 mb-1">Connect a repository</h1>
       <p className="text-sm text-[var(--color-muted)] mb-7">
-        The repo must contain a <span className="mono text-acid">.paas/app.yaml</span> manifest.
-        It gets <span className="mono">&lt;name&gt;.apps.example.com</span> by default.
+        The repo needs a <span className="mono text-acid">.paas/app.yaml</span> manifest — or
+        just an <span className="mono">index.html</span> to be served as a static site.
+        It gets <span className="mono">&lt;name&gt;-&lt;token&gt;.apps.example.com</span> by default.
       </p>
 
       <form onSubmit={(e) => { e.preventDefault(); mut.mutate(); }} className="card p-6 space-y-5">
