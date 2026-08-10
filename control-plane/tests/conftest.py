@@ -39,8 +39,8 @@ class FakeDocker:
         self.tagged = []
         self.events = []   # ordered record of calls
         self.jobs = []     # run_job calls (cron)
-        self.removed_services = []
-        self.job_exit = 0  # exit code job_wait returns
+        self.job_exit = 0  # exit code run_job returns
+        self.job_log = ""  # output run_job returns
         # service_status override: service name -> status dict, or a LIST of
         # dicts consumed one per poll (the last repeats) to simulate a service
         # converging/failing over time. Unset -> healthy 1/1.
@@ -90,15 +90,10 @@ class FakeDocker:
                 out[f"{stack}_{svc}"] = {"running": 1, "desired": 1}
         return out
 
-    def run_job(self, name, image, command, env=None, networks=None):
+    def run_job(self, name, image, command, env=None, networks=None, timeout=600):
         self.jobs.append({"name": name, "image": image, "command": command,
                           "env": env or {}, "networks": networks or []})
-
-    def job_wait(self, name, timeout=600):
-        return self.job_exit
-
-    def remove_service(self, name):
-        self.removed_services.append(name)
+        return (self.job_exit, self.job_log)
 
 
 class FakeRedisAdmin:

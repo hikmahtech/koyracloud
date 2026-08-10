@@ -19,7 +19,7 @@ from koyracloud.config import Settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.docker_ctl import DockerControl
-from koyracloud.models import App, AppRedis, CronJob, CronRun, Deploy
+from koyracloud.models import App, AppRedis, BuiltImage, CronJob, CronRun, Deploy
 
 
 def _utcnow() -> dt.datetime:
@@ -72,7 +72,16 @@ def launch(db: Database, docker: DockerControl, settings: Settings,
                 .order_by(Deploy.id.desc()).first())
         if live is None or not live.commit:
             return None  # never successfully deployed → no image to run
-        image = f"{settings.registry}/koyra-app-{app.name}:{live.commit[:12]}"
+        # Deploys tag images `<commit12>-<build-args-hash>` (deployer.py); the
+        # bare commit tag stopped being pushed when that scheme landed, so
+        # resolve the live deploy's tag from BuiltImage. The bare-tag fallback
+        # covers apps whose last deploy predates the args-hash scheme.
+        built = (s.query(BuiltImage)
+                 .filter(BuiltImage.app_id == app.id,
+                         BuiltImage.tag.like(f"%:{live.commit[:12]}-%"))
+                 .order_by(BuiltImage.id.desc()).first())
+        image = (built.tag if built else
+                 f"{settings.registry}/koyra-app-{app.name}:{live.commit[:12]}")
         command = job.command
         env = {e.key: e.value for e in app.env_vars}
         env.update({sec.key: crypto.decrypt(sec.value_encrypted) for sec in app.secrets})
@@ -92,19 +101,14 @@ def launch(db: Database, docker: DockerControl, settings: Settings,
     name = f"koyra-cron-{cron_job_id}-{run_id}"
     status, exit_code, log = "success", 0, ""
     try:
-        docker.run_job(name, image, command, env=env,
-                       networks=[settings.traefik_network])
-        exit_code = docker.job_wait(name, timeout=settings.cron_job_timeout)
-        log = docker.service_logs(name, tail=400)
+        exit_code, log = docker.run_job(name, image, command, env=env,
+                                        networks=[settings.traefik_network],
+                                        timeout=settings.cron_job_timeout)
+        log = log[-10000:]
         status = "success" if exit_code == 0 else "failed"
     except Exception as exc:  # noqa: BLE001 — record the failure, never raise out
         status, exit_code = "failed", None
         log = f"[koyra] cron run error: {exc}"
-    finally:
-        try:
-            docker.remove_service(name)
-        except Exception:  # noqa: BLE001 — reaping is best-effort
-            pass
 
     with db.session() as s:
         run = s.get(CronRun, run_id)

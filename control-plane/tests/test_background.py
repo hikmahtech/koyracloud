@@ -6,7 +6,7 @@ import pytest
 
 from koyracloud import redisbus, scheduler
 from koyracloud.deployer import Deployer, _DeployLog
-from koyracloud.models import App, AppPin, AppRedis, CronJob, CronRun, Deploy
+from koyracloud.models import App, AppPin, AppRedis, BuiltImage, CronJob, CronRun, Deploy
 
 from conftest import FakeDocker, make_fake_cloner
 
@@ -131,11 +131,24 @@ def test_launch_runs_job_and_records_success(env):
     job = env["docker"].jobs[0]
     assert job["command"] == "run"
     assert job["image"] == "reg:5000/koyra-app-bg:deadbeefcafe"
-    assert env["docker"].removed_services == [job["name"]]
     with env["db"].session() as s:
         run = s.get(CronRun, run_id)
         assert run.status == "success" and run.exit_code == 0
         assert s.get(CronJob, jid).last_run_at is not None
+
+
+def test_launch_uses_built_image_tag_for_live_commit(env):
+    # Deploys tag images `<commit12>-<args-hash>`; launch must run THAT tag,
+    # not the bare commit tag (which is no longer pushed).
+    app_id = _make_app(env["db"], live=True)
+    with env["db"].session() as s:
+        s.add(BuiltImage(app_id=app_id,
+                         tag="reg:5000/koyra-app-bg:deadbeefcafe-aabbccddeeff"))
+        s.commit()
+    jid = _add_cron(env["db"], app_id)
+    scheduler.launch(env["db"], env["docker"], env["settings"], env["crypto"], jid)
+    assert (env["docker"].jobs[0]["image"]
+            == "reg:5000/koyra-app-bg:deadbeefcafe-aabbccddeeff")
 
 
 def test_launch_records_failure_on_nonzero_exit(env):
