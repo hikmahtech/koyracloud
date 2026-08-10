@@ -44,17 +44,10 @@ class DockerControl(Protocol):
         """One-shot {service_name: {running, desired}} for all services."""
 
     def run_job(self, name: str, image: str, command: str,
-                env: dict | None = None, networks: list[str] | None = None) -> None:
-        """Launch a Swarm run-to-completion job (``service create --mode
-        replicated-job``) from an image; returns once created (poll with
-        ``job_wait``). Raises on a create failure."""
-
-    def job_wait(self, name: str, timeout: int = 600) -> int:
-        """Block until the job's task reaches a terminal state; return 0 on
-        Complete, non-zero otherwise. Raises ``TimeoutError`` past ``timeout``."""
-
-    def remove_service(self, name: str) -> None:
-        """``service rm`` — reap a finished job (or any service)."""
+                env: dict | None = None, networks: list[str] | None = None,
+                timeout: int = 600) -> tuple[int, str]:
+        """Run a one-shot job container to completion; return (exit_code,
+        combined output). Raises ``TimeoutError`` past ``timeout``."""
 
 
 class CLIDockerControl:
@@ -195,12 +188,16 @@ class CLIDockerControl:
         return out
 
     def run_job(self, name: str, image: str, command: str,
-                env: dict | None = None, networks: list[str] | None = None) -> None:
-        args = ["service", "create", "--mode", "replicated-job",
-                "--restart-condition", "none", "--with-registry-auth",
-                "--detach", "--name", name]
-        if self._resolve_image_never:
-            args.append("--resolve-image=never")
+                env: dict | None = None, networks: list[str] | None = None,
+                timeout: int = 600) -> tuple[int, str]:
+        # Jobs used to be `service create --mode replicated-job` + poll +
+        # `service logs` + `service rm`, but swarm re-runs completed job tasks
+        # under multi-manager reconciliation (observed live: one tick executed
+        # 8×) and the timeout path lost the container's output entirely. A
+        # plain `docker run --rm` on the control node is one synchronous call
+        # with the exit code and logs for free; the shared overlay network is
+        # attachable, so the job still reaches redis and friends.
+        args = ["run", "--rm", "--name", name]
         for k, v in (env or {}).items():
             args += ["--env", f"{k}={v}"]
         for net in (networks or []):
@@ -208,30 +205,16 @@ class CLIDockerControl:
         # command runs as `sh -c "<command>"` inside the image; passed as argv
         # (no host shell), so the only shell is the container's.
         args += [image, "sh", "-c", command]
-        r = subprocess.run([*self._base, *args], capture_output=True, text=True, timeout=120)
-        if r.returncode != 0:
-            raise RuntimeError((r.stderr or r.stdout or "").strip()
-                               or f"`docker service create {name}` failed")
-
-    def job_wait(self, name: str, timeout: int = 600) -> int:
-        # A replicated-job task ends in "Complete" (exit 0) or a failure state.
-        # `service ps` lists the task; the newest is first.
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            r = subprocess.run(
-                [*self._base, "service", "ps", name, "--no-trunc",
-                 "--format", "{{.CurrentState}}"],
-                capture_output=True, text=True, timeout=15)
-            states = [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
-            if states:
-                cur = states[0]
-                if cur.startswith("Complete"):
-                    return 0
-                if cur.startswith(("Failed", "Rejected", "Shutdown", "Orphaned")):
-                    return 1
-            time.sleep(2.0)
-        raise TimeoutError(f"cron job {name} did not finish within {timeout}s")
-
-    def remove_service(self, name: str) -> None:
-        subprocess.run([*self._base, "service", "rm", name],
-                       capture_output=True, text=True, timeout=30)
+        try:
+            r = subprocess.run([*self._base, *args], capture_output=True,
+                               text=True, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            subprocess.run([*self._base, "rm", "-f", name],
+                           capture_output=True, text=True, timeout=30)
+            out = exc.stdout or ""
+            if isinstance(out, bytes):
+                out = out.decode(errors="replace")
+            raise TimeoutError(
+                f"cron job {name} did not finish within {timeout}s; "
+                f"output so far:\n{out[-4000:]}") from exc
+        return r.returncode, (r.stdout or "") + (r.stderr or "")
