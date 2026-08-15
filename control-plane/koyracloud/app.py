@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as dt
 import html
 import json
+import logging
 import os
 import secrets as _secrets
 import socket
@@ -241,6 +242,22 @@ def create_app(
                 s.commit()
         return Response(status_code=204, headers=cors)
 
+    def _stamp_apps(full_name: str, *, rejected: bool) -> None:
+        """Mark every app on this repo as having had a delivery accepted or
+        rejected. A good delivery clears the rejected mark, so fixing the
+        secret turns the UI green on GitHub's next call."""
+        now = dt.datetime.now(dt.timezone.utc)
+        with db.session() as s:
+            for a in s.query(App).all():
+                if webhooks.repo_slug(a.repo_url) != full_name:
+                    continue
+                if rejected:
+                    a.webhook_rejected_at = now
+                else:
+                    a.webhook_seen_at = now
+                    a.webhook_rejected_at = None
+            s.commit()
+
     @app.post("/api/webhooks/github")
     async def github_webhook(request: Request):
         # Unauthenticated but HMAC-verified: GitHub push → auto-deploy matching apps.
@@ -252,6 +269,16 @@ def create_app(
         body = await request.body()
         if not webhooks.verify_signature(settings.webhook_secret, body,
                                          request.headers.get("X-Hub-Signature-256")):
+            # A hook wired up with the WRONG secret is otherwise indistinguishable
+            # from no hook at all: both leave webhook_seen_at null, so the UI told
+            # people "GitHub was never told" while GitHub was in fact calling on
+            # every push and we were rejecting it. Record the rejection (repo read
+            # from the UNVERIFIED body — a timestamp is all we take from it, and
+            # the worst an unsigned caller can do is show an app this warning).
+            full_name = webhooks.payload_repo(body)
+            if full_name:
+                logging.warning("webhook rejected (bad signature) for %s", full_name)
+                _stamp_apps(full_name, rejected=True)
             raise HTTPException(status_code=401, detail="invalid signature")
         event = request.headers.get("X-GitHub-Event", "")
         try:
@@ -264,11 +291,7 @@ def create_app(
         # "auto-deploy on but GitHub was never told" (which silently never fires).
         full_name = ((payload.get("repository") or {}).get("full_name") or "").lower()
         if full_name:
-            with db.session() as s:
-                for a in s.query(App).all():
-                    if webhooks.repo_slug(a.repo_url) == full_name:
-                        a.webhook_seen_at = dt.datetime.now(dt.timezone.utc)
-                s.commit()
+            _stamp_apps(full_name, rejected=False)
         if event == "ping":
             return {"ok": True}
         # push → deploy now (no-CI repos); workflow_run(success) → deploy after

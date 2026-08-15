@@ -62,6 +62,9 @@ class Database:
         if "webhook_seen_at" not in cols:
             with self.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE apps ADD COLUMN webhook_seen_at DATETIME"))
+        if "webhook_rejected_at" not in cols:
+            with self.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE apps ADD COLUMN webhook_rejected_at DATETIME"))
         if "owner_login" not in cols:
             with self.engine.begin() as conn:
                 conn.execute(text(

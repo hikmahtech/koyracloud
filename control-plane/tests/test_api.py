@@ -457,6 +457,37 @@ def test_webhook_bad_signature_rejected(client):
     assert r.status_code == 401
 
 
+def test_webhook_bad_signature_is_recorded_then_cleared(client, env):
+    """A hook set up with the WRONG secret must not look like no hook at all:
+    it never deploys and never sets webhook_seen_at, so without this the app
+    silently stops auto-deploying and the UI blames a missing webhook."""
+    import hashlib
+    import hmac
+    aid = client.post("/api/apps", json={"name": "wrongsecret",
+                      "repo_url": "https://github.com/acme/WrongSecret", "branch": "main",
+                      "auto_deploy": True}).json()["id"]
+    body = json.dumps({"ref": "refs/heads/main",
+                       "repository": {"full_name": "acme/wrongsecret"}}).encode()
+
+    r = client.post("/api/webhooks/github", content=body,
+                    headers={"X-Hub-Signature-256": "sha256=" + "0" * 64,
+                             "X-GitHub-Event": "push", "content-type": "application/json"})
+    assert r.status_code == 401
+    app = client.get(f"/api/apps/{aid}").json()
+    assert app["webhook_rejected_at"] is not None and app["webhook_seen_at"] is None
+    assert client.get(f"/api/apps/{aid}/deploys").json() == []
+
+    # fixing the secret clears the mark on the next delivery
+    sig = "sha256=" + hmac.new(env["settings"].webhook_secret.encode(), body,
+                               hashlib.sha256).hexdigest()
+    r = client.post("/api/webhooks/github", content=body,
+                    headers={"X-Hub-Signature-256": sig, "X-GitHub-Event": "push",
+                             "content-type": "application/json"})
+    assert r.status_code == 200 and r.json()["triggered"] == ["wrongsecret"]
+    app = client.get(f"/api/apps/{aid}").json()
+    assert app["webhook_rejected_at"] is None and app["webhook_seen_at"] is not None
+
+
 def test_webhook_ping_marks_webhook_seen(client, env):
     """GitHub pings the hook the moment it's saved on the repo — that alone
     must flip webhook_seen_at (proof the hook is wired up), without deploying."""

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 
 
 def verify_signature(secret: str, body: bytes, signature_header: str | None) -> bool:
@@ -25,6 +26,21 @@ def repo_slug(url: str) -> str:
     if s.endswith(".git"):
         s = s[:-4]
     return s.strip("/")
+
+
+def payload_repo(body: bytes) -> str:
+    """``repository.full_name`` (lowercased) out of a raw, possibly UNVERIFIED
+    body, or "" if it isn't there. Only for reporting a rejected delivery —
+    never trust it for anything that acts on the repo."""
+    try:
+        payload = json.loads(body)
+    except (ValueError, TypeError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    repo = payload.get("repository")
+    name = repo.get("full_name") if isinstance(repo, dict) else None
+    return name.lower() if isinstance(name, str) else ""
 
 
 def branch_from_ref(ref: str) -> str | None:
