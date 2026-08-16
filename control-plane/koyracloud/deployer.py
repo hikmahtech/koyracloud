@@ -433,6 +433,9 @@ class Deployer:
             # Build a per-app image: either the repo's OWN Dockerfile, or one we
             # generate from the manifest. Build-time-inlined vars (NEXT_PUBLIC_*/
             # VITE_*) go in as build-args; secrets stay runtime-only (not baked).
+            # Resolved before the render because a generated Dockerfile has to
+            # DECLARE each arg for the build steps to see it.
+            build_args = {**manifest.env, **env_overrides}
             if manifest.uses_dockerfile:
                 dockerfile = manifest.dockerfile or "Dockerfile"
                 dockerfile_path = build_ctx / dockerfile
@@ -454,7 +457,7 @@ class Deployer:
             else:
                 dockerfile = ".koyra.Dockerfile"
                 (build_ctx / dockerfile).write_text(
-                    render_dockerfile(manifest, self.settings.runtime_image))
+                    render_dockerfile(manifest, self.settings.runtime_image, build_args))
                 emit("[koyra] building image (generated Dockerfile)", "building")
 
             base = f"{self.settings.registry}/koyra-app-{app_name}"
@@ -464,7 +467,6 @@ class Deployer:
             # image; folding the build-args into the tag forces a rebuild when
             # any of them change, while an unchanged redeploy (e.g. re-rendering
             # routing after a domain change) still maps to the same tag.
-            build_args = {**manifest.env, **env_overrides}
             args_hash = hashlib.sha256(
                 json.dumps(build_args, sort_keys=True, separators=(",", ":")).encode()
             ).hexdigest()[:12]
