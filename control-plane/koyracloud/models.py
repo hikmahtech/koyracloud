@@ -33,6 +33,12 @@ class App(Base):
     # can't fire — the UI warns on that combination.
     webhook_seen_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None)
+    # Last time a delivery for this repo was REJECTED (bad HMAC signature).
+    # Set means the hook is wired up but its secret doesn't match ours, which
+    # otherwise looks exactly like no hook at all — auto-deploy never fires and
+    # nothing says why. Cleared by the next delivery that verifies.
+    webhook_rejected_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None)
     owner_login: Mapped[str] = mapped_column(String(128), default="", index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

@@ -698,8 +698,19 @@ function SettingsTab({ id, app }) {
         </label>
         {auto && !app.webhook_seen_at && (
           <p className="text-xs -mt-1" style={{ color: "#febc2e" }}>
-            ⚠ No GitHub webhook has ever reached this instance for this repo, so
-            auto-deploy won’t fire. Set it up in <b>Push-to-deploy</b> below.
+            {app.webhook_rejected_at ? (
+              <>
+                ⚠ GitHub <b>is</b> calling this instance for this repo, but we
+                reject the calls — the webhook’s secret doesn’t match
+                <span className="mono"> KOYRA_WEBHOOK_SECRET</span>. Auto-deploy
+                won’t fire until it’s corrected in the repo’s webhook settings.
+              </>
+            ) : (
+              <>
+                ⚠ No GitHub webhook has ever reached this instance for this repo,
+                so auto-deploy won’t fire. Set it up in <b>Push-to-deploy</b> below.
+              </>
+            )}
           </p>
         )}
         <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
@@ -723,6 +734,13 @@ function SettingsTab({ id, app }) {
         {app.webhook_seen_at ? (
           <p className="mono text-xs" style={{ color: "var(--color-acid)" }}>
             ✓ webhook connected · last event {new Date(app.webhook_seen_at).toLocaleString()}
+          </p>
+        ) : app.webhook_rejected_at ? (
+          <p className="mono text-xs" style={{ color: "#febc2e" }}>
+            ⚠ delivery rejected (bad signature) · last {new Date(app.webhook_rejected_at).toLocaleString()}
+            <br />
+            the hook exists but its secret is wrong — re-save it with{" "}
+            <span className="mono">KOYRA_WEBHOOK_SECRET</span>.
           </p>
         ) : (
           <p className="mono text-xs" style={{ color: "#febc2e" }}>
