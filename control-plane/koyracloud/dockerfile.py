@@ -8,6 +8,7 @@ manifest's ``persist`` data dirs, mounted at runtime.
 from __future__ import annotations
 
 import json
+import re
 import shlex
 
 from koyracloud.manifest import Manifest
@@ -23,8 +24,22 @@ _STATIC_DETECT = (
 _GO_BINARY = "/app/server"
 _GO_DEFAULT_BUILD = f"CGO_ENABLED=0 go build -o {_GO_BINARY} ."
 
+# A build-arg only reaches the build steps if the Dockerfile DECLARES it, and
+# `docker build --build-arg` on an undeclared name is a warning, not an error —
+# so without this the deployer's args were passed and silently dropped, and a
+# VITE_*/NEXT_PUBLIC_* set in the UI never made it into the bundle.
+_ARG_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-def _render_go_dockerfile(manifest: Manifest) -> str:
+
+def _arg_lines(build_args: dict | None) -> list[str]:
+    """`ARG NAME` for each build-arg, so RUN steps in this stage see it as an
+    env var. Names are user-supplied (manifest env + the app's env vars), so
+    anything that isn't a plain identifier is dropped — a newline in a key
+    would otherwise inject instructions into the Dockerfile we generate."""
+    return [f"ARG {k}" for k in sorted(build_args or {}) if _ARG_NAME.match(k)]
+
+
+def _render_go_dockerfile(manifest: Manifest, build_args: dict | None = None) -> str:
     """go is the odd one out: a two-stage build (golang:1.23 compiles a static
     binary, then a distroless runner just copies it in) instead of a layer on
     top of the shared python+node runtime image `base_image` — so it ignores
@@ -35,6 +50,7 @@ def _render_go_dockerfile(manifest: Manifest) -> str:
     lines = [
         "FROM golang:1.23 AS build",
         "WORKDIR /app",
+        *_arg_lines(build_args),
         "COPY . .",
     ]
     lines += [f"RUN {step}" for step in build_steps]
@@ -51,13 +67,15 @@ def _render_go_dockerfile(manifest: Manifest) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_dockerfile(manifest: Manifest, base_image: str) -> str:
+def render_dockerfile(manifest: Manifest, base_image: str,
+                      build_args: dict | None = None) -> str:
     if manifest.runtime == "go":
-        return _render_go_dockerfile(manifest)
+        return _render_go_dockerfile(manifest, build_args)
     lines = [
         f"FROM {base_image}",
         "ENTRYPOINT []",        # drop the base image's koyra build entrypoint
         "WORKDIR /app",
+        *_arg_lines(build_args),
         "COPY . /app",
     ]
     lines += [f"RUN {step}" for step in manifest.build]

@@ -111,3 +111,43 @@ def test_go_healthcheck_rejected():
 def test_go_predeploy_rejected():
     with pytest.raises(Exception, match="predeploy"):
         parse_manifest(GO + "predeploy:\n  - echo hi\n")
+
+
+def test_build_args_are_declared_before_the_build_steps():
+    """Undeclared --build-arg is a warning, not an error, so docker silently
+    dropped every one of them: a VITE_*/NEXT_PUBLIC_* set on the app forced a
+    rebuild (it's in the image tag) but never reached the bundle."""
+    df = render_dockerfile(parse_manifest(NODE), "koyra-runtime:latest",
+                           {"VITE_API_BASE_URL": "https://api.example.com",
+                            "NEXT_PUBLIC_X": "1"})
+    lines = df.splitlines()
+    assert "ARG VITE_API_BASE_URL" in lines and "ARG NEXT_PUBLIC_X" in lines
+    # in scope before the build runs, and ahead of COPY so the args sit on a
+    # layer of their own rather than re-copying the repo when one changes
+    assert max(lines.index("ARG VITE_API_BASE_URL"),
+               lines.index("ARG NEXT_PUBLIC_X")) < lines.index("COPY . /app")
+    assert lines.index("COPY . /app") < lines.index("RUN npm run build")
+
+
+def test_build_args_with_unsafe_names_are_dropped():
+    """Env keys are user input; a newline in one would otherwise inject
+    instructions into the Dockerfile we generate."""
+    df = render_dockerfile(parse_manifest(NODE), "koyra-runtime:latest",
+                           {"GOOD": "1", "BAD NAME": "x", "2LEADING": "x",
+                            "INJECT\nRUN touch /pwned": "x", "": "x"})
+    assert "/pwned" not in df
+    assert [lbl for lbl in df.splitlines() if lbl.startswith("ARG ")] == ["ARG GOOD"]
+
+
+def test_go_build_args_declared_in_the_build_stage():
+    """ARG is per-stage: it has to land in the golang stage, not the runner."""
+    df = render_dockerfile(parse_manifest(GO), "koyra-runtime:latest", {"LDFLAGS": "-s"})
+    lines = df.splitlines()
+    assert lines.index("FROM golang:1.23 AS build") < lines.index("ARG LDFLAGS")
+    assert lines.index("ARG LDFLAGS") < lines.index("FROM gcr.io/distroless/static-debian12")
+
+
+def test_no_build_args_renders_unchanged():
+    """Apps with no env keep byte-for-byte the Dockerfile they had before."""
+    assert render_dockerfile(parse_manifest(PY), "koyra-runtime:latest", {}) == \
+        render_dockerfile(parse_manifest(PY), "koyra-runtime:latest")
