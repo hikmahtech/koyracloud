@@ -3,6 +3,37 @@
 Notable changes to koyracloud. The project is in **alpha** (`0.1.0`); these notes
 track functional changes by theme rather than tagged semver releases. Newest first.
 
+## 2026-08
+
+### Fixed
+
+- **A webhook we reject no longer looks like a webhook that was never set up** (#82) — a
+  repo hook configured with the wrong secret fails the HMAC check, and until now that left
+  no trace anywhere: `webhook_seen_at` is only stamped *after* verification, so a
+  wrong-secret hook and a missing hook were indistinguishable. Auto-deploy silently never
+  fired while the UI insisted GitHub had never called, sending operators off to re-add a
+  hook that already existed. Rejected deliveries now record `webhook_rejected_at` (repo
+  read from the unverified body — a timestamp is all that's taken from it) and log a
+  warning naming the repo; the next delivery that verifies clears it, so fixing the secret
+  turns the UI green on GitHub's next call. Found in prod after a repo went two months
+  without a single auto-deploy.
+- **Build-args now reach buildpack builds** (#83) — generated Dockerfiles declared no
+  `ARG`, and `docker build --build-arg` on an undeclared name is a *warning, not an error*,
+  so every arg the deployer passed was silently discarded. Because the image tag is
+  `<commit>-<sha256(build-args)>`, setting a `VITE_*`/`NEXT_PUBLIC_*` did force a full
+  rebuild while the value still never reached the build — a rebuild that changed nothing,
+  with no error. Each arg is now declared after `WORKDIR` and before `COPY` (in the
+  `golang` stage for `runtime: go`, since `ARG` is per-stage). Env keys are unvalidated
+  user input, so only `[A-Za-z_][A-Za-z0-9_]*` is emitted — a newline in a key would
+  otherwise inject instructions into the generated Dockerfile. Apps with no env render
+  byte-for-byte as before and their image tag is unchanged, so nothing rebuilds from this.
+- **Cron jobs ran zero times** (#78, #79) — `scheduler.launch` built the job image as
+  `koyra-app-<name>:<commit12>`, but since build-args-hash tagging the deployer only
+  pushes `<commit12>-<argsHash>` (and `latest`). Every job was Rejected in ~2s with an
+  empty log. The live tag is now resolved from `BuiltImage`, and jobs run synchronously
+  via `docker run --rm` instead of a Swarm replicated job that multi-manager reconciliation
+  re-executed across nodes and whose logs were lost.
+
 ## 2026-07
 
 ### Added
