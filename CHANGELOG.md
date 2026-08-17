@@ -72,7 +72,9 @@ track functional changes by theme rather than tagged semver releases. Newest fir
   ```
   uvx --from "git+https://github.com/hikmahtech/koyracloud#subdirectory=control-plane" koyra validate
   ```
-- **[`docs/PERMISSIONS.md`](docs/PERMISSIONS.md)** (#75) — the minimum Docker socket,
+- **[`docs/PERMISSIONS.md`](docs/PERMISSIONS.md)** (#52, #59, #75) — first written by
+  [@erikurt9](https://github.com/erikurt9) in #59, which reached the same conclusions
+  against the same source files; #75 is the version that shipped. The minimum Docker socket,
   GitHub PAT/OAuth, webhook secret, Cloudflare token, Resend key, Redis password and
   filesystem access the control plane needs, each tied to the code path that uses it. Spells
   out that the Docker socket is root-equivalent on that node and that a socket proxy doesn't
