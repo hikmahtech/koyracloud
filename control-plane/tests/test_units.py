@@ -1125,3 +1125,73 @@ def test_manifest_dockerfile_runtime_needs_no_start():
     assert m2.uses_dockerfile is True and m2.dockerfile == "docker/Dockerfile"
     m3 = parse_manifest("name: z\nstart: run\nport: 8000\n")
     assert m3.uses_dockerfile is False
+
+
+# --- startup crypto guards (#95) -------------------------------------------
+
+def _startup_settings(tmp_path, **over):
+    """Settings for a control plane with no dev-login bypass."""
+    from koyracloud.config import Settings
+    base = dict(db_url=f"sqlite:///{tmp_path / 'k.db'}",
+                nfs_base=str(tmp_path / "nfs"), build_dir=str(tmp_path / "b"),
+                dev_login="", session_secret="a-real-secret",
+                secret_key=generate_key())
+    base.update(over)
+    return Settings(**base)
+
+
+def _make(settings):
+    from conftest import FakeDocker, make_fake_cloner
+
+    from koyracloud.app import create_app
+    from koyracloud.db import Database
+    from koyracloud.deployer import Deployer
+    db = Database(settings.db_url)
+    db.create_all()
+    docker = FakeDocker()
+    deployer = Deployer(settings=settings, docker=docker,
+                        crypto=CryptoBox(settings.secret_key),
+                        cloner=make_fake_cloner())
+    return create_app(settings=settings, db=db, docker=docker,
+                      deployer=deployer, run_async=False), db
+
+
+def test_refuses_to_start_on_the_published_dev_session_secret(tmp_path):
+    from koyracloud.config import DEV_SESSION_SECRET
+    with pytest.raises(RuntimeError, match="KOYRA_SESSION_SECRET"):
+        _make(_startup_settings(tmp_path, session_secret=DEV_SESSION_SECRET))
+
+
+def test_refuses_to_start_on_an_empty_session_secret(tmp_path):
+    # An empty key is the nastier case: itsdangerous accepts it silently.
+    with pytest.raises(RuntimeError, match="KOYRA_SESSION_SECRET"):
+        _make(_startup_settings(tmp_path, session_secret=""))
+
+
+def test_dev_login_may_still_use_the_dev_session_secret(tmp_path):
+    from koyracloud.config import DEV_SESSION_SECRET
+    app, _ = _make(_startup_settings(tmp_path, dev_login="tester",
+                                     session_secret=DEV_SESSION_SECRET))
+    assert app is not None
+
+
+def test_ephemeral_key_is_allowed_on_an_empty_db_but_warns(tmp_path, caplog):
+    with caplog.at_level("WARNING"):
+        app, _ = _make(_startup_settings(tmp_path, secret_key=""))
+    assert app is not None
+    assert "KOYRA_SECRET_KEY is empty" in caplog.text
+
+
+def test_ephemeral_key_refuses_to_start_once_secrets_exist(tmp_path):
+    from koyracloud.models import App, Secret
+    settings = _startup_settings(tmp_path)
+    _, db = _make(settings)                       # real key: boots fine
+    with db.session() as s:
+        s.add(App(name="a", repo_url="https://github.com/o/r", branch="main",
+                  owner_login="operator"))
+        s.commit()
+        s.add(Secret(app_id=1, key="K", value_encrypted="x"))
+        s.commit()
+    # same DB, key now missing -> starting would silently orphan those secrets
+    with pytest.raises(RuntimeError, match="already holds"):
+        _make(_startup_settings(tmp_path, secret_key=""))

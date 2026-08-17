@@ -6,9 +6,16 @@ when a feature needing them is used.
 """
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+# The unset default for KOYRA_SESSION_SECRET. It is published in this repo, so
+# it only ever makes sense next to KOYRA_DEV_LOGIN; create_app refuses to serve
+# with it otherwise.
+DEV_SESSION_SECRET = "dev-session-secret-change-me"
 
 
 def _csv(name: str, default: str = "") -> list[str]:
@@ -29,7 +36,11 @@ def _secret(name: str, default: str = "") -> str:
     if path:
         try:
             return Path(path).read_text().strip()
-        except OSError:
+        except OSError as exc:
+            # Falling back to the default silently turns a lost secret mapping
+            # into a feature that is quietly switched off. Say so.
+            logging.warning("%s_FILE is set to %s but could not be read (%s); "
+                            "falling back to the default", name, path, exc)
             return default
     return os.environ.get(name, default)
 
@@ -42,7 +53,7 @@ class Settings:
     # Crypto / sessions
     secret_key: str = field(default_factory=lambda: _secret("KOYRA_SECRET_KEY", ""))
     session_secret: str = field(default_factory=lambda: _secret(
-        "KOYRA_SESSION_SECRET", "dev-session-secret-change-me"))
+        "KOYRA_SESSION_SECRET", DEV_SESSION_SECRET))
     # Swarm / Traefik / NFS
     # Registry-qualified by default: the buildpack image is a build-time-only
     # FROM, so a local-only tag is deleted by any image prune and every
