@@ -176,6 +176,9 @@ def scoped(tmp_path):
         registry="reg:5000",
         nfs_server="10.0.0.9",
         dev_login="",                 # no bypass: requests authenticate via cookie
+        # Real signing key: with no dev-login bypass, create_app refuses to
+        # serve on the published default (forgeable cookies).
+        session_secret="test-session-secret",
         allowed_logins=["operator"],  # the single all-seeing admin
         github_pat="",
         webhook_secret="testhooksecret",

@@ -181,6 +181,27 @@ def test_create_app_rejects_bad_branch(client):
     assert r.status_code == 422
 
 
+def test_trigger_deploy_rejects_flag_injection_ref(client):
+    aid = client.post("/api/apps", json={"name": "reftest", "repo_url":
+                      "https://github.com/o/r"}).json()["id"]
+    r = client.post(f"/api/apps/{aid}/deploys",
+                    json={"ref": "--upload-pack=touch /tmp/pwn"})
+    assert r.status_code == 422
+
+
+def test_trigger_deploy_still_accepts_a_real_ref_and_no_ref(client):
+    aid = client.post("/api/apps", json={"name": "reftest2", "repo_url":
+                      "https://github.com/o/r"}).json()["id"]
+    assert client.post(f"/api/apps/{aid}/deploys",
+                       json={"ref": "release/v1.2"}).status_code == 201
+    # omitted, null and "" all mean "use the app's branch"
+    assert client.post(f"/api/apps/{aid}/deploys", json={}).status_code == 201
+    assert client.post(f"/api/apps/{aid}/deploys",
+                       json={"ref": None}).status_code == 201
+    assert client.post(f"/api/apps/{aid}/deploys",
+                       json={"ref": ""}).status_code == 201
+
+
 def test_create_seeds_primary_domain(client):
     aid = client.post("/api/apps", json={"name": "demo-app",
                       "repo_url": "https://github.com/o/r"}).json()["id"]
@@ -580,7 +601,9 @@ def test_auth_required_without_dev_login(env):
 
     from fastapi.testclient import TestClient
     from koyracloud.app import create_app
-    s = replace(env["settings"], dev_login="")
+    # a real signing key too: create_app refuses to serve on the published
+    # default once the dev-login bypass is off
+    s = replace(env["settings"], dev_login="", session_secret="a-real-secret")
     app = create_app(settings=s, db=env["db"], docker=env["docker"],
                      deployer=env["deployer"], run_async=False)
     c = TestClient(app)

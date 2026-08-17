@@ -107,4 +107,9 @@ jobs:
                --image arshadansari27/koyracloud:${SHORT_SHA} \
                --force koyracloud_control-plane"
 
-          rm -f ~/.ssh/swarm_key
+      # Its own step with if: always(). Inline, a failing ssh ends the run at
+      # that line and leaves the private key on the runner — and this runner is
+      # self-hosted, so the file outlives the job.
+      - name: Remove the deploy key
+        if: always()
+        run: rm -f ~/.ssh/swarm_key

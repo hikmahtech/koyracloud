@@ -19,7 +19,7 @@ from koyracloud import (analytics, auth, metrics as kmetrics, monitor, notifier,
                         scheduler, webhooks)
 from koyracloud.ratelimit import RateLimiter
 from koyracloud.cloudflare import Cloudflare
-from koyracloud.config import Settings, get_settings
+from koyracloud.config import DEV_SESSION_SECRET as _DEV_SESSION_SECRET, Settings, get_settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.deployer import Deployer
@@ -50,6 +50,44 @@ def _ensure_sqlite_dir(db_url: str) -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _check_startup_crypto(settings: Settings, db: Database, crypto: CryptoBox) -> None:
+    """Refuse to serve with a signing key anyone can guess, and never pretend
+    an ephemeral encryption key is fine once real secrets exist.
+
+    ``itsdangerous`` accepts an empty signing key without complaint, and the
+    unset default is a constant published in this repo. Either way every
+    session cookie is forgeable by anyone who knows an allowed GitHub login —
+    and until now the control plane booted, logged nothing and looked healthy.
+    Local dev skips OAuth entirely via KOYRA_DEV_LOGIN, so the default stays
+    usable there.
+    """
+    if not settings.dev_login and (
+            not settings.session_secret
+            or settings.session_secret == _DEV_SESSION_SECRET):
+        raise RuntimeError(
+            "KOYRA_SESSION_SECRET is empty or still the built-in dev value, so "
+            "session cookies are forgeable by anyone who knows a login in "
+            "KOYRA_ALLOWED_LOGINS. Set it (see deploy/koyracloud.env.example), "
+            "or set KOYRA_DEV_LOGIN to run without OAuth locally.")
+
+    if not crypto.ephemeral:
+        return
+    # An empty KOYRA_SECRET_KEY means a throwaway Fernet key: stored secrets
+    # can no longer be decrypted and new ones die at the next restart. Fine on
+    # a scratch dev DB, never fine once the DB actually holds secrets.
+    with db.session() as s:
+        has_secrets = s.query(Secret.id).first() is not None
+    if has_secrets:
+        raise RuntimeError(
+            "KOYRA_SECRET_KEY is empty but this database already holds "
+            "encrypted secrets. Starting would generate a throwaway key and "
+            "make every one of them undecryptable. Set KOYRA_SECRET_KEY to the "
+            "key they were encrypted with.")
+    logging.warning(
+        "KOYRA_SECRET_KEY is empty: using an ephemeral encryption key. "
+        "Secrets stored now will not survive a restart.")
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -64,6 +102,7 @@ def create_app(
     db = db or Database(settings.db_url)
     db.create_all()
     crypto = CryptoBox(settings.secret_key)
+    _check_startup_crypto(settings, db, crypto)
     docker = docker or CLIDockerControl(resolve_image_never=settings.resolve_image_never)
     deployer = deployer or Deployer(settings=settings, docker=docker, crypto=crypto)
     cloudflare = cloudflare or Cloudflare(settings)

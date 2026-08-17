@@ -86,7 +86,15 @@ class SecretIn(BaseModel):
 
 
 class DeployTrigger(BaseModel):
+    # Same guard as AppCreate.branch: this ref reaches `git clone`/`git fetch`
+    # as an argument, so a leading "-" would be read as an option, not a ref.
     ref: str | None = None
+
+    @field_validator("ref")
+    @classmethod
+    def _v_ref(cls, v: str | None) -> str | None:
+        # None and "" both mean "use the app's branch" — only a real value is checked.
+        return _check_ref(v) if v else v
 
 
 class RollbackRequest(BaseModel):
