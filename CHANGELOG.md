@@ -38,6 +38,46 @@ track functional changes by theme rather than tagged semver releases. Newest fir
 
 ### Added
 
+- **`runtime: go` buildpack** (#77) — go renders a two-stage Dockerfile of its own rather
+  than layering on the shared python+node runtime image: `golang:1.23` runs the manifest's
+  `build:` steps (defaulting to `CGO_ENABLED=0 go build -o /app/server .`), and a
+  `gcr.io/distroless/static-debian12` runner copies in just the binary. `CMD` is exec-form
+  because distroless has no shell, so a custom `start:` can be quoted but can't use `&&`,
+  pipes or redirects, and a custom `build:` must still land the binary at `/app/server`.
+  `healthcheck:` and `predeploy:` are rejected at manifest-parse time for this runtime —
+  both need the `python3`/shell that distroless doesn't have, and without the guard the
+  container would build and start cleanly and then be killed by swarm ~30-60s later.
+- **Real 404s and response headers for static sites** (#76) — `koyra_static.py` used to
+  SPA-fallback every unmatched path to `index.html` with HTTP 200, so crawlers probing
+  invented URLs got soft-404s that cost crawl budget and read as duplicate content. An
+  unmatched path now serves `404.html` with status 404 when the site ships one, and a new
+  static-only `spa:` flag forces the choice (`true` = always SPA-fallback, `false` = always
+  real 404s, unset = auto). `X-Content-Type-Options: nosniff` and `X-Frame-Options:
+  SAMEORIGIN` are sent on every response including 404s, and an optional `headers:` map in
+  the manifest is applied to every response and may override those defaults.
+- **`notify.on_failure` webhook** (#61, #73) — a failed build correctly leaves the old
+  service running, but nothing told anyone. A manifest `notify: { on_failure: <url> }`
+  now gets a POST of `{app, deploy_id, status, error, log_tail}` (last ~50 log lines,
+  read after the failure lines flush so the hints are included). Strictly best-effort with
+  a 10s timeout and every exception swallowed, so a broken webhook can't delay or crash the
+  failure path; a failure that happens before the manifest parses simply skips it. Only
+  `http://`/`https://` URLs are accepted, rejected at parse time.
+- **`koyra validate` — lint `.paas/app.yaml` before you push** (#74) — a CLI that reuses
+  `manifest.parse_manifest` verbatim, so it enforces exactly what the control plane does
+  with no second copy of the rules. Prints a one-screen summary and exits 0, or the parse
+  error with its field path (`cron.0.schedule: invalid cron schedule: 'bad'`) and exits 1.
+  `--strict` also warns on unknown top-level keys, which the parser otherwise ignores.
+  Runs with no install:
+
+  ```
+  uvx --from "git+https://github.com/hikmahtech/koyracloud#subdirectory=control-plane" koyra validate
+  ```
+- **[`docs/PERMISSIONS.md`](docs/PERMISSIONS.md)** (#75) — the minimum Docker socket,
+  GitHub PAT/OAuth, webhook secret, Cloudflare token, Resend key, Redis password and
+  filesystem access the control plane needs, each tied to the code path that uses it. Spells
+  out that the Docker socket is root-equivalent on that node and that a socket proxy doesn't
+  lower the ceiling, and that the Cloudflare token needs only `Zone → SSL and Certificates
+  → Edit` — no DNS permission, since koyracloud never calls the DNS records API.
 - **Single-node installs work out of the box** — the registry/redis NFS volumes and the
   homelab `monitoring` network are now opt-in overlays (`deploy/koyracloud-nfs.yml` when
   `KOYRA_NFS_SERVER` is set, `deploy/koyracloud-monitoring.yml` when `KOYRA_MONITORING=1`)
@@ -68,6 +108,12 @@ track functional changes by theme rather than tagged semver releases. Newest fir
 
 ### Fixed
 
+- **A `docker system prune` could break every buildpack build** (#66, #72) — the runtime
+  image is a build-time-only `FROM`, so nothing running referenced it and a prune on the
+  manager deleted it; every generated-Dockerfile build then failed with `pull access
+  denied`. `install.sh` now pushes it to the instance registry and `KOYRA_RUNTIME_IMAGE`
+  defaults to `127.0.0.1:5000/koyracloud-runtime:latest`, so `docker build` re-pulls the
+  `FROM` on demand after any prune.
 - **Intermittent `database is locked` deploy failures** (#67, #68) — the control-plane
   SQLite now lives on the control node's **local disk** (`KOYRA_DB_DIR`; WAL mode is
   unsupported on NFS) with periodic backups on the NFS (`KOYRA_BACKUP_DIR`), and deploy
