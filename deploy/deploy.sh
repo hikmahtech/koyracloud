@@ -46,6 +46,19 @@ STACK_FILES=(-c deploy/koyracloud-stack.yml)
 if [ -n "${KOYRA_NFS_SERVER:-}" ]; then
   STACK_FILES+=(-c deploy/koyracloud-nfs.yml)
 fi
+# Must come AFTER the NFS overlay: it takes Redis back off NFS onto a host path
+# and pins it, and the later -c file wins. See the file for why an AOF on NFS
+# wedges the queue into MISCONF.
+if [ -n "${KOYRA_REDIS_DIR:-}" ]; then
+  # Absolute or nothing: Docker reads a non-absolute bind source as a NAMED
+  # VOLUME, so a typo here would deploy cleanly and quietly keep the AOF in a
+  # volume rather than on the disk you meant.
+  case "$KOYRA_REDIS_DIR" in
+    /*) ;;
+    *) echo "error: KOYRA_REDIS_DIR must be an absolute path (got '$KOYRA_REDIS_DIR')" >&2; exit 1 ;;
+  esac
+  STACK_FILES+=(-c deploy/koyracloud-redis-local.yml)
+fi
 if [ "${KOYRA_MONITORING:-}" = "1" ]; then
   STACK_FILES+=(-c deploy/koyracloud-monitoring.yml)
 fi

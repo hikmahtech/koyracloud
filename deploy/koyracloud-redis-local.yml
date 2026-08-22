@@ -1,0 +1,42 @@
+# Local-disk Redis overlay — applied by deploy.sh (after the NFS overlay, so it
+# wins) when KOYRA_REDIS_DIR is set. Moves the Redis AOF off NFS onto a host
+# path and pins the service to KOYRA_CONTROL_NODE, for the same reason
+# KOYRA_DB_DIR exists for the SQLite DB (#67): an append-only file on NFS is a
+# liability, not durability.
+#
+# Redis holds its AOF file descriptor open for the process lifetime. If the NFS
+# export is interrupted — a reboot, a failover, a power blip on the storage box
+# — that descriptor goes stale and never recovers. Redis then logs
+# "Error writing to the AOF file: Stale file handle" every 30s and, because
+# appendonly is on, starts refusing every write with MISCONF. The queue is dead
+# until someone restarts the container by hand; a remount does not fix it,
+# because the stale handle lives in the running process, not in the mount.
+#
+# Observed 2026-08-21 on the reference homelab: ~2.6 days of MISCONF, the whole
+# job queue down (no scheduled work, no paid pack could enqueue), while the
+# volume itself looked perfectly healthy.
+#
+# The trade this makes: a local bind is NOT rescheduleable. If the pinned node
+# is down, Redis does not run elsewhere — it waits. That is the right trade for
+# a work queue whose durable state lives in the app's own database, and it is
+# strictly better than an unpinned service whose storage can wedge it into a
+# permanent MISCONF. Pin to a node you actually keep up.
+#
+# The directory must exist on KOYRA_CONTROL_NODE before deploying:
+#   sudo mkdir -p /var/lib/koyracloud/redis
+# Existing queue contents do NOT migrate — in-flight jobs are lost on the
+# switch, so cut over when the queue is drained.
+version: "3.8"
+
+services:
+  redis:
+    # Replaces the named-volume mount from the base stack (and the NFS-driver
+    # one from koyracloud-nfs.yml): a service's `volumes` list is replaced
+    # wholesale by a later overlay, not merged, so no NFS mount survives here.
+    volumes:
+      - ${KOYRA_REDIS_DIR}:/data
+    deploy:
+      placement:
+        constraints:
+          # The bind is a path on ONE host, so the service must not float.
+          - node.hostname == ${KOYRA_CONTROL_NODE}

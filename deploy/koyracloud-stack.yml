@@ -164,7 +164,12 @@ services:
   # resolves across stacks); each gets a scoped ACL user. `noeviction` means a
   # full instance back-pressures with write errors rather than silently dropping
   # another app's queued messages. AOF on an NFS-driver volume survives a
-  # reschedule (unpinned, like the registry). The admin password (the `default`
+  # reschedule (unpinned, like the registry) — but it also breaks permanently if
+  # the export is ever interrupted, because Redis holds the AOF descriptor open
+  # and a stale one never recovers (MISCONF on every write, queue dead until a
+  # manual restart). On a swarm whose NFS server reboots, prefer the local-disk
+  # overlay: set KOYRA_REDIS_DIR (see deploy/koyracloud-redis-local.yml).
+  # The admin password (the `default`
   # user) is read from a Docker secret at start; `$$` keeps stack-deploy from
   # interpolating the runtime `$(cat ...)`.
   redis:

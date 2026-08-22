@@ -163,9 +163,12 @@ DOCKER_CONTEXT=<your swarm context> ./deploy/deploy.sh
 Builds the image, loads it onto the manager, and deploys/force-rolls the stack.
 The base stack needs only the Traefik network; `deploy.sh` layers on opt-in
 overlays: `koyracloud-nfs.yml` when `KOYRA_NFS_SERVER` is set (NFS-backed
-registry/redis storage) and `koyracloud-monitoring.yml` when
-`KOYRA_MONITORING=1` (joins an existing `monitoring` overlay so Prometheus can
-scrape `/metrics` — see `docs/MONITORING.md`).
+registry/redis storage), `koyracloud-redis-local.yml` when `KOYRA_REDIS_DIR` is
+set (takes Redis back off NFS onto a host path and pins it — recommended
+whenever the NFS server can reboot, see the file), and
+`koyracloud-monitoring.yml` when `KOYRA_MONITORING=1` (joins an existing
+`monitoring` overlay so Prometheus can scrape `/metrics` — see
+`docs/MONITORING.md`).
 
 ## Verify
 ```bash
