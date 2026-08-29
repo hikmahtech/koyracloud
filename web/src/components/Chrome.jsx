@@ -90,6 +90,17 @@ export function Footer() {
           {" "}· {new Date().getFullYear()}
         </span>
       </div>
+      {/* House ad. rel is "noopener" without "noreferrer" — unlike the third-party
+          links above, this one points at our own site, and noreferrer would strip
+          the Referer so every click would show up there as Direct. */}
+      <div className="max-w-6xl mx-auto px-6 pb-10 -mt-4">
+        <span className="mono text-xs text-[var(--color-muted)]">
+          Also from Hikmah:{" "}
+          <a href="https://www.strangertosold.com/" target="_blank" rel="noopener"
+             className="hover:text-[var(--color-fg)] no-underline text-inherit">From Stranger to Sold</a>
+          {" "}— a free 5-minute test that finds why your work isn&apos;t selling.
+        </span>
+      </div>
     </footer>
   );
 }
