@@ -58,6 +58,13 @@ authenticating `git clone` / `fetch` / `pull` over HTTPS against private repos.
 - **Public-repo-only instance:** leave `koyra_github_pat` blank. `_auth_args`
   returns no header when the token is empty, so cloning falls back to
   anonymous HTTPS, which works fine for public repos.
+- **Someone else's private repo:** the platform PAT only sees repos its owner
+  can see. An app owner can instead add an app secret named
+  `KOYRA_GIT_TOKEN` (their own fine-grained PAT, `Contents: Read-only`, scoped
+  to that repo). The deployer pops it out of the secret set before rendering
+  the stack, so it is used for the clone only and never reaches the
+  container's environment. A clone that fails with `Repository not found`
+  gets a hint in the deploy log pointing at both options.
 
 ## 3. GitHub OAuth App — login identity only
 

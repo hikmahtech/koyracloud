@@ -33,9 +33,21 @@ def _missing_public_build_arg(text: str) -> str | None:
 # Ordered so detect_log_hints() returns hints in a stable order. Adding a
 # heuristic is a one-line append here, not a change to detect_log_hints
 # itself or its callers.
+def _repo_not_found(text: str) -> str | None:
+    if "Repository not found" in text:
+        return ("git could not see the repo — it is private (or the URL is "
+                 "wrong) and the platform's GitHub token has no access. Either "
+                 "give the platform's GitHub account read access to the repo, or "
+                 "add a secret named KOYRA_GIT_TOKEN holding a GitHub token "
+                 "(fine-grained, Contents: read-only, scoped to this repo) and "
+                 "redeploy. It is used only to clone, never injected into the app.")
+    return None
+
+
 _DETECTORS: tuple[Callable[[str], str | None], ...] = (
     _pnpm_version_mismatch,
     _missing_public_build_arg,
+    _repo_not_found,
 )
 
 
