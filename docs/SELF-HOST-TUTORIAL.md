@@ -128,6 +128,11 @@ Then **Generate a new client secret**. Keep the **Client ID** and the app's
 `koyracloud.env` (`GITHUB_CLIENT_ID`, `GITHUB_APP_SLUG`) and the **Client
 Secret** for the Docker secret.
 
+Shortcut: `python3 deploy/register-github-app.py --host https://koyra.example.com
+[--org <github org>]` serves a one-button page that registers the App from a
+manifest with exactly these settings, prints the client id + slug, and writes the
+client secret to a mode-600 file for `docker secret create` (never to the terminal).
+
 Leave *Expire user authorization tokens* on if you like — koyracloud refreshes
 them. A user who signed in before you switched to a GitHub App has no token yet;
 the New app page tells them to sign out and back in.

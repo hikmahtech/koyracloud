@@ -20,6 +20,9 @@ is. It complements the [README](../README.md) (what it is) and
 
 ```
 1. clone        repo @ commit → LOCAL build dir (KOYRA_BUILD_DIR, off NFS)
+                (credentials, most specific first: the app's KOYRA_GIT_TOKEN secret,
+                 else the owner's GitHub App token, else the platform PAT — one retry
+                 on the PAT when the owner's token cannot see the repo)
 2. manifest     read .paas/app.yaml (or synthesize one for a static repo)
 3. dockerfile   use the repo's own Dockerfile, or generate one from the manifest
 4. build        docker build  → koyra-app-<name>:<commit>-<argshash>  (app env as build args)
@@ -230,11 +233,44 @@ The webhook (`POST /api/webhooks/github`, HMAC-verified) maps an event to a depl
 The repo's webhook is configured to send whichever event suits it; the control plane
 handles both and dedups by commit SHA. Per-app `auto_deploy` gates the whole thing.
 
+## Decision: private repos through a GitHub App user token, not a shared PAT
+
+**Problem:** every clone used one platform PAT, so a user's private repo failed with
+`Repository not found` unless they invited the PAT's owner or pasted a PAT of their own
+into an app secret (`KOYRA_GIT_TOKEN`). Neither is how Vercel-style "connect a repo"
+feels, and a shared PAT is one credential that sees everything.
+
+**Now:** sign-in goes through a **GitHub App** (`GITHUB_APP_SLUG` set; the OAuth client
+id/secret are the App's). A GitHub App's user token carries the App's permissions
+(*Contents: read-only*, *Metadata*) on exactly the repos **that user** installed the App
+on — the user picks the repos on GitHub, koyracloud never widens them, and uninstalling
+cuts access on the next request. The token (plus refresh token and expiry) is stored
+Fernet-encrypted on the `users` row at login (`github.store_token`), refreshed on use
+(`github.user_token`), used by `GET /api/github/repos` for the New-app picker
+(`/user/installations` → `/user/installations/{id}/repositories`) and by the deployer
+for that user's apps. A plain OAuth App cannot do this: its only private-repo scope is
+`repo`, which is read/write on everything.
+
+**Kept:** the platform PAT as the fallback (public repos, repos the PAT can see) and
+`KOYRA_GIT_TOKEN` as a per-app override. With `GITHUB_APP_SLUG` blank nothing changes:
+identity-only login, token discarded. Sessions that pre-date the switch hold no token
+until the user signs in again; the New-app page says so.
+
+## Decision: app members are a flat list, not roles
+
+An app had one owner; teammates on the repo could not see it. `app_members` is a flat
+(app, lowercase login) list the owner or an admin edits from the Settings tab. Members
+see and operate the app; delete and membership changes stay with the owner. No roles,
+no per-member permissions — add them when someone actually needs a read-only member.
+
 ## Configuration & secrets
 
 Everything instance-specific is environment-driven (see
 [`deploy/koyracloud.env.example`](../deploy/koyracloud.env.example)); nothing is hardcoded.
-Sensitive values (Fernet key, OAuth secret, GitHub PAT, Cloudflare token, webhook secret)
-are read from mounted **Docker secrets** via `config._secret("NAME")` (`NAME_FILE` then
-`NAME`), so they stay out of the process environment and image. App secrets are encrypted
-at rest with Fernet and decrypted only to inject at run time.
+Sensitive values (Fernet key, GitHub App/OAuth client secret, GitHub PAT, Cloudflare
+token, webhook secret) are read from mounted **Docker secrets** via
+`config._secret("NAME")` (`NAME_FILE` then `NAME`), so they stay out of the process
+environment and image. App secrets and users' GitHub App tokens are encrypted at rest
+with the same Fernet key and decrypted only to inject at run time / at clone time.
+Rotating an attached Docker secret without a login outage is a three-step swap — see
+`deploy/README.md` §5.

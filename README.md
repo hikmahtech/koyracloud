@@ -164,9 +164,11 @@ apps can opt in to pinning — see [ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 - **Metrics & monitoring** — the control plane exposes Prometheus `/metrics` (per-app
   end-to-end reachability) plus an alert group + Grafana dashboard
   ([`docs/MONITORING.md`](docs/MONITORING.md)).
-- **GitHub OAuth** behind a login allowlist — single-operator by design. Logins in
-  `KOYRA_ALLOWED_LOGINS` are admins and see every app; people invited from the Team page
-  are scoped members who only see the apps they own.
+- **Sign in with GitHub, deploy your own private repos** — sign-in goes through a
+  GitHub App; users install it on the repos they choose and pick them from a list, and
+  koyracloud clones with their read-only token (Vercel-style). Behind a login allowlist:
+  logins in `KOYRA_ALLOWED_LOGINS` are admins and see every app; people invited from the
+  Team page see the apps they own or were added to as **members**.
 
 ## Set up your own koyracloud
 
@@ -180,7 +182,8 @@ apps can opt in to pinning — see [ARCHITECTURE.md](docs/ARCHITECTURE.md)).
   way, the control plane's own DB sits on the control node's **local disk**
   (`KOYRA_DB_DIR`; the installer creates it).
 - A **domain** for your apps (e.g. `apps.example.com`) with a wildcard DNS record, and a
-  **GitHub OAuth app** so you can sign in.
+  **GitHub App** so you can sign in (a plain OAuth App also works, but only a GitHub App
+  lets users deploy their private repos).
 
 **Set it up:**
 
@@ -196,8 +199,8 @@ $EDITOR deploy/koyracloud.env
 DOCKER_CONTEXT=<your-swarm-context> ./deploy/install.sh
 ```
 
-Then open `https://<your KOYRA_HOST>`, sign in with GitHub, click **New App**, paste a
-repo URL, and **Deploy**. Your app comes up at `<name>-<token>.<your apps domain>`.
+Then open `https://<your KOYRA_HOST>`, sign in with GitHub, click **New App**, pick a
+repo (or paste a URL), and **Deploy**. Your app comes up at `<name>-<token>.<your apps domain>`.
 
 > **New to Docker Swarm + Traefik?** The full walkthrough — from bare machines to your
 > first deployed app, including the swarm, Traefik edge, NFS and DNS — is in
@@ -208,7 +211,8 @@ For the design and the reasoning behind the build/registry/no-pinning choices, s
 **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**. Moving an existing Next.js app off
 Vercel? The field-tested playbook (strategies, Dockerfiles, env/secrets, the apex
 problem and its four solutions, email preservation) is in
-**[`docs/MIGRATING-FROM-VERCEL.md`](docs/MIGRATING-FROM-VERCEL.md)**.
+**[`docs/MIGRATING-FROM-VERCEL.md`](docs/MIGRATING-FROM-VERCEL.md)**. What changed on the
+hosted instance, when, and how to undo it: **[`docs/OPERATIONS-LOG.md`](docs/OPERATIONS-LOG.md)**.
 
 ## Local development
 

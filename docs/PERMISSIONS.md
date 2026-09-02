@@ -59,12 +59,16 @@ authenticating `git clone` / `fetch` / `pull` over HTTPS against private repos.
   returns no header when the token is empty, so cloning falls back to
   anonymous HTTPS, which works fine for public repos.
 - **Someone else's private repo:** the platform PAT only sees repos its owner
-  can see. An app owner can instead add an app secret named
-  `KOYRA_GIT_TOKEN` (their own fine-grained PAT, `Contents: Read-only`, scoped
-  to that repo). The deployer pops it out of the secret set before rendering
-  the stack, so it is used for the clone only and never reaches the
-  container's environment. A clone that fails with `Repository not found`
-  gets a hint in the deploy log pointing at both options.
+  can see. With a GitHub App configured (§3) the app owner installs the App on
+  the repo and their own read-only token is used instead. Failing that, an app
+  secret named `KOYRA_GIT_TOKEN` (their own fine-grained PAT, `Contents:
+  Read-only`, scoped to that repo) is popped out of the secret set before the
+  stack is rendered, so it is used for the clone only and never reaches the
+  container's environment. Clone credentials are tried most-specific first:
+  `KOYRA_GIT_TOKEN` (wins outright) → the owner's GitHub App token → the
+  platform PAT, with one retry on the PAT when the owner's token cannot see
+  the repo. A clone that fails with `Repository not found` gets a hint in the
+  deploy log pointing at all three options.
 
 ## 3. GitHub App — login identity, plus the user's own read-only repo access
 
@@ -172,8 +176,13 @@ members** are a separate, admin-managed set stored in the `allowed_users` DB
 table (added/removed via `/api/allowed-users`, admin-only); they can sign in
 and use the dashboard but can't touch access control. Every authenticated
 route checks `is_admin(login) or is_member(login)`; app-scoped routes add a
-second check (`obj.owner_login == login or is_admin(login)`) so a non-admin
-member only ever sees their own apps.
+second check, `can_see(app, login)`: the app's owner, an admin, or a login in
+the app's **members** list (`app_members` table, managed from the Settings tab
+via `/api/apps/{id}/members`). Members operate the app (deploy, env, secrets,
+domains, logs); deleting it or changing its members is owner/admin only
+(`get_app_or_404(..., manage=True)` → 403). Anyone else gets 404, never 403,
+so app existence isn't leaked. Membership grants nothing platform-wide: a
+member still has to be on the allowlist to sign in at all.
 
 ---
 
