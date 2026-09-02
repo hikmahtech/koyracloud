@@ -76,6 +76,16 @@ class Database:
                         "(SELECT owner_login FROM app_notify WHERE app_notify.app_id = apps.id), '')"
                         " WHERE owner_login = '' OR owner_login IS NULL"))
 
+        # users gained the GitHub App token columns after release.
+        if "users" in insp.get_table_names():
+            u_cols = {c["name"] for c in insp.get_columns("users")}
+            for col, typ in (("github_token_encrypted", "TEXT DEFAULT ''"),
+                             ("github_refresh_encrypted", "TEXT DEFAULT ''"),
+                             ("github_token_expires_at", "DATETIME")):
+                if col not in u_cols:
+                    with self.engine.begin() as conn:
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {typ}"))
+
         # domain_certs gained ownership_verification columns after its release.
         if "domain_certs" in insp.get_table_names():
             dc_cols = {c["name"] for c in insp.get_columns("domain_certs")}

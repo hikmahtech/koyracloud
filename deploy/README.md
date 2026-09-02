@@ -107,9 +107,15 @@ openssl rand -hex 24 | tr -d '\n' | docker --context <ctx> secret create koyra_r
 > — the control plane strips whitespace and treats it as "feature off" (some
 > Docker versions reject zero-byte secrets, so a literal empty string may fail).
 
-### 6. GitHub OAuth App
-Register an OAuth App with callback `https://<your host>/api/auth/callback`; put
-the Client ID in `koyracloud.env` and the Client Secret in the Docker secret above.
+### 6. GitHub App (sign-in + private repos)
+Register a **GitHub App** with callback `https://<your host>/api/auth/callback`,
+setup URL `https://<your host>/new` (redirect on update), webhook off, and the
+repository permission *Contents: Read-only*. Put the Client ID and the app slug
+(`GITHUB_CLIENT_ID`, `GITHUB_APP_SLUG`) in `koyracloud.env` and the Client Secret
+in the Docker secret above. Users then install the app on the repos they want to
+deploy and pick them on the New app page; koyracloud clones with their read-only
+token before falling back to the platform PAT. A plain OAuth App (no
+`GITHUB_APP_SLUG`) gives sign-in only — see `docs/SELF-HOST-TUTORIAL.md` §7.
 
 ### 7. Custom domains via Cloudflare for SaaS (optional)
 koyracloud serves users' *own* domains (DNS left at their registrar) by

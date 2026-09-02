@@ -133,6 +133,13 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     github_login: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # GitHub App user token captured at login when GITHUB_APP_SLUG is set
+    # (Fernet, never plaintext). Lists and clones the repos the user installed
+    # the App on. expires_at None = non-expiring token (App setting).
+    github_token_encrypted: Mapped[str] = mapped_column(Text, default="")
+    github_refresh_encrypted: Mapped[str] = mapped_column(Text, default="")
+    github_token_expires_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True))
 
 
 class UptimeState(Base):

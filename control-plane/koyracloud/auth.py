@@ -41,37 +41,56 @@ def read_session(token: str, secret: str, max_age: int = SESSION_MAX_AGE) -> str
         return None
 
 
-def authorize_url(client_id: str, redirect_uri: str, state: str) -> str:
+def authorize_url(client_id: str, redirect_uri: str, state: str,
+                  scope: str = "read:user") -> str:
     from urllib.parse import urlencode
-    q = urlencode({"client_id": client_id, "redirect_uri": redirect_uri,
-                   "scope": "read:user", "state": state})
-    return f"{GITHUB_AUTHORIZE}?{q}"
+    q = {"client_id": client_id, "redirect_uri": redirect_uri, "state": state}
+    if scope:  # OAuth Apps need a scope; a GitHub App's permissions live on the app
+        q["scope"] = scope
+    return f"{GITHUB_AUTHORIZE}?{urlencode(q)}"
+
+
+def _token_post(data: dict, client: httpx.Client) -> dict:
+    tok = client.post(GITHUB_TOKEN, headers={"Accept": "application/json"},
+                      data=data).json()
+    if not tok.get("access_token"):
+        raise ValueError(f"github token exchange failed: {tok}")
+    return tok
 
 
 def exchange_code(code: str, client_id: str, client_secret: str,
-                  client: httpx.Client | None = None) -> str:
-    """Exchange an OAuth code for the user's GitHub login. ``client`` is
-    injectable for tests."""
+                  client: httpx.Client | None = None) -> tuple[str, dict]:
+    """Exchange an OAuth code for (github login, token response). For a GitHub
+    App with expiring user tokens the response also carries refresh_token and
+    expires_in. ``client`` is injectable for tests."""
     owns = client is None
     client = client or httpx.Client(timeout=15)
     try:
-        tok = client.post(
-            GITHUB_TOKEN,
-            headers={"Accept": "application/json"},
-            data={"client_id": client_id, "client_secret": client_secret, "code": code},
-        ).json()
-        access_token = tok.get("access_token")
-        if not access_token:
-            raise ValueError(f"github token exchange failed: {tok}")
+        tok = _token_post({"client_id": client_id, "client_secret": client_secret,
+                           "code": code}, client)
         user = client.get(
             GITHUB_USER,
-            headers={"Authorization": f"Bearer {access_token}",
+            headers={"Authorization": f"Bearer {tok['access_token']}",
                      "Accept": "application/json"},
         ).json()
         login = user.get("login")
         if not login:
             raise ValueError(f"github user fetch failed: {user}")
-        return login
+        return login, tok
+    finally:
+        if owns:
+            client.close()
+
+
+def refresh_token(refresh: str, client_id: str, client_secret: str,
+                  client: httpx.Client | None = None) -> dict:
+    """Trade a GitHub App refresh token for a new access + refresh token pair."""
+    owns = client is None
+    client = client or httpx.Client(timeout=15)
+    try:
+        return _token_post({"client_id": client_id, "client_secret": client_secret,
+                            "grant_type": "refresh_token", "refresh_token": refresh},
+                           client)
     finally:
         if owns:
             client.close()

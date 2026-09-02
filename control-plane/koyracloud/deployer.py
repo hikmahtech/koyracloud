@@ -24,7 +24,7 @@ from typing import Callable
 import httpx
 from sqlalchemy import text
 
-from koyracloud import redisbus
+from koyracloud import github, redisbus
 from koyracloud.build_hints import detect_log_hints
 from koyracloud.config import Settings
 from koyracloud.crypto import CryptoBox
@@ -382,7 +382,8 @@ class Deployer:
             env_overrides = {e.key: e.value for e in app.env_vars}
             secret_values = {sec.key: self.crypto.decrypt(sec.value_encrypted)
                              for sec in app.secrets}
-            git_token = secret_values.pop(GIT_TOKEN_SECRET, "") or self.settings.github_pat
+            git_token = secret_values.pop(GIT_TOKEN_SECRET, "")
+            owner_login = app.owner_login
             # Primary host first, so it's the canonical one in the router rule.
             hosts = [d.host for d in sorted(
                 app.domains, key=lambda d: (not d.is_primary, d.id))]
@@ -401,13 +402,30 @@ class Deployer:
         dest: Path | None = None
         manifest: Manifest | None = None
         build_log_lines: list[str] = []
+        owner_token = ""
         try:
             emit(f"[koyra] deploy #{deploy_id} for {app_name} @ {ref}", "building")
             # Clone to LOCAL disk (build_dir), never NFS: the build runs here and
             # its result goes into an image, so NFS small-file I/O never touches a
             # build (that's what made npm ci glacial and stalled the control plane).
             dest = Path(self.settings.build_dir) / f"{app_name}-{deploy_id}"
-            commit = self.cloner(repo_url, ref, git_token, dest)
+            # Clone credentials, most specific first: the app's own
+            # KOYRA_GIT_TOKEN wins outright; otherwise the owner's GitHub App
+            # token (repos they installed the App on), then the platform PAT.
+            if not git_token:
+                owner_token = github.user_token(db, self.crypto, self.settings, owner_login)
+            tokens = ([git_token] if git_token
+                      else [t for t in (owner_token, self.settings.github_pat) if t] or [""])
+            for i, tok in enumerate(tokens):
+                try:
+                    commit = self.cloner(repo_url, ref, tok, dest)
+                    break
+                except RuntimeError:
+                    if i == len(tokens) - 1:
+                        raise
+                    emit("[koyra] clone with your GitHub token failed; "
+                         "retrying with the platform token")
+                    shutil.rmtree(dest, ignore_errors=True)
             with db.session() as s:
                 s.execute(text('UPDATE deploys SET "commit" = :c WHERE id = :i'),
                           {"c": commit, "i": deploy_id})
@@ -587,7 +605,7 @@ class Deployer:
             self._fire(app_id, "deploy_live", "", hosts[0] if hosts else "")
         except Exception as exc:  # noqa: BLE001 — surface a scrubbed error
             msg = str(exc)
-            for tok in (self.settings.github_pat, git_token):
+            for tok in (self.settings.github_pat, git_token, owner_token):
                 if tok:
                     msg = msg.replace(tok, "***")
             emit(f"[koyra] FAILED: {msg}", "failed")
