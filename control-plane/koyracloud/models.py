@@ -58,6 +58,21 @@ class App(Base):
         cascade="all, delete-orphan", uselist=False)
     pin: Mapped["AppPin | None"] = relationship(
         cascade="all, delete-orphan", uselist=False)
+    members: Mapped[list["AppMember"]] = relationship(
+        back_populates="app", cascade="all, delete-orphan")
+
+
+class AppMember(Base):
+    """A login besides the owner who can see and operate an app — a teammate
+    on the repo. Members deploy and edit env/secrets/domains; deleting the app
+    or changing its members stays with the owner and admins."""
+    __tablename__ = "app_members"
+    __table_args__ = (UniqueConstraint("app_id", "login"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), index=True)
+    login: Mapped[str] = mapped_column(String(128), index=True)  # lowercase GitHub login
+    app: Mapped["App"] = relationship(back_populates="members")
 
 
 class Domain(Base):

@@ -112,3 +112,48 @@ def test_team_management_is_admin_only(scoped):
     listing = operator.get("/api/allowed-users").json()
     assert listing["admins"] == ["operator"]
     assert [m["login"] for m in listing["members"]] == ["alice"]
+
+
+def test_member_of_an_app_sees_and_operates_it_but_cannot_manage_it(scoped):
+    scoped["invite"]("alice")
+    scoped["invite"]("bob")
+    alice, bob = scoped["as_user"]("alice"), scoped["as_user"]("bob")
+    app_id = _mkapp(alice, "alice-app")
+    assert bob.get(f"/api/apps/{app_id}").status_code == 404
+
+    # Owner adds bob (case-insensitive, stored lowercase).
+    assert alice.put(f"/api/apps/{app_id}/members", json={"login": "Bob"}).status_code == 204
+    assert alice.get(f"/api/apps/{app_id}/members").json() == \
+        {"owner_login": "alice", "members": ["bob"]}
+
+    # bob now sees it everywhere an owner would, and can operate it.
+    assert [a["name"] for a in bob.get("/api/apps").json()] == ["alice-app"]
+    assert set(bob.get("/api/apps/status").json()) == {str(app_id)}
+    assert bob.get(f"/api/apps/{app_id}").json()["owner_login"] == "alice"
+    assert bob.put(f"/api/apps/{app_id}/env",
+                   json=[{"key": "X", "value": "1"}]).status_code == 200
+    deploy_id = bob.post(f"/api/apps/{app_id}/deploys", json={}).json()["id"]
+    assert bob.get(f"/api/deploys/{deploy_id}/log").status_code == 200
+
+    # ...but cannot delete it or change who is on it.
+    assert bob.delete(f"/api/apps/{app_id}").status_code == 403
+    assert bob.put(f"/api/apps/{app_id}/members", json={"login": "carol"}).status_code == 403
+    assert bob.delete(f"/api/apps/{app_id}/members/bob").status_code == 403
+
+    # Removed by the owner: hidden again (404, not 403).
+    assert alice.delete(f"/api/apps/{app_id}/members/bob").status_code == 204
+    assert bob.get(f"/api/apps/{app_id}").status_code == 404
+    assert bob.get("/api/apps").json() == []
+
+
+def test_admin_can_add_members_to_any_app(scoped):
+    scoped["invite"]("alice")
+    scoped["invite"]("bob")
+    app_id = _mkapp(scoped["as_user"]("alice"), "alice-app")
+    operator = scoped["as_user"]("operator")
+    assert operator.put(f"/api/apps/{app_id}/members", json={"login": "bob"}).status_code == 204
+    assert operator.put(f"/api/apps/{app_id}/members", json={"login": "bob"}).status_code == 204  # idempotent
+    assert operator.put(f"/api/apps/{app_id}/members", json={"login": "alice"}).status_code == 204  # owner: no-op
+    assert operator.get(f"/api/apps/{app_id}/members").json()["members"] == ["bob"]
+    assert scoped["as_user"]("bob").get(f"/api/apps/{app_id}").status_code == 200
+    assert operator.put(f"/api/apps/{app_id}/members", json={"login": "not a login!"}).status_code == 422

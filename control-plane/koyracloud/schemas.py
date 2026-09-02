@@ -71,6 +71,7 @@ class AppOut(BaseModel):
     primary_host: str | None = None
     pinned: bool = False
     pinned_node: str | None = None  # recorded node once learned (null until then)
+    owner_login: str = ""
 
     model_config = {"from_attributes": True}
 

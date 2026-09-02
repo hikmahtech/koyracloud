@@ -4,6 +4,7 @@ docs/MIGRATING-FROM-VERCEL.md for the failure modes these are drawn from.
 """
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 
@@ -45,10 +46,25 @@ def _repo_not_found(text: str) -> str | None:
     return None
 
 
+_NOT_FOUND = re.compile(r"(?:sh: \d+: |/bin/sh: )?([A-Za-z0-9_.-]+): not found")
+
+
+def _dev_deps_skipped(text: str) -> str | None:
+    m = _NOT_FOUND.search(text)
+    if m and "NODE_ENV=production" in text:
+        return (f"`{m.group(1)}: not found` — the build ran with NODE_ENV=production "
+                "(the manifest's env: block is passed as build args), so npm ci "
+                "skipped devDependencies, which is usually where typescript, vite, "
+                "drizzle-kit and friends live. Use `npm ci --include=dev` in build:, "
+                "or take NODE_ENV out of env: and set it in the start command instead.")
+    return None
+
+
 _DETECTORS: tuple[Callable[[str], str | None], ...] = (
     _pnpm_version_mismatch,
     _missing_public_build_arg,
     _repo_not_found,
+    _dev_deps_skipped,
 )
 
 
