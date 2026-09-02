@@ -6,7 +6,7 @@ import {
   getEnv, putEnv, listSecretKeys, putSecret, deleteSecret,
   listDomains, addDomain, setPrimaryDomain, deleteDomain, verifyDomain, getConfig,
   getStatus, getRuntimeLogs, getUptime, getAnalytics, setAnalytics,
-  getNotify, setNotify,
+  getNotify, setNotify, listMembers, addMember, removeMember,
   getBackground, getWorkerLogs, getCronRuns, getCronRunLog, runCronNow,
 } from "../api";
 import { StatusBadge } from "./AppsList";
@@ -673,6 +673,44 @@ function NotifyCard({ id }) {
   );
 }
 
+function MembersCard({ id }) {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["members", id], queryFn: () => listMembers(id) });
+  const [login, setLogin] = useState("");
+  const refresh = () => qc.invalidateQueries({ queryKey: ["members", id] });
+  const add = useMutation({ mutationFn: () => addMember(id, login), onSuccess: () => { setLogin(""); refresh(); } });
+  const remove = useMutation({ mutationFn: (m) => removeMember(id, m), onSuccess: refresh });
+  const detail = add.error?.response?.data?.detail || remove.error?.response?.data?.detail;
+  const err = detail ? (typeof detail === "string" ? detail : "Invalid GitHub login") : null;
+  return (
+    <div className="card p-6 space-y-3">
+      <div className="text-sm font-medium">Members</div>
+      <p className="text-xs text-[var(--color-muted)]">
+        GitHub logins who can see and operate this app (deploy, env, secrets, domains).
+        Only the owner{data?.owner_login ? <> (<span className="mono">@{data.owner_login}</span>)</> : null} and
+        admins can delete it or change members. Members still need to be on this instance’s allow-list to sign in.
+      </p>
+      <ul className="space-y-1">
+        {(data?.members || []).map((m) => (
+          <li key={m} className="flex items-center justify-between mono text-xs">
+            <span>@{m}</span>
+            <button onClick={() => remove.mutate(m)} title="Remove"
+              className="text-[var(--color-muted)] hover:text-[var(--color-danger)]">×</button>
+          </li>
+        ))}
+        {data && data.members.length === 0 && (
+          <li className="mono text-xs text-[var(--color-muted)]">no members yet</li>
+        )}
+      </ul>
+      <form onSubmit={(e) => { e.preventDefault(); if (login.trim()) add.mutate(); }} className="flex gap-2">
+        <input className="input mono" placeholder="github-login" value={login} onChange={(e) => setLogin(e.target.value)} />
+        <button className="btn btn-primary text-sm shrink-0" disabled={add.isPending}>{add.isPending ? "Adding…" : "Add"}</button>
+      </form>
+      {err && <p className="text-[var(--color-danger)] text-xs">{err}</p>}
+    </div>
+  );
+}
+
 function SettingsTab({ id, app }) {
   const qc = useQueryClient();
   const nav = useNavigate();
@@ -773,6 +811,8 @@ function SettingsTab({ id, app }) {
       </div>
 
       <NotifyCard id={id} />
+
+      <MembersCard id={id} />
 
       <div className="card p-6 border-[rgba(255,107,107,0.3)]">
         <div className="text-sm font-medium mb-1">Danger zone</div>

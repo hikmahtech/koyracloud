@@ -50,3 +50,14 @@ def test_signature_split_across_lines_still_detected():
     # tool happened to emit is matched regardless of which line it's on.
     hints = detect_log_hints(["unrelated", "Failed to collect page data", "more output"])
     assert len(hints) == 1
+
+
+def test_dev_dependencies_skipped_by_node_env_production():
+    hints = detect_log_hints([
+        "Step 13/14 : RUN npm run build", "sh: 1: tsc: not found",
+        "`docker build ... --build-arg NODE_ENV=production ...` exited 127"])
+    assert len(hints) == 1 and "--include=dev" in hints[0] and "`tsc: not found`" in hints[0]
+
+
+def test_command_not_found_without_node_env_production_is_not_flagged():
+    assert detect_log_hints(["sh: 1: tsc: not found"]) == []

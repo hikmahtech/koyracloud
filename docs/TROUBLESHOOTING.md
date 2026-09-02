@@ -100,6 +100,12 @@ control node's LOCAL disk (`KOYRA_DB_DIR`); WAL mode is unsupported on NFS.
 Migration runbook: [`DISASTER-RECOVERY.md`](DISASTER-RECOVERY.md) § "Moving the
 DB off NFS".
 
+**`sh: 1: tsc: not found` (or vite, drizzle-kit, …) right after `npm ci`.** The
+manifest's `env:` block is passed to the build as build args, so `NODE_ENV:
+production` there makes `npm ci` skip devDependencies. Use `npm ci --include=dev`
+in `build:`, or move `NODE_ENV` out of `env:` into the start command. The deploy
+log prints this hint when it sees the signature.
+
 ## The dashboard 404s / has no TLS
 
 Traefik isn't routing it: confirm Traefik is attached to `traefik_public`

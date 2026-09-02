@@ -14,6 +14,13 @@ track functional changes by theme rather than tagged semver releases. Newest fir
   refreshed automatically. The platform PAT is still the fallback (and `KOYRA_GIT_TOKEN`
   still wins per app), so a repo the user's token cannot see is retried with the platform
   token instead of failing. Nothing changes for installs that keep a plain OAuth App.
+- **App members** — an app's owner (or an admin) can add teammates by GitHub login on the
+  Settings tab. Members see the app in their list and operate it (deploy, env, secrets,
+  domains); deleting it or changing members stays with the owner. Members still have to be
+  on the instance allow-list to sign in.
+- **Build hint for `X: not found` after `npm ci`** — with `NODE_ENV: production` in the
+  manifest `env:` block, npm skips devDependencies at build time (typescript, drizzle-kit,
+  vite…). The deploy log now says so and points at `npm ci --include=dev`.
 
 ## 2026-08
 

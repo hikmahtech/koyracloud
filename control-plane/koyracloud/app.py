@@ -15,6 +15,7 @@ from pathlib import Path
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from sqlalchemy import or_
 
 from koyracloud import (analytics, auth, github, metrics as kmetrics, monitor, notifier,
                         scheduler, webhooks)
@@ -25,7 +26,7 @@ from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.deployer import Deployer
 from koyracloud.docker_ctl import CLIDockerControl, DockerControl
-from koyracloud.models import (AllowedUser, App, AppAnalytics, AppNotify,
+from koyracloud.models import (AllowedUser, App, AppAnalytics, AppMember, AppNotify,
                                 AppPin, AppRedis, CronJob, CronRun, Deploy,
                                 Domain, DomainCert, EnvVar, Hit, Secret, User,
                                 Waitlist)
@@ -191,11 +192,27 @@ def create_app(
     Auth = Depends(current_login)
     AdminAuth = Depends(current_admin)
 
-    def get_app_or_404(app_id: int, s, login: str) -> App:
+    def can_see(obj: App, login: str) -> bool:
+        """Owner, admin, or a member (teammate) of the app."""
+        return (obj.owner_login == login or is_admin(login)
+                or any(m.login == login.lower() for m in obj.members))
+
+    def visible_apps(s, login: str):
+        q = s.query(App)
+        if is_admin(login):
+            return q
+        member_of = s.query(AppMember.app_id).filter(AppMember.login == login.lower())
+        return q.filter(or_(App.owner_login == login, App.id.in_(member_of)))
+
+    def get_app_or_404(app_id: int, s, login: str, manage: bool = False) -> App:
         obj = s.get(App, app_id)
-        # 404 (not 403) when not owned, to avoid leaking app existence.
-        if obj is None or (obj.owner_login != login and not is_admin(login)):
+        # 404 (not 403) when not visible, to avoid leaking app existence.
+        if obj is None or not can_see(obj, login):
             raise HTTPException(status_code=404, detail="app not found")
+        # Members operate the app; deleting it or changing who is on it stays
+        # with the owner (and admins).
+        if manage and obj.owner_login != login and not is_admin(login):
+            raise HTTPException(status_code=403, detail="only the app owner can do that")
         return obj
 
     def owned_deploy_or_404(deploy_id: int, s, login: str) -> Deploy:
@@ -203,7 +220,7 @@ def create_app(
         if d is None:
             raise HTTPException(status_code=404, detail="deploy not found")
         app = s.get(App, d.app_id)
-        if app is None or (app.owner_login != login and not is_admin(login)):
+        if app is None or not can_see(app, login):
             raise HTTPException(status_code=404, detail="deploy not found")
         return d
 
@@ -618,10 +635,7 @@ def create_app(
     @app.get("/api/apps", response_model=list[AppOut])
     def list_apps(login: str = Auth):
         with db.session() as s:
-            q = s.query(App).order_by(App.name)
-            if not is_admin(login):
-                q = q.filter(App.owner_login == login)
-            return [_app_out(a) for a in q.all()]
+            return [_app_out(a) for a in visible_apps(s, login).order_by(App.name).all()]
 
     @app.post("/api/apps", response_model=AppOut, status_code=201)
     def create_app_route(body: AppCreate, login: str = Auth):
@@ -667,10 +681,7 @@ def create_app(
         # One docker call for the whole list; mapped to each app by service name.
         overview = docker.services_overview()
         with db.session() as s:
-            q = s.query(App)
-            if not is_admin(login):
-                q = q.filter(App.owner_login == login)
-            apps = q.all()
+            apps = visible_apps(s, login).all()
             result = {}
             for a in apps:
                 svc = f"koyra-{a.name}_{a.name}"
@@ -687,7 +698,7 @@ def create_app(
     @app.delete("/api/apps/{app_id}", status_code=204)
     def delete_app(app_id: int, login: str = Auth):
         with db.session() as s:
-            obj = get_app_or_404(app_id, s, login)
+            obj = get_app_or_404(app_id, s, login, manage=True)
             name = obj.name
             # Background state isn't an App relationship — clean it explicitly so
             # no cron jobs/runs or Redis credential are orphaned.
@@ -875,6 +886,31 @@ def create_app(
         with db.session() as s:
             get_app_or_404(app_id, s, login)
         return monitor.uptime_summary(db, app_id)
+
+    # ----- members: teammates who can see + operate the app ----------------
+    @app.get("/api/apps/{app_id}/members")
+    def list_members(app_id: int, login: str = Auth):
+        with db.session() as s:
+            obj = get_app_or_404(app_id, s, login)
+            return {"owner_login": obj.owner_login,
+                    "members": sorted(m.login for m in obj.members)}
+
+    @app.put("/api/apps/{app_id}/members", status_code=204)
+    def add_member(app_id: int, body: AllowedUserIn, login: str = Auth):
+        target = body.login.lower()
+        with db.session() as s:
+            obj = get_app_or_404(app_id, s, login, manage=True)
+            if target != (obj.owner_login or "").lower() and \
+                    not any(m.login == target for m in obj.members):
+                s.add(AppMember(app_id=obj.id, login=target))
+                s.commit()
+
+    @app.delete("/api/apps/{app_id}/members/{member}", status_code=204)
+    def remove_member(app_id: int, member: str, login: str = Auth):
+        with db.session() as s:
+            obj = get_app_or_404(app_id, s, login, manage=True)
+            s.query(AppMember).filter_by(app_id=obj.id, login=member.lower()).delete()
+            s.commit()
 
     @app.get("/api/apps/{app_id}/notify")
     def get_notify(app_id: int, login: str = Auth):

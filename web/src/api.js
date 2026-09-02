@@ -44,6 +44,9 @@ export const createApp = (body) => post("/apps", body);
 export const updateApp = (id, body) => patch(`/apps/${id}`, body);
 export const getNotify = (id) => get(`/apps/${id}/notify`);
 export const setNotify = (id, notify_email) => put(`/apps/${id}/notify`, { notify_email });
+export const listMembers = (id) => get(`/apps/${id}/members`);
+export const addMember = (id, login) => put(`/apps/${id}/members`, { login });
+export const removeMember = (id, login) => del(`/apps/${id}/members/${encodeURIComponent(login)}`);
 export const deleteApp = (id) => del(`/apps/${id}`);
 
 export const listDomains = (id) => get(`/apps/${id}/domains`);
