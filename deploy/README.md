@@ -97,7 +97,21 @@ printf '%s' '<cloudflare for saas api token>' | docker --context <ctx> secret cr
 # with `redis: true` then fail their deploy. Use a URL-safe value (no spaces).
 openssl rand -hex 24 | tr -d '\n' | docker --context <ctx> secret create koyra_redis_admin_password -
 ```
-> Secrets are immutable. To rotate: detach, `secret rm`, recreate, redeploy.
+> Secrets are immutable, and one attached to a running service can't be
+> removed. Rotate in ONE service update via a temporary name, so the service
+> never runs without the secret (the file path inside the container stays the
+> same):
+> ```bash
+> docker --context <ctx> secret create koyra_github_client_secret_v2 - < new-secret.txt
+> docker --context <ctx> service update \
+>   --secret-rm koyra_github_client_secret \
+>   --secret-add source=koyra_github_client_secret_v2,target=koyra_github_client_secret \
+>   koyracloud_control-plane
+> # re-create the canonical name with the new value: the stack file references
+> # it, so the next `stack deploy` swaps back to it cleanly
+> docker --context <ctx> secret rm koyra_github_client_secret
+> docker --context <ctx> secret create koyra_github_client_secret - < new-secret.txt
+> ```
 > Never rotate `koyra_secret_key` (the Fernet master key) without re-encrypting
 > stored app secrets.
 > Every secret is declared `external: true`, so ALL EIGHT must exist before
@@ -116,6 +130,23 @@ in the Docker secret above. Users then install the app on the repos they want to
 deploy and pick them on the New app page; koyracloud clones with their read-only
 token before falling back to the platform PAT. A plain OAuth App (no
 `GITHUB_APP_SLUG`) gives sign-in only — see `docs/SELF-HOST-TUTORIAL.md` §7.
+
+#### Switching an existing install from an OAuth App to a GitHub App
+1. Register the GitHub App (`docs/SELF-HOST-TUTORIAL.md` §7 — by hand, or with
+   `python3 deploy/register-github-app.py`, which drives GitHub's manifest flow
+   and writes the client secret to a mode-600 file without printing it).
+2. Put the App's client id and slug in `koyracloud.env` (`GITHUB_CLIENT_ID`,
+   `GITHUB_APP_SLUG`); keep the old client id in a comment for rollback.
+3. Rotate `koyra_github_client_secret` to the App's secret (recipe above) and,
+   in the same `service update`, add `--env-add GITHUB_CLIENT_ID=<id>
+   --env-add GITHUB_APP_SLUG=<slug>` — or run a full `stack deploy`.
+   One control-plane restart; in-flight deploys are orphaned, so check none
+   are running first.
+4. Verify: `curl -sI https://<host>/api/auth/login` redirects with the new
+   `client_id` and no `scope=`; `GET /api/github/repos` (signed in) returns
+   `enabled: true`.
+5. Tell users to sign out and back in once; sessions from before hold no token.
+   The old OAuth App can be deleted on GitHub afterwards.
 
 ### 7. Custom domains via Cloudflare for SaaS (optional)
 koyracloud serves users' *own* domains (DNS left at their registrar) by
