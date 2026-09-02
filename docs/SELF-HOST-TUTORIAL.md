@@ -106,15 +106,35 @@ set `KOYRA_APPS_DOMAIN_PROXIED=1` in your config — the proxy serves TLS and
 Traefik skips ACME for in-zone hosts. For attaching customers' **custom domains**
 (Vercel-style, edge-minted certs) see [`MIGRATING-FROM-VERCEL.md`](MIGRATING-FROM-VERCEL.md).
 
-## 7. A GitHub OAuth app
+## 7. A GitHub App (sign-in + private repos)
 
-Sign-in is GitHub OAuth behind an allowlist. Create an OAuth app at
-**GitHub → Settings → Developer settings → OAuth Apps → New**:
+Sign-in is GitHub OAuth behind an allowlist. Register a **GitHub App** (not an
+OAuth App) and users can also deploy their **private repos, Vercel-style**: they
+install the app on the repos they choose, and koyracloud clones with a read-only
+token that belongs to them — no shared PAT, no collaborator invites.
+
+**GitHub → Settings → Developer settings → GitHub Apps → New GitHub App**:
 
 - **Homepage URL:** `https://koyra.example.com`
-- **Authorization callback URL:** `https://koyra.example.com/api/auth/callback`
+- **Callback URL:** `https://koyra.example.com/api/auth/callback`
+- **Setup URL:** `https://koyra.example.com/new` and tick *Redirect on update*
+  (after installing, the user lands back on the New app page with the repo picker)
+- **Webhook:** untick *Active* (push-to-deploy uses per-repo webhooks, section 11)
+- **Repository permissions:** *Contents* → Read-only (*Metadata* is added for you)
+- **Where can this GitHub App be installed?** Any account
 
-Keep the **Client ID** (goes in config) and **Client Secret** (a Docker secret).
+Then **Generate a new client secret**. Keep the **Client ID** and the app's
+**slug** (the last part of its `https://github.com/apps/<slug>` URL) for
+`koyracloud.env` (`GITHUB_CLIENT_ID`, `GITHUB_APP_SLUG`) and the **Client
+Secret** for the Docker secret.
+
+Leave *Expire user authorization tokens* on if you like — koyracloud refreshes
+them. A user who signed in before you switched to a GitHub App has no token yet;
+the New app page tells them to sign out and back in.
+
+A plain **OAuth App** still works (homepage + callback URL as above, leave
+`GITHUB_APP_SLUG` blank): sign-in only. Private repos then need the platform
+PAT or a per-app `KOYRA_GIT_TOKEN` secret.
 
 ## 8. Configure + install
 

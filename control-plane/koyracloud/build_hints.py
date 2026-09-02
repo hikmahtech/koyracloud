@@ -36,11 +36,12 @@ def _missing_public_build_arg(text: str) -> str | None:
 def _repo_not_found(text: str) -> str | None:
     if "Repository not found" in text:
         return ("git could not see the repo — it is private (or the URL is "
-                 "wrong) and the platform's GitHub token has no access. Either "
-                 "give the platform's GitHub account read access to the repo, or "
-                 "add a secret named KOYRA_GIT_TOKEN holding a GitHub token "
-                 "(fine-grained, Contents: read-only, scoped to this repo) and "
-                 "redeploy. It is used only to clone, never injected into the app.")
+                 "wrong) and no token we hold has access. Either install the "
+                 "koyracloud GitHub App on the repo (New app → GitHub picker → "
+                 "'Add or manage repos'), give the platform's GitHub account read "
+                 "access, or add a secret named KOYRA_GIT_TOKEN holding a GitHub "
+                 "token (fine-grained, Contents: read-only, scoped to this repo). "
+                 "Then redeploy. Clone tokens are never injected into the app.")
     return None
 
 

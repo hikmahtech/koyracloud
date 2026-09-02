@@ -66,13 +66,25 @@ authenticating `git clone` / `fetch` / `pull` over HTTPS against private repos.
   container's environment. A clone that fails with `Repository not found`
   gets a hint in the deploy log pointing at both options.
 
-## 3. GitHub OAuth App — login identity only
+## 3. GitHub App — login identity, plus the user's own read-only repo access
 
-`auth.authorize_url` requests scope `read:user` — nothing else (`auth.py:47`).
-The callback (`auth.exchange_code`) fetches `GET /user` and reads a single
-field: `login`. No email, no repo access, no org membership is requested or
-stored. This is a separate credential from the PAT in §2 — the OAuth app only
-identifies who's signing into the dashboard.
+Sign-in goes through the GitHub App's OAuth (`GITHUB_CLIENT_ID` / secret). The
+callback (`auth.exchange_code`) fetches `GET /user` and reads a single field:
+`login`. No email, no org membership.
+
+When `GITHUB_APP_SLUG` is set the login token is a GitHub App **user token**:
+it can do only what the App is allowed (*Contents: Read-only*, *Metadata*) on
+only the repos **that user** has installed the App on — the user picks those on
+GitHub, koyracloud never widens them. `github.store_token` keeps it Fernet-
+encrypted on the `users` row (with its refresh token and expiry); it is used for
+two things: `GET /api/github/repos` (the New app picker, via
+`/user/installations`) and cloning that user's apps (`deployer._run_deploy`,
+tried before the platform PAT, never injected into a container). A user who
+uninstalls or revokes the App cuts koyracloud off immediately — GitHub
+evaluates the installation on every request.
+
+With a plain OAuth App (no slug) `auth.authorize_url` requests scope
+`read:user` only and the token is discarded, exactly as before.
 
 ## 4. Webhook secret (`koyra_webhook_secret`) — HMAC verification
 

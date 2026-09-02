@@ -12,10 +12,11 @@ import threading
 import time
 from pathlib import Path
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
-from koyracloud import (analytics, auth, metrics as kmetrics, monitor, notifier,
+from koyracloud import (analytics, auth, github, metrics as kmetrics, monitor, notifier,
                         scheduler, webhooks)
 from koyracloud.ratelimit import RateLimiter
 from koyracloud.cloudflare import Cloudflare
@@ -364,7 +365,8 @@ def create_app(
             raise HTTPException(status_code=500, detail="GitHub OAuth not configured")
         state = _secrets.token_urlsafe(16)
         url = auth.authorize_url(settings.github_client_id,
-                                 f"{settings.base_url}/api/auth/callback", state)
+                                 f"{settings.base_url}/api/auth/callback", state,
+                                 scope="" if settings.github_app_slug else "read:user")
         resp = RedirectResponse(url)
         resp.set_cookie(auth.OAUTH_STATE_COOKIE, state, httponly=True,
                         samesite="lax", max_age=600)
@@ -376,14 +378,20 @@ def create_app(
         cookie_state = request.cookies.get(auth.OAUTH_STATE_COOKIE)
         if not cookie_state or not state or not _secrets.compare_digest(state, cookie_state):
             raise HTTPException(status_code=400, detail="invalid oauth state")
-        login = auth.exchange_code(code, settings.github_client_id,
-                                   settings.github_client_secret)
+        login, tok = auth.exchange_code(code, settings.github_client_id,
+                                        settings.github_client_secret)
         if not access_allowed(login):
             raise HTTPException(status_code=403, detail=f"{login} is not allowed")
         with db.session() as s:
-            if not s.query(User).filter_by(github_login=login).first():
-                s.add(User(github_login=login))
-                s.commit()
+            u = s.query(User).filter_by(github_login=login).first()
+            if u is None:
+                u = User(github_login=login)
+                s.add(u)
+            if settings.github_app_slug:
+                # A GitHub App token: keep it (encrypted) to list + clone the
+                # repos this user installed the App on.
+                github.store_token(u, tok, crypto)
+            s.commit()
         resp = RedirectResponse("/")
         resp.set_cookie(auth.SESSION_COOKIE,
                         auth.make_session(login, settings.session_secret),
@@ -400,6 +408,22 @@ def create_app(
     @app.get("/api/me")
     def me(login: str = Auth):
         return {"login": login, "is_admin": is_admin(login)}
+
+    @app.get("/api/github/repos")
+    def github_repos(login: str = Auth):
+        """Repos the signed-in user can deploy through the GitHub App (the New
+        app picker). Inert unless GITHUB_APP_SLUG is set."""
+        if not settings.github_app_slug:
+            return {"enabled": False, "connected": False, "install_url": "", "repos": []}
+        out = {"enabled": True, "install_url": github.install_url(settings), "repos": []}
+        token = github.user_token(db, crypto, settings, login)
+        if not token:  # signed in before the App was configured, or revoked
+            return {**out, "connected": False}
+        try:
+            repos = github.list_repos(token)
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=502, detail=f"GitHub API error: {exc}") from exc
+        return {**out, "connected": True, "repos": repos}
 
     @app.post("/api/test-email")
     def test_email(body: dict, login: str = AdminAuth):

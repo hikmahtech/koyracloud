@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { createApp } from "../api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createApp, listGithubRepos } from "../api";
 
 export default function NewApp() {
   const nav = useNavigate();
@@ -19,6 +19,16 @@ export default function NewApp() {
   const set = (k) => (e) =>
     setForm({ ...form, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
 
+  // Repos the koyracloud GitHub App can read for this user (Vercel-style
+  // picker). `enabled` is false on installs still using a plain OAuth App.
+  const { data: gh } = useQuery({ queryKey: ["github-repos"], queryFn: listGithubRepos, retry: false });
+  const pickRepo = (e) => {
+    const r = gh?.repos.find((x) => x.full_name === e.target.value);
+    if (!r) return;
+    const name = form.name || r.full_name.split("/")[1].toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+    setForm({ ...form, name, repo_url: r.url, branch: r.default_branch });
+  };
+
   return (
     <div className="max-w-xl">
       <Link to="/" className="mono text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] no-underline">← apps</Link>
@@ -34,6 +44,28 @@ export default function NewApp() {
         <Field label="Name" hint="lowercase, used for the subdomain & stack">
           <input required value={form.name} onChange={set("name")} placeholder="lens-inventory" className="input mono" />
         </Field>
+        {gh?.enabled && (
+          <Field label="GitHub repository" hint={gh.connected ? "read-only via the GitHub App" : ""}>
+            {gh.connected ? (
+              <>
+                <select defaultValue="" onChange={pickRepo} className="input mono">
+                  <option value="">{gh.repos.length ? "Pick a repo…" : "No repos yet — install the app below"}</option>
+                  {gh.repos.map((r) => (
+                    <option key={r.full_name} value={r.full_name}>{r.full_name}{r.private ? "  (private)" : ""}</option>
+                  ))}
+                </select>
+                <a href={gh.install_url} target="_blank" rel="noreferrer"
+                  className="inline-block mt-1.5 mono text-[11px] text-[var(--color-muted)] hover:text-[var(--color-fg)]">
+                  Add or manage repos on GitHub ↗
+                </a>
+              </>
+            ) : (
+              <p className="text-xs text-[var(--color-muted)]">
+                Sign out and back in to connect your GitHub repos, then install the app on the ones to deploy.
+              </p>
+            )}
+          </Field>
+        )}
         <Field label="Repository URL">
           <input required value={form.repo_url} onChange={set("repo_url")} placeholder="https://github.com/owner/repo" className="input mono" />
         </Field>

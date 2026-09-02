@@ -3,6 +3,18 @@
 Notable changes to koyracloud. The project is in **alpha** (`0.1.0`); these notes
 track functional changes by theme rather than tagged semver releases. Newest first.
 
+## 2026-09
+
+### Added
+
+- **Deploy your private repos with your own GitHub access, Vercel-style** — sign-in can
+  now go through a **GitHub App** (`GITHUB_APP_SLUG`, see the self-host tutorial §7).
+  Users install the app on the repos they choose and pick them from a list on the New
+  app page; koyracloud clones with their read-only token, kept encrypted per user and
+  refreshed automatically. The platform PAT is still the fallback (and `KOYRA_GIT_TOKEN`
+  still wins per app), so a repo the user's token cannot see is retried with the platform
+  token instead of failing. Nothing changes for installs that keep a plain OAuth App.
+
 ## 2026-08
 
 ### Fixed

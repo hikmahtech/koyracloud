@@ -21,6 +21,7 @@ services:
       KOYRA_SECRET_KEY_FILE: /run/secrets/koyra_secret_key
       KOYRA_SESSION_SECRET_FILE: /run/secrets/koyra_session_secret
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
       GITHUB_CLIENT_SECRET_FILE: /run/secrets/koyra_github_client_secret
       GITHUB_PAT_FILE: /run/secrets/koyra_github_pat
       KOYRA_WEBHOOK_SECRET_FILE: /run/secrets/koyra_webhook_secret

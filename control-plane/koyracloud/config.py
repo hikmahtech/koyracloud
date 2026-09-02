@@ -168,6 +168,11 @@ class Settings:
     github_client_secret: str = field(
         default_factory=lambda: _secret("GITHUB_CLIENT_SECRET", ""))
     github_pat: str = field(default_factory=lambda: _secret("GITHUB_PAT", ""))
+    # Slug of the koyracloud GitHub App (https://github.com/apps/<slug>). When
+    # set, the client id/secret above are the App's: login tokens then carry
+    # the App's read-only repo permission and are kept (encrypted) per user so
+    # they can pick and deploy private repos they installed the App on.
+    github_app_slug: str = field(default_factory=lambda: os.environ.get("GITHUB_APP_SLUG", ""))
     # Shared secret for verifying GitHub push webhooks (push-to-deploy).
     webhook_secret: str = field(default_factory=lambda: _secret("KOYRA_WEBHOOK_SECRET", ""))
     # Email alerts via Resend (inert until an API key is set).
