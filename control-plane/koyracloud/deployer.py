@@ -71,6 +71,11 @@ def _git(args: list[str], cwd: Path, check: bool = True) -> subprocess.Completed
     return r
 
 
+# Reserved app-secret name: a per-app GitHub token used ONLY to clone, never
+# injected into the running container. Lets an app owner deploy a private repo
+# the platform PAT can't see (the PAT owner isn't a collaborator).
+GIT_TOKEN_SECRET = "KOYRA_GIT_TOKEN"
+
 _STATIC_DIRS = ("dist", "build", "public", "out", "_site")
 
 
@@ -377,6 +382,7 @@ class Deployer:
             env_overrides = {e.key: e.value for e in app.env_vars}
             secret_values = {sec.key: self.crypto.decrypt(sec.value_encrypted)
                              for sec in app.secrets}
+            git_token = secret_values.pop(GIT_TOKEN_SECRET, "") or self.settings.github_pat
             # Primary host first, so it's the canonical one in the router rule.
             hosts = [d.host for d in sorted(
                 app.domains, key=lambda d: (not d.is_primary, d.id))]
@@ -401,7 +407,7 @@ class Deployer:
             # its result goes into an image, so NFS small-file I/O never touches a
             # build (that's what made npm ci glacial and stalled the control plane).
             dest = Path(self.settings.build_dir) / f"{app_name}-{deploy_id}"
-            commit = self.cloner(repo_url, ref, self.settings.github_pat, dest)
+            commit = self.cloner(repo_url, ref, git_token, dest)
             with db.session() as s:
                 s.execute(text('UPDATE deploys SET "commit" = :c WHERE id = :i'),
                           {"c": commit, "i": deploy_id})
@@ -581,10 +587,11 @@ class Deployer:
             self._fire(app_id, "deploy_live", "", hosts[0] if hosts else "")
         except Exception as exc:  # noqa: BLE001 — surface a scrubbed error
             msg = str(exc)
-            if self.settings.github_pat:
-                msg = msg.replace(self.settings.github_pat, "***")
+            for tok in (self.settings.github_pat, git_token):
+                if tok:
+                    msg = msg.replace(tok, "***")
             emit(f"[koyra] FAILED: {msg}", "failed")
-            for hint in detect_log_hints(build_log_lines):
+            for hint in detect_log_hints([*build_log_lines, msg]):
                 emit(f"[koyra] Hint: {hint}")
             # Full traceback goes to the server's stderr only, never the UI log.
             print(traceback.format_exc(), file=sys.stderr)

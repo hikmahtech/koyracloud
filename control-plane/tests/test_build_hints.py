@@ -39,6 +39,12 @@ def test_multiple_signatures_all_returned_in_order():
     assert "NEXT_PUBLIC" in hints[1]
 
 
+def test_repo_not_found_points_at_private_repo_access():
+    hints = detect_log_hints(["git clone failed: remote: Repository not found."])
+    assert len(hints) == 1
+    assert "KOYRA_GIT_TOKEN" in hints[0] and "private" in hints[0]
+
+
 def test_signature_split_across_lines_still_detected():
     # detect_log_hints joins lines before matching, so a signature that a
     # tool happened to emit is matched regardless of which line it's on.

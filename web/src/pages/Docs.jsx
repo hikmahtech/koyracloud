@@ -237,6 +237,12 @@ CNAME  _acme-challenge.yourdomain   <shown in the Domains tab>`}</Code>
               <b> Secrets</b> tab. They're encrypted at rest (Fernet) and injected as environment
               variables at deploy time. Non-sensitive config goes in <span className="mono">env:</span>.
             </p>
+            <p className="text-[var(--color-muted)] mt-3">
+              <b>Private repo the platform can't see?</b> Add a secret named
+              <span className="mono"> KOYRA_GIT_TOKEN</span> holding a GitHub token with read access
+              to the repo (fine-grained, Contents: read-only). It is used only to clone and is never
+              injected into your app.
+            </p>
           </Section>
 
           <Section id="analytics" title="Analytics & uptime">
