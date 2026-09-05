@@ -12,6 +12,13 @@ from typing import Iterator, Protocol
 import yaml
 
 
+def _text(v: str | bytes | None) -> str:
+    """TimeoutExpired carries whatever was read; it may be bytes or None."""
+    if v is None:
+        return ""
+    return v if isinstance(v, str) else v.decode(errors="replace")
+
+
 class DockerControl(Protocol):
     def image_build(self, tag: str, context_dir: str,
                     build_args: dict | None = None,
@@ -116,18 +123,25 @@ class CLIDockerControl:
         yield from self._stream(["stack", "rm", stack])
 
     def service_logs(self, service: str, tail: int = 200) -> str:
-        r = subprocess.run(
-            [*self._base, "service", "logs", "--no-task-ids", "--timestamps",
-             "--tail", str(tail), service],
-            capture_output=True, text=True, timeout=30)
-        if r.returncode != 0:
-            return (r.stderr or "").strip() or "(no logs yet — service not running)"
+        cmd = [*self._base, "service", "logs", "--no-task-ids", "--timestamps",
+               "--tail", str(tail), service]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            out, err, failed = r.stdout, r.stderr, r.returncode != 0
+        except subprocess.TimeoutExpired as e:
+            # Non-follow `docker service logs` still sometimes never closes the
+            # stream when the service has shut-down tasks, so the call hangs
+            # forever and the endpoint 500s. Everything read before the deadline
+            # is good, so keep it rather than losing the whole response.
+            out, err, failed = _text(e.stdout), _text(e.stderr), False
+        if failed:
+            return (err or "").strip() or "(no logs yet — service not running)"
         # `docker service logs` merges every task of the service — including
         # shut-down ones from earlier deploys — without sorting across them, and
         # applies --tail per task. So the newest lines land mid-buffer and the
         # last line can be an hour-old dead task. Every line carries its own
         # RFC3339Nano prefix, so sort on that and keep the newest `tail` lines.
-        lines = ((r.stdout or "") + (r.stderr or "")).splitlines()
+        lines = (out + err).splitlines()
         lines.sort(key=lambda ln: ln.split(" ", 1)[0])
         return "\n".join(lines[-tail:])
 

@@ -1227,3 +1227,37 @@ def test_service_logs_error_passthrough(monkeypatch):
         docker_ctl.subprocess, "run",
         lambda *a, **k: types.SimpleNamespace(returncode=1, stdout="", stderr=""))
     assert "no logs yet" in docker_ctl.CLIDockerControl().service_logs("svc")
+
+
+def test_service_logs_keeps_partial_output_when_docker_hangs(monkeypatch):
+    """Non-follow `docker service logs` can hang on a service with shut-down
+    tasks. Keep what was read instead of 500-ing the whole endpoint."""
+    import subprocess as sp
+
+    from koyracloud import docker_ctl
+
+    partial = "\n".join([
+        "2026-09-05T13:03:11.000000000Z svc.1@noon    | live task",
+        "2026-09-05T12:13:11.000000000Z svc.1@wow     | dead task",
+    ])
+
+    def hang(*a, **k):
+        raise sp.TimeoutExpired(cmd="docker", timeout=30, output=partial, stderr=None)
+
+    monkeypatch.setattr(docker_ctl.subprocess, "run", hang)
+    out = docker_ctl.CLIDockerControl().service_logs("svc", tail=400).splitlines()
+    assert len(out) == 2
+    assert out[-1].endswith("live task")
+
+
+def test_service_logs_hang_with_bytes_and_no_stderr(monkeypatch):
+    import subprocess as sp
+
+    from koyracloud import docker_ctl
+
+    def hang(*a, **k):
+        raise sp.TimeoutExpired(cmd="docker", timeout=30,
+                                output=b"2026-09-05T13:00:00.0Z svc | b\xff", stderr=None)
+
+    monkeypatch.setattr(docker_ctl.subprocess, "run", hang)
+    assert "svc" in docker_ctl.CLIDockerControl().service_logs("svc")
