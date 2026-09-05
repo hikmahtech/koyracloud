@@ -128,7 +128,7 @@ class CLIDockerControl:
         # last line can be an hour-old dead task. Every line carries its own
         # RFC3339Nano prefix, so sort on that and keep the newest `tail` lines.
         lines = ((r.stdout or "") + (r.stderr or "")).splitlines()
-        lines.sort(key=lambda l: l.split(" ", 1)[0])
+        lines.sort(key=lambda ln: ln.split(" ", 1)[0])
         return "\n".join(lines[-tail:])
 
     def service_status(self, service: str) -> dict:
