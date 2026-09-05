@@ -122,7 +122,14 @@ class CLIDockerControl:
             capture_output=True, text=True, timeout=30)
         if r.returncode != 0:
             return (r.stderr or "").strip() or "(no logs yet — service not running)"
-        return (r.stdout or "") + (r.stderr or "")
+        # `docker service logs` merges every task of the service — including
+        # shut-down ones from earlier deploys — without sorting across them, and
+        # applies --tail per task. So the newest lines land mid-buffer and the
+        # last line can be an hour-old dead task. Every line carries its own
+        # RFC3339Nano prefix, so sort on that and keep the newest `tail` lines.
+        lines = ((r.stdout or "") + (r.stderr or "")).splitlines()
+        lines.sort(key=lambda l: l.split(" ", 1)[0])
+        return "\n".join(lines[-tail:])
 
     def service_status(self, service: str) -> dict:
         desired = subprocess.run(
