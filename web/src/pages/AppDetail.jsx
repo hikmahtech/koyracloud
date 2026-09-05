@@ -210,7 +210,7 @@ function RuntimeLogs({ id }) {
   const { data, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: ["runtime-logs", id],
     queryFn: () => getRuntimeLogs(id, 400),
-    refetchInterval: 5 * 60 * 1000,   // auto-refresh every 5 minutes
+    refetchInterval: 30 * 1000,   // auto-refresh every 30s
   });
   const box = useRef(null);
   useEffect(() => { if (box.current) box.current.scrollTop = box.current.scrollHeight; }, [data]);
@@ -219,7 +219,7 @@ function RuntimeLogs({ id }) {
     <div className="card overflow-hidden">
       <div className="px-4 py-2.5 border-b border-[var(--color-line)] flex items-center justify-between">
         <span className="mono text-xs text-[var(--color-muted)]">
-          runtime logs · auto-refresh 5m · updated {updated}
+          runtime logs · auto-refresh 30s · updated {updated}
         </span>
         <button onClick={() => refetch()} disabled={isFetching}
                 className="mono text-xs text-acid hover:underline linkbtn disabled:opacity-50">

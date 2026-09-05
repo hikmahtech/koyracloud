@@ -1,5 +1,6 @@
 """Unit tests for the pure modules: manifest, crypto, auth, stack_render."""
 import json
+import types
 from pathlib import Path
 
 import pytest
@@ -1195,3 +1196,34 @@ def test_ephemeral_key_refuses_to_start_once_secrets_exist(tmp_path):
     # same DB, key now missing -> starting would silently orphan those secrets
     with pytest.raises(RuntimeError, match="already holds"):
         _make(_startup_settings(tmp_path, secret_key=""))
+
+
+# --- runtime logs -----------------------------------------------------------
+def test_service_logs_sorts_merged_tasks_newest_last(monkeypatch):
+    """`docker service logs` merges dead tasks in unsorted, so the raw last
+    line can be an hour old. We sort by timestamp and keep the newest `tail`."""
+    from koyracloud import docker_ctl
+
+    raw = "\n".join([
+        "2026-09-05T12:21:16.000000000Z svc.1@noon    | old task A",
+        "2026-09-05T13:03:11.000000000Z svc.1@noon    | live task",
+        "2026-09-05T11:24:36.000000000Z svc.1@wow     | older task B",
+        "2026-09-05T12:13:11.000000000Z svc.1@noon    | dead task C",
+    ])
+    monkeypatch.setattr(
+        docker_ctl.subprocess, "run",
+        lambda *a, **k: types.SimpleNamespace(returncode=0, stdout=raw, stderr=""))
+
+    out = docker_ctl.CLIDockerControl().service_logs("svc", tail=3).splitlines()
+    assert out[-1].endswith("live task")
+    assert len(out) == 3                      # --tail is honoured, not per-task
+    assert out == sorted(out)                 # chronological
+
+
+def test_service_logs_error_passthrough(monkeypatch):
+    from koyracloud import docker_ctl
+
+    monkeypatch.setattr(
+        docker_ctl.subprocess, "run",
+        lambda *a, **k: types.SimpleNamespace(returncode=1, stdout="", stderr=""))
+    assert "no logs yet" in docker_ctl.CLIDockerControl().service_logs("svc")
