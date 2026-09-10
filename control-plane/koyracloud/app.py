@@ -229,8 +229,19 @@ def create_app(
     _waitlist_rl = RateLimiter(limit=10, window=60)    # per IP/min for /api/waitlist
 
     def _client_ip(request: Request) -> str:
-        fwd = request.headers.get("x-forwarded-for", "")
-        return (fwd or (request.client.host if request.client else "")).split(",")[0].strip() or "?"
+        # cf-connecting-ip, then x-real-ip, then the socket peer. NEVER
+        # x-forwarded-for: Traefik has no forwardedHeaders.trustedIPs, so it
+        # OVERWRITES that header with its own peer (the cloudflared container)
+        # and every visitor on earth arrives with the same value — verified
+        # 2026-09-10, a request from a real public IP was seen as 10.0.6.3.
+        # Keying a rate limit on it puts the whole internet in one bucket; the
+        # same bug caused a site-wide 429 outage on ansaar.in. See
+        # homelab-gitops docs/infrastructure/client-ip-and-forwarded-headers.md.
+        for header in ("cf-connecting-ip", "x-real-ip"):
+            value = request.headers.get(header, "").strip()
+            if value:
+                return value
+        return (request.client.host if request.client else "").strip() or "?"
 
     def get_or_create_analytics(s, app_id: int) -> AppAnalytics:
         a = s.get(AppAnalytics, app_id)
