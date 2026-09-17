@@ -38,20 +38,27 @@ def _primary_host(app: App) -> str | None:
 def check_once(db: Database, prober: Prober, *, now: dt.datetime | None = None,
                down_threshold: int = DOWN_THRESHOLD) -> list[tuple[int, str]]:
     """Probe every app that has gone live + has a host. Returns transitions as
-    (app_id, "up"|"down")."""
+    (app_id, "up"|"down").
+
+    Probes run with no DB session open. A sweep takes about a second per app,
+    and doing it inside one session held SQLite's write lock for the whole
+    sweep, so other writes failed with 'database is locked' (#127)."""
     now = now or dt.datetime.now(dt.timezone.utc)
+    targets: list[tuple[int, str]] = []
+    with db.session() as s:
+        for app in s.query(App).all():
+            host = _primary_host(app)
+            if host and any(d.status == "live" for d in app.deploys):
+                targets.append((app.id, host))
+    results = [(app_id, prober(f"https://{host}/")) for app_id, host in targets]
+
     transitions: list[tuple[int, str]] = []
     with db.session() as s:
-        apps = s.query(App).all()
-        for app in apps:
-            if not any(d.status == "live" for d in app.deploys):
-                continue
-            host = _primary_host(app)
-            if not host:
-                continue
-            ok = prober(f"https://{host}/")
-            s.add(UptimeSample(app_id=app.id, ts=now, ok=ok))
-            st = s.get(UptimeState, app.id) or UptimeState(app_id=app.id)
+        for app_id, ok in results:
+            if s.get(App, app_id) is None:
+                continue  # deleted mid-sweep
+            s.add(UptimeSample(app_id=app_id, ts=now, ok=ok))
+            st = s.get(UptimeState, app_id) or UptimeState(app_id=app_id)
             st.last_checked = now
             if ok:
                 st.consecutive_fail = 0
@@ -60,13 +67,13 @@ def check_once(db: Database, prober: Prober, *, now: dt.datetime | None = None,
                     st.up = True
                     st.up_since = now
                     if was_down:
-                        transitions.append((app.id, "up"))
+                        transitions.append((app_id, "up"))
             else:
                 st.consecutive_fail += 1
                 if st.consecutive_fail >= down_threshold and st.up is not False:
                     st.up = False
                     st.up_since = now
-                    transitions.append((app.id, "down"))
+                    transitions.append((app_id, "down"))
             s.add(st)
         # prune old samples
         cutoff = now - SAMPLE_RETENTION

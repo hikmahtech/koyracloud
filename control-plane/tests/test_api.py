@@ -344,6 +344,38 @@ def test_uptime_monitor_debounce_and_transitions(client, env):
     assert summ["up"] is True and summ["samples_24h"] >= 5
 
 
+def _db_writable(env) -> bool:
+    """True if another connection could take the write lock right now. Slow
+    I/O done while holding it made other writes fail with 'database is locked'
+    once they outwaited busy_timeout (#127)."""
+    import sqlite3
+    con = sqlite3.connect(env["settings"].db_url.removeprefix("sqlite:///"), timeout=0)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        con.rollback()
+        return True
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        con.close()
+
+
+def test_uptime_probes_run_without_holding_the_write_lock(client, env):
+    from koyracloud import monitor
+    for name in ("mon-a", "mon-b", "mon-c"):
+        aid = client.post("/api/apps", json={"name": name,
+                          "repo_url": "https://github.com/o/r"}).json()["id"]
+        client.post(f"/api/apps/{aid}/deploys", json={})
+    writable = []
+
+    def probe(url):
+        writable.append(_db_writable(env))
+        return True
+
+    monitor.check_once(env["db"], probe)
+    assert writable == [True, True, True]
+
+
 def test_uptime_skips_never_deployed(client, env):
     from koyracloud import monitor
     client.post("/api/apps", json={"name": "ndep", "repo_url": "https://github.com/o/r"})
@@ -777,6 +809,35 @@ def test_verify_domain_reflects_live_status(env):
     did = c.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"}).json()["id"]
     body = c.post(f"/api/apps/{aid}/domains/{did}/verify").json()
     assert body["ssl_status"] == "active" and body["verified"] is True
+
+
+def test_cloudflare_calls_run_without_holding_the_write_lock(env):
+    class LockCheckingCF(_FakeCF):
+        writable = []
+
+        def create_custom_hostname(self, host):
+            self.writable.append(("create", host, _db_writable(env)))
+            return super().create_custom_hostname(host)
+
+        def get_custom_hostname(self, hostname_id):
+            self.writable.append(("get", hostname_id, _db_writable(env)))
+            return super().get_custom_hostname(hostname_id)
+
+    cf = LockCheckingCF()
+    c = _cf_client(env, cf)
+    aid = c.post("/api/apps", json={"name": "shop",
+                 "repo_url": "https://github.com/o/r"}).json()["id"]
+    c.post(f"/api/apps/{aid}/domains", json={"host": "shop.example.com"})
+    from koyracloud.models import Domain
+    with env["db"].session() as s:
+        d = Domain(app_id=aid, host="legacy.example.com", is_primary=False)
+        s.add(d)
+        s.commit()
+        did = d.id
+    c.post(f"/api/apps/{aid}/domains/{did}/verify")
+    assert cf.writable == [("create", "shop.example.com", True),
+                           ("create", "legacy.example.com", True),
+                           ("get", "ch_legacy.example.com", True)]
 
 
 def test_verify_adopts_cert_for_preexisting_domain(env):
