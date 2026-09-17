@@ -736,6 +736,7 @@ function SettingsTab({ id, app }) {
           <p className="text-xs -mt-1" style={{ color: "#febc2e" }}>
             ⚠ The next deploy builds this app from <span className="mono">{repoUrl.trim() || "—"}</span>,
             not from <span className="mono">{app.repo_url}</span> — including an auto-deploy.
+            Whatever is running now keeps running until then.
             Only the app’s owner (or an admin) can make this change, and you need
             access to the new repo: it must be one your GitHub App install covers,
             or reachable with the platform token or this app’s

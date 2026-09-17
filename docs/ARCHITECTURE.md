@@ -245,9 +245,12 @@ therefore editable via `PATCH /api/apps/{id}` (`repo_url`, validated exactly lik
   is not a change, so their Settings form still saves.
 - **Clears `webhook_seen_at` / `webhook_rejected_at`.** They describe the *old* repo's
   hook; keeping them would show "✓ webhook connected" for a repo nobody has wired up yet.
-- **Forgets the app's `built_images` rows.** The build cache is keyed by commit +
-  build-args. Unrelated repos never share a commit sha — but a **fork** shares every one,
-  so the next deploy would silently reuse an image built from the old repo.
+- **Leaves the app's `built_images` rows alone.** A commit sha pins its tree exactly, so an
+  image built from that commit and those build-args is the same code whichever URL it was
+  cloned from — a fork that shares a sha shares the content. Dropping the rows would also
+  break cron: `scheduler.launch` resolves the live deploy's image from them (the bare
+  `<commit12>` tag is no longer pushed), so every run between the edit and the next deploy
+  would ask the registry for a tag that does not exist.
 
 The clone credential follows the app's *owner*, not the repo (see the GitHub App section
 below), so the new repo must be one the owner's App install covers, or reachable with the

@@ -460,22 +460,6 @@ def test_repo_url_change_resets_webhook_bookkeeping(client, env):
     assert client.get(f"/api/apps/{aid}").json()["webhook_seen_at"] is not None
 
 
-def test_repo_url_change_forces_a_rebuild(client, env):
-    """The built-image cache is keyed by commit + build-args. Unrelated repos
-    never share a commit, but a FORK shares every one — so the next deploy would
-    reuse an image built from the old repo. Changing the URL forgets the tags."""
-    aid = client.post("/api/apps", json={"name": "shop",
-                      "repo_url": "https://github.com/acme/old"}).json()["id"]
-    client.post(f"/api/apps/{aid}/deploys", json={})
-    assert len(env["docker"].builds) == 1
-    client.post(f"/api/apps/{aid}/deploys", json={})
-    assert len(env["docker"].builds) == 1          # same commit → no rebuild
-
-    client.patch(f"/api/apps/{aid}", json={"repo_url": "https://github.com/acme/new"})
-    client.post(f"/api/apps/{aid}/deploys", json={})
-    assert len(env["docker"].builds) == 2          # different repo → real build
-
-
 def test_patch_app_without_repo_url_leaves_it_alone(client):
     aid = client.post("/api/apps", json={"name": "p",
                       "repo_url": "https://github.com/o/r"}).json()["id"]

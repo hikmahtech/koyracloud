@@ -27,9 +27,9 @@ from koyracloud.db import Database
 from koyracloud.deployer import Deployer
 from koyracloud.docker_ctl import CLIDockerControl, DockerControl
 from koyracloud.models import (AllowedUser, App, AppAnalytics, AppMember, AppNotify,
-                                AppPin, AppRedis, BuiltImage, CronJob, CronRun,
-                                Deploy, Domain, DomainCert, EnvVar, Hit, Secret,
-                                User, Waitlist)
+                                AppPin, AppRedis, CronJob, CronRun, Deploy,
+                                Domain, DomainCert, EnvVar, Hit, Secret, User,
+                                Waitlist)
 from koyracloud.schemas import (AllowedUserIn, AppCreate, AppOut, AppUpdate,
                                 DeployOut, DeployTrigger, DnsRecord, DomainIn,
                                 DomainOut, EnvVarIn, RollbackRequest, SecretIn,
@@ -688,12 +688,13 @@ def create_app(
                 # calls for it.
                 obj.webhook_seen_at = None
                 obj.webhook_rejected_at = None
-                # The build cache is keyed by app + commit + build-args. Two
-                # unrelated repos never share a commit sha, but a FORK shares
-                # all of them: the next deploy would "reuse" an image built from
-                # the old repo and never notice. Forget this app's tags so the
-                # first deploy from the new repo really builds.
-                s.query(BuiltImage).filter_by(app_id=obj.id).delete()
+                # The app's BuiltImage rows are deliberately KEPT. A commit sha
+                # pins its tree exactly, so an image built from that commit and
+                # those build-args is the same code whichever URL it came from
+                # (a fork sharing a sha shares the content). Dropping them would
+                # also break cron: scheduler.launch resolves the live deploy's
+                # image from these rows, so every run between here and the next
+                # deploy would ask for a tag that was never pushed.
                 # Audit: rare, sensitive, and invisible afterwards (the old URL
                 # is gone). WARNING level so it survives the default log config.
                 logging.warning("app %s (%s): repo_url changed by %s: %s -> %s",
