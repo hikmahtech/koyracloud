@@ -395,6 +395,94 @@ def test_patch_app(client):
     assert body["branch"] == "dev" and body["auto_deploy"] is True
 
 
+def _push(client, env, repo_full_name):
+    """Send a verified GitHub push webhook for a repo. No ``after`` sha, so the
+    same-commit dedup never applies and each call is a fresh trigger."""
+    import hashlib
+    import hmac
+    body = json.dumps({"ref": "refs/heads/main",
+                       "repository": {"full_name": repo_full_name}}).encode()
+    sig = "sha256=" + hmac.new(env["settings"].webhook_secret.encode(), body,
+                               hashlib.sha256).hexdigest()
+    return client.post("/api/webhooks/github", content=body,
+                       headers={"X-Hub-Signature-256": sig, "X-GitHub-Event": "push",
+                                "content-type": "application/json"})
+
+
+def test_patch_app_changes_repo_url(client):
+    aid = client.post("/api/apps", json={"name": "moved",
+                      "repo_url": "https://github.com/acme/old"}).json()["id"]
+    r = client.patch(f"/api/apps/{aid}",
+                     json={"repo_url": "https://github.com/acme/new"})
+    assert r.status_code == 200
+    assert r.json()["repo_url"] == "https://github.com/acme/new"
+    assert client.get(f"/api/apps/{aid}").json()["repo_url"] == "https://github.com/acme/new"
+
+
+def test_patch_app_rejects_bad_repo_url(client):
+    aid = client.post("/api/apps", json={"name": "moved",
+                      "repo_url": "https://github.com/acme/old"}).json()["id"]
+    for bad in ["--upload-pack=touch /tmp/x", "ftp://github.com/acme/new", "acme/new", ""]:
+        assert client.patch(f"/api/apps/{aid}", json={"repo_url": bad}).status_code == 422
+    # the app still points at the original repo
+    assert client.get(f"/api/apps/{aid}").json()["repo_url"] == "https://github.com/acme/old"
+
+
+def test_repo_url_change_reroutes_the_webhook(client, env):
+    """After a repo rename the app must auto-deploy from the NEW slug and stop
+    answering the old one — a new, unrelated repo can take the old name."""
+    aid = client.post("/api/apps", json={"name": "renamed",
+                      "repo_url": "https://github.com/acme/old", "branch": "main",
+                      "auto_deploy": True}).json()["id"]
+    assert _push(client, env, "acme/old").json()["triggered"] == ["renamed"]
+
+    assert client.patch(f"/api/apps/{aid}",
+                        json={"repo_url": "https://github.com/acme/new"}).status_code == 200
+    # a push to the repo that now owns the OLD name must not touch this app
+    assert _push(client, env, "acme/old").json()["triggered"] == []
+    assert _push(client, env, "acme/new").json()["triggered"] == ["renamed"]
+
+
+def test_repo_url_change_resets_webhook_bookkeeping(client, env):
+    """webhook_seen_at describes the OLD repo's hook. Carrying it over would
+    show "✓ webhook connected" for a repo nobody has wired up yet."""
+    aid = client.post("/api/apps", json={"name": "renamed",
+                      "repo_url": "https://github.com/acme/old", "branch": "main",
+                      "auto_deploy": True}).json()["id"]
+    _push(client, env, "acme/old")
+    assert client.get(f"/api/apps/{aid}").json()["webhook_seen_at"] is not None
+
+    client.patch(f"/api/apps/{aid}", json={"repo_url": "https://github.com/acme/new"})
+    after = client.get(f"/api/apps/{aid}").json()
+    assert after["webhook_seen_at"] is None and after["webhook_rejected_at"] is None
+    # the new repo's first verified delivery turns it green again
+    _push(client, env, "acme/new")
+    assert client.get(f"/api/apps/{aid}").json()["webhook_seen_at"] is not None
+
+
+def test_repo_url_change_forces_a_rebuild(client, env):
+    """The built-image cache is keyed by commit + build-args. Unrelated repos
+    never share a commit, but a FORK shares every one — so the next deploy would
+    reuse an image built from the old repo. Changing the URL forgets the tags."""
+    aid = client.post("/api/apps", json={"name": "shop",
+                      "repo_url": "https://github.com/acme/old"}).json()["id"]
+    client.post(f"/api/apps/{aid}/deploys", json={})
+    assert len(env["docker"].builds) == 1
+    client.post(f"/api/apps/{aid}/deploys", json={})
+    assert len(env["docker"].builds) == 1          # same commit → no rebuild
+
+    client.patch(f"/api/apps/{aid}", json={"repo_url": "https://github.com/acme/new"})
+    client.post(f"/api/apps/{aid}/deploys", json={})
+    assert len(env["docker"].builds) == 2          # different repo → real build
+
+
+def test_patch_app_without_repo_url_leaves_it_alone(client):
+    aid = client.post("/api/apps", json={"name": "p",
+                      "repo_url": "https://github.com/o/r"}).json()["id"]
+    assert client.patch(f"/api/apps/{aid}", json={"branch": "dev"}).status_code == 200
+    assert client.get(f"/api/apps/{aid}").json()["repo_url"] == "https://github.com/o/r"
+
+
 def test_analytics_beacon_served(client):
     r = client.get("/_k/a.js")
     assert r.status_code == 200 and "data-site" in r.text

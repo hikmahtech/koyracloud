@@ -7,6 +7,16 @@ track functional changes by theme rather than tagged semver releases. Newest fir
 
 ### Added
 
+- **An app's repository URL is editable** — Settings now has a Repository field, not a
+  read-only line. Until now a repo rename broke an app permanently: the webhook matches by
+  URL slug, so the app quietly stopped auto-deploying, and because GitHub lets the old name
+  be reused, a *new, unrelated* repo taking that name would have deployed over the running
+  app on its first push. Changing the URL is owner/admin only (the same bar as deleting the
+  app — members keep branch and the toggles), clears `webhook_seen_at` /
+  `webhook_rejected_at` so the UI stops vouching for the old repo's hook, and forgets the
+  app's built-image tags so a fork can't hand back an image built from the old repo. The
+  old URL, the new one and who changed it are logged. Safe order for a rename: rename on
+  GitHub → edit the URL here → confirm one push deploys → only then reuse the old name.
 - **Deploy your private repos with your own GitHub access, Vercel-style** — sign-in can
   now go through a **GitHub App** (`GITHUB_APP_SLUG`, see the self-host tutorial §7).
   Users install the app on the repos they choose and pick them from a list on the New

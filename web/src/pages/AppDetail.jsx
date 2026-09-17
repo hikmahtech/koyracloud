@@ -714,18 +714,36 @@ function MembersCard({ id }) {
 function SettingsTab({ id, app }) {
   const qc = useQueryClient();
   const nav = useNavigate();
+  const [repoUrl, setRepoUrl] = useState(app.repo_url);
   const [branch, setBranch] = useState(app.branch);
   const [auto, setAuto] = useState(app.auto_deploy);
   const [pinned, setPinned] = useState(app.pinned);
-  const save = useMutation({ mutationFn: () => updateApp(id, { branch, auto_deploy: auto, pinned }), onSuccess: () => qc.invalidateQueries({ queryKey: ["app", id] }) });
+  const save = useMutation({ mutationFn: () => updateApp(id, { repo_url: repoUrl.trim(), branch, auto_deploy: auto, pinned }), onSuccess: () => qc.invalidateQueries({ queryKey: ["app", id] }) });
   const del = useMutation({ mutationFn: () => deleteApp(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ["apps"] }); nav("/"); } });
+  const saveDetail = save.error?.response?.data?.detail;
+  const saveErr = save.error
+    ? (typeof saveDetail === "string" ? saveDetail : "Couldn’t save — check the repository URL and branch.")
+    : null;
+  const repoChanged = repoUrl.trim() !== app.repo_url;
   return (
     <div className="max-w-2xl space-y-6">
       <div className="card p-6 space-y-4">
-        <div>
+        <label className="block">
           <div className="text-sm font-medium mb-1.5">Repository</div>
-          <div className="mono text-xs text-[var(--color-muted)]">{app.repo_url}</div>
-        </div>
+          <input className="input mono" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} />
+        </label>
+        {repoChanged && (
+          <p className="text-xs -mt-1" style={{ color: "#febc2e" }}>
+            ⚠ The next deploy builds this app from <span className="mono">{repoUrl.trim() || "—"}</span>,
+            not from <span className="mono">{app.repo_url}</span> — including an auto-deploy.
+            Only the app’s owner (or an admin) can make this change, and you need
+            access to the new repo: it must be one your GitHub App install covers,
+            or reachable with the platform token or this app’s
+            <span className="mono"> KOYRA_GIT_TOKEN</span> secret. Saving also clears
+            the webhook status below, because that described the old repo — add a
+            webhook to the new one.
+          </p>
+        )}
         <label className="block">
           <div className="text-sm font-medium mb-1.5">Branch</div>
           <input className="input mono" value={branch} onChange={(e) => setBranch(e.target.value)} />
@@ -765,6 +783,7 @@ function SettingsTab({ id, app }) {
           node-local data isn’t orphaned by a reschedule.
         </p>
         <button onClick={() => save.mutate()} className="btn btn-primary text-sm">{save.isPending ? "Saving…" : "Save"}</button>
+        {saveErr && <p className="text-[var(--color-danger)] text-xs">{saveErr}</p>}
       </div>
 
       <div className="card p-6 space-y-2">

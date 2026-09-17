@@ -27,9 +27,9 @@ from koyracloud.db import Database
 from koyracloud.deployer import Deployer
 from koyracloud.docker_ctl import CLIDockerControl, DockerControl
 from koyracloud.models import (AllowedUser, App, AppAnalytics, AppMember, AppNotify,
-                                AppPin, AppRedis, CronJob, CronRun, Deploy,
-                                Domain, DomainCert, EnvVar, Hit, Secret, User,
-                                Waitlist)
+                                AppPin, AppRedis, BuiltImage, CronJob, CronRun,
+                                Deploy, Domain, DomainCert, EnvVar, Hit, Secret,
+                                User, Waitlist)
 from koyracloud.schemas import (AllowedUserIn, AppCreate, AppOut, AppUpdate,
                                 DeployOut, DeployTrigger, DnsRecord, DomainIn,
                                 DomainOut, EnvVarIn, RollbackRequest, SecretIn,
@@ -672,6 +672,32 @@ def create_app(
     def update_app(app_id: int, body: AppUpdate, login: str = Auth):
         with db.session() as s:
             obj = get_app_or_404(app_id, s, login)
+            if body.repo_url is not None and body.repo_url != obj.repo_url:
+                # Repointing an app at another repo is how *different code* ends
+                # up on a live service — a manual Deploy clones the new URL, and
+                # the webhook starts matching the new slug. That is at least as
+                # sensitive as deleting the app, so it takes the same bar:
+                # owner or admin. Members keep branch/auto_deploy/pinned.
+                get_app_or_404(app_id, s, login, manage=True)
+                old_url = obj.repo_url
+                obj.repo_url = body.repo_url
+                # These two timestamps describe the OLD repo's webhook. Left
+                # alone the Settings tab would say "✓ webhook connected" about a
+                # repo nobody has wired up yet — the exact confusion #82 fixed.
+                # Cleared, so the UI asks for the new repo's hook until GitHub
+                # calls for it.
+                obj.webhook_seen_at = None
+                obj.webhook_rejected_at = None
+                # The build cache is keyed by app + commit + build-args. Two
+                # unrelated repos never share a commit sha, but a FORK shares
+                # all of them: the next deploy would "reuse" an image built from
+                # the old repo and never notice. Forget this app's tags so the
+                # first deploy from the new repo really builds.
+                s.query(BuiltImage).filter_by(app_id=obj.id).delete()
+                # Audit: rare, sensitive, and invisible afterwards (the old URL
+                # is gone). WARNING level so it survives the default log config.
+                logging.warning("app %s (%s): repo_url changed by %s: %s -> %s",
+                                obj.id, obj.name, login, old_url, obj.repo_url)
             if body.branch is not None:
                 obj.branch = body.branch
             if body.auto_deploy is not None:

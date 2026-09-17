@@ -179,8 +179,10 @@ route checks `is_admin(login) or is_member(login)`; app-scoped routes add a
 second check, `can_see(app, login)`: the app's owner, an admin, or a login in
 the app's **members** list (`app_members` table, managed from the Settings tab
 via `/api/apps/{id}/members`). Members operate the app (deploy, env, secrets,
-domains, logs); deleting it or changing its members is owner/admin only
-(`get_app_or_404(..., manage=True)` → 403). Anyone else gets 404, never 403,
+domains, logs); deleting it, changing its members, and changing its repository
+URL is owner/admin only (`get_app_or_404(..., manage=True)` → 403) — repointing
+an app at another repo is how different code reaches a live service, so it sits
+on the owner's side of the line. Anyone else gets 404, never 403,
 so app existence isn't leaked. Membership grants nothing platform-wide: a
 member still has to be on the allowlist to sign in at all.
 

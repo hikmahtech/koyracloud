@@ -233,6 +233,27 @@ The webhook (`POST /api/webhooks/github`, HMAC-verified) maps an event to a depl
 The repo's webhook is configured to send whichever event suits it; the control plane
 handles both and dedups by commit SHA. Per-app `auto_deploy` gates the whole thing.
 
+**Matching is by URL, so the URL is editable.** A delivery finds its apps through
+`webhooks.repo_slug(app.repo_url)` — nothing stores a repo id. Rename the repo on GitHub
+and the app stops auto-deploying; worse, GitHub lets the old name be reused, so a *new,
+unrelated* repo under it would then match and deploy over the running app. `repo_url` is
+therefore editable via `PATCH /api/apps/{id}` (`repo_url`, validated exactly like
+`AppCreate`'s) from the Settings tab, and the change does three things at once:
+
+- **Owner or admin only** (`get_app_or_404(..., manage=True)`), the same bar as deleting
+  the app. Members keep `branch` / `auto_deploy` / `pinned`; re-sending the unchanged URL
+  is not a change, so their Settings form still saves.
+- **Clears `webhook_seen_at` / `webhook_rejected_at`.** They describe the *old* repo's
+  hook; keeping them would show "✓ webhook connected" for a repo nobody has wired up yet.
+- **Forgets the app's `built_images` rows.** The build cache is keyed by commit +
+  build-args. Unrelated repos never share a commit sha — but a **fork** shares every one,
+  so the next deploy would silently reuse an image built from the old repo.
+
+The clone credential follows the app's *owner*, not the repo (see the GitHub App section
+below), so the new repo must be one the owner's App install covers, or reachable with the
+platform PAT or the app's `KOYRA_GIT_TOKEN` secret. The change is logged at WARNING with
+the old URL, the new one and who made it — nothing else records the old value.
+
 ## Decision: private repos through a GitHub App user token, not a shared PAT
 
 **Problem:** every clone used one platform PAT, so a user's private repo failed with

@@ -103,9 +103,19 @@ class RollbackRequest(BaseModel):
 
 
 class AppUpdate(BaseModel):
+    # repo_url gets the same guard as AppCreate's — it reaches `git clone` as an
+    # argument, so a leading "-" would be read as an option, not a URL. The
+    # deployer re-checks it at clone time (deployer.validate_repo_ref, an
+    # identical test) so a value that got in another way is still caught there.
+    repo_url: str | None = None
     branch: str | None = None
     auto_deploy: bool | None = None
     pinned: bool | None = None
+
+    @field_validator("repo_url")
+    @classmethod
+    def _vr(cls, v):
+        return _check_repo_url(v) if v is not None else v
 
     @field_validator("branch")
     @classmethod
