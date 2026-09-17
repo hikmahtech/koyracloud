@@ -626,7 +626,10 @@ def create_app(
             dcv_target=(f"{d.host}.{dcv}.dcv.cloudflare.com" if dcv else ""),
             ownership_name=own.get("name", ""), ownership_value=own.get("value", ""),
             last_checked=dt.datetime.now(dt.timezone.utc))
-        s.flush()
+        # Commit, not flush: a flushed write holds SQLite's write lock, and the
+        # caller's next Cloudflare call (or the backfill's next domain) would
+        # hold it across a slow HTTP request (#127).
+        s.commit()
         return d.cert
 
     def _backfill_certs() -> None:
@@ -826,14 +829,16 @@ def create_app(
                 raise HTTPException(status_code=409, detail="domain already in use")
             d = Domain(app_id=obj.id, host=body.host,
                        is_primary=len(obj.domains) == 0)
-            s.add(d)
-            s.flush()
             # Register external custom domains with Cloudflare for SaaS so the
             # edge mints + renews their cert (adopts an existing hostname if one
             # is already there). The app's own in-zone auto-subdomain needs none.
             # CF failures are non-fatal: the domain is still saved; records
             # simply won't appear until a later verify/backfill succeeds.
+            # Called before `d` joins the session, so no write lock is held
+            # during the Cloudflare request (#127).
             _ensure_cert(s, d)
+            s.add(d)
+            s.flush()
             deploy_id = _redeploy_if_live(s, obj)
             s.commit()
             out = _domain_out(d)
