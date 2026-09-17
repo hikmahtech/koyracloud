@@ -2,10 +2,13 @@
 refreshed on expiry, lists the repos the App is installed on, and clones them
 ahead of the platform PAT (with a fallback when it cannot see the repo)."""
 import datetime as dt
+import sqlite3
 from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event
+from sqlalchemy.exc import OperationalError
 
 from koyracloud import auth, github
 from koyracloud.app import create_app
@@ -152,6 +155,39 @@ def test_user_token_empty_when_refresh_is_refused(gh_env):
 
     assert github.user_token(gh_env["db"], gh_env["crypto"], gh_env["settings"], "tester",
                              client=Refusing()) == ""
+
+
+def _lock_token_saves(db, times):
+    """Make the next `times` writes to users fail as SQLite does under a lock
+    held past busy_timeout (#125)."""
+    left = {"n": times}
+
+    @event.listens_for(db.engine, "before_cursor_execute")
+    def _locked(conn, cursor, statement, *a):  # noqa: ANN001
+        if statement.startswith("UPDATE users") and left["n"]:
+            left["n"] -= 1
+            raise OperationalError(statement, {}, sqlite3.OperationalError("database is locked"))
+
+
+def test_refreshed_token_survives_a_locked_save(gh_env):
+    # GitHub retires the old refresh token the moment it answers, so a lost
+    # save used to cut the user off until they signed in again.
+    _seed_user(gh_env, TOKEN, expires_at=dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=1))
+    _lock_token_saves(gh_env["db"], times=1)
+    tok = github.user_token(gh_env["db"], gh_env["crypto"], gh_env["settings"], "tester",
+                            client=FakeGitHub())
+    assert tok == "ghu_refreshed"
+    with gh_env["db"].session() as s:
+        u = s.query(User).filter_by(github_login="tester").one()
+        assert gh_env["crypto"].decrypt(u.github_refresh_encrypted) == "ghr_2"
+
+
+def test_unsaveable_refresh_still_returns_the_new_token(gh_env):
+    # A save that never lands must not crash the deploy that asked for the token.
+    _seed_user(gh_env, TOKEN, expires_at=dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=1))
+    _lock_token_saves(gh_env["db"], times=99)
+    assert github.user_token(gh_env["db"], gh_env["crypto"], gh_env["settings"], "tester",
+                             client=FakeGitHub()) == "ghu_refreshed"
 
 
 # --- repo listing -------------------------------------------------------------

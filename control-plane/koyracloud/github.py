@@ -12,6 +12,8 @@ import datetime as dt
 import logging
 
 import httpx
+from sqlalchemy import update
+from sqlalchemy.exc import OperationalError
 
 from koyracloud import auth
 from koyracloud.config import Settings
@@ -21,6 +23,7 @@ from koyracloud.models import User
 
 API = "https://api.github.com"
 _REFRESH_SLACK = dt.timedelta(seconds=60)
+_SAVE_TRIES = 3
 
 
 def install_url(settings: Settings) -> str:
@@ -28,14 +31,41 @@ def install_url(settings: Settings) -> str:
     return f"https://github.com/apps/{settings.github_app_slug}/installations/new"
 
 
-def store_token(user: User, tok: dict, crypto: CryptoBox) -> None:
-    """Persist a token response (from exchange_code / refresh_token) encrypted."""
-    user.github_token_encrypted = crypto.encrypt(tok["access_token"])
+def _token_columns(tok: dict, crypto: CryptoBox) -> dict:
+    """A token response (from exchange_code / refresh_token) as encrypted users columns."""
     refresh = tok.get("refresh_token")
-    user.github_refresh_encrypted = crypto.encrypt(refresh) if refresh else ""
     exp = tok.get("expires_in")
-    user.github_token_expires_at = (
-        dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=int(exp)) if exp else None)
+    return {
+        "github_token_encrypted": crypto.encrypt(tok["access_token"]),
+        "github_refresh_encrypted": crypto.encrypt(refresh) if refresh else "",
+        "github_token_expires_at": (
+            dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=int(exp)) if exp else None),
+    }
+
+
+def store_token(user: User, tok: dict, crypto: CryptoBox) -> None:
+    """Persist a token response on a user row, encrypted."""
+    for col, val in _token_columns(tok, crypto).items():
+        setattr(user, col, val)
+
+
+def _save_refreshed(db: Database, crypto: CryptoBox, login: str, tok: dict) -> None:
+    """Write a refreshed pair. GitHub retired the old refresh token when it
+    answered, so a lost write cuts the user off until they sign in again (#125).
+    Each try already waits busy_timeout for the lock; a lock held past that
+    (seen on prod) gets two more tries."""
+    for attempt in range(1, _SAVE_TRIES + 1):
+        try:
+            with db.session() as s:  # one UPDATE, no read first
+                s.execute(update(User).where(User.github_login == login)
+                          .values(**_token_columns(tok, crypto)))
+                s.commit()
+            return
+        except OperationalError as exc:
+            logging.warning("saving refreshed github token for %s failed (try %d/%d): %s",
+                            login, attempt, _SAVE_TRIES, exc)
+    logging.error("refreshed github token for %s was not saved; it stops working "
+                  "when this access token expires, until they sign out and back in", login)
 
 
 def user_token(db: Database, crypto: CryptoBox, settings: Settings, login: str,
@@ -53,19 +83,20 @@ def user_token(db: Database, crypto: CryptoBox, settings: Settings, login: str,
         exp = u.github_token_expires_at
         if exp is not None and exp.tzinfo is None:
             exp = exp.replace(tzinfo=dt.timezone.utc)  # SQLite hands back naive
-        if exp is not None and exp <= dt.datetime.now(dt.timezone.utc) + _REFRESH_SLACK:
-            if not u.github_refresh_encrypted:
-                return ""
-            try:
-                tok = auth.refresh_token(crypto.decrypt(u.github_refresh_encrypted),
-                                         settings.github_client_id,
-                                         settings.github_client_secret, client)
-            except (httpx.HTTPError, ValueError) as exc:
-                logging.warning("github token refresh for %s failed: %s", login, exc)
-                return ""
-            store_token(u, tok, crypto)
-            s.commit()
-        return crypto.decrypt(u.github_token_encrypted)
+        if exp is None or exp > dt.datetime.now(dt.timezone.utc) + _REFRESH_SLACK:
+            return crypto.decrypt(u.github_token_encrypted)
+        if not u.github_refresh_encrypted:
+            return ""
+        refresh = crypto.decrypt(u.github_refresh_encrypted)
+    # The HTTP call runs with no DB connection held.
+    try:
+        tok = auth.refresh_token(refresh, settings.github_client_id,
+                                 settings.github_client_secret, client)
+    except (httpx.HTTPError, ValueError) as exc:
+        logging.warning("github token refresh for %s failed: %s", login, exc)
+        return ""
+    _save_refreshed(db, crypto, login, tok)
+    return tok["access_token"]  # good for its lifetime even if the save failed
 
 
 def list_repos(token: str, client: httpx.Client | None = None) -> list[dict]:
