@@ -189,6 +189,14 @@ secrets:
               <span className="mono"> push</span> deploys on every push; <span className="mono">workflow_run</span>
               deploys only after a GitHub Actions run finishes successfully — so repos with CI deploy after it passes.
             </p>
+            <p className="text-[var(--color-muted)]">
+              <b className="text-[var(--color-fg)]">Renaming the repo on GitHub?</b> Deliveries
+              are matched by repository name, so do it in this order: rename on GitHub, edit
+              <b> Repository</b> in Settings, push once and check it deploys — and only then let
+              anything else take the old name. GitHub allows the old name to be reused, and a repo
+              sitting there while your app still points at it would deploy over your app.
+              Only the app's owner (or an admin) can change the URL.
+            </p>
           </Section>
 
           <Section id="static" title="Static sites (Netlify-style)">

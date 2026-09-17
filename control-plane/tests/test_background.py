@@ -151,6 +151,28 @@ def test_launch_uses_built_image_tag_for_live_commit(env):
             == "reg:5000/koyra-app-bg:deadbeefcafe-aabbccddeeff")
 
 
+def test_repo_url_change_keeps_the_image_cron_runs_from(client, env):
+    """Editing an app's repo_url must leave its BuiltImage rows alone. launch()
+    resolves the live deploy's image from them, so forgetting them would make
+    every cron run between the edit and the next deploy ask for a tag that was
+    never pushed. Keeping them is also correct: a commit sha pins its tree, so
+    the image is the same code whichever URL it was cloned from."""
+    aid = client.post("/api/apps", json={"name": "bg",
+                      "repo_url": "https://github.com/acme/old"}).json()["id"]
+    client.post(f"/api/apps/{aid}/deploys", json={})
+    built_tag = env["docker"].builds[0][0]
+    assert "-" in built_tag.rsplit(":", 1)[1]   # <commit12>-<args-hash>, not a bare commit
+    jid = _add_cron(env["db"], aid)
+
+    assert client.patch(f"/api/apps/{aid}",
+                        json={"repo_url": "https://github.com/acme/new"}).status_code == 200
+    with env["db"].session() as s:
+        assert [b.tag for b in s.query(BuiltImage).filter_by(app_id=aid).all()] == [built_tag]
+
+    scheduler.launch(env["db"], env["docker"], env["settings"], env["crypto"], jid)
+    assert env["docker"].jobs[-1]["image"] == built_tag
+
+
 def test_launch_records_failure_on_nonzero_exit(env):
     app_id = _make_app(env["db"], live=True)
     jid = _add_cron(env["db"], app_id)

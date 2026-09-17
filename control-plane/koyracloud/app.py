@@ -672,6 +672,33 @@ def create_app(
     def update_app(app_id: int, body: AppUpdate, login: str = Auth):
         with db.session() as s:
             obj = get_app_or_404(app_id, s, login)
+            if body.repo_url is not None and body.repo_url != obj.repo_url:
+                # Repointing an app at another repo is how *different code* ends
+                # up on a live service — a manual Deploy clones the new URL, and
+                # the webhook starts matching the new slug. That is at least as
+                # sensitive as deleting the app, so it takes the same bar:
+                # owner or admin. Members keep branch/auto_deploy/pinned.
+                get_app_or_404(app_id, s, login, manage=True)
+                old_url = obj.repo_url
+                obj.repo_url = body.repo_url
+                # These two timestamps describe the OLD repo's webhook. Left
+                # alone the Settings tab would say "✓ webhook connected" about a
+                # repo nobody has wired up yet — the exact confusion #82 fixed.
+                # Cleared, so the UI asks for the new repo's hook until GitHub
+                # calls for it.
+                obj.webhook_seen_at = None
+                obj.webhook_rejected_at = None
+                # The app's BuiltImage rows are deliberately KEPT. A commit sha
+                # pins its tree exactly, so an image built from that commit and
+                # those build-args is the same code whichever URL it came from
+                # (a fork sharing a sha shares the content). Dropping them would
+                # also break cron: scheduler.launch resolves the live deploy's
+                # image from these rows, so every run between here and the next
+                # deploy would ask for a tag that was never pushed.
+                # Audit: rare, sensitive, and invisible afterwards (the old URL
+                # is gone). WARNING level so it survives the default log config.
+                logging.warning("app %s (%s): repo_url changed by %s: %s -> %s",
+                                obj.id, obj.name, login, old_url, obj.repo_url)
             if body.branch is not None:
                 obj.branch = body.branch
             if body.auto_deploy is not None:

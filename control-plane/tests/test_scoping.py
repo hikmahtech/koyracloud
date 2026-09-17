@@ -146,6 +146,36 @@ def test_member_of_an_app_sees_and_operates_it_but_cannot_manage_it(scoped):
     assert bob.get("/api/apps").json() == []
 
 
+def test_only_the_owner_can_change_the_repo_url(scoped):
+    """Repointing an app at another repo puts different code on a live service,
+    so it sits with delete and membership on the owner's side of the line —
+    a member may still edit the branch and the toggles."""
+    scoped["invite"]("alice")
+    scoped["invite"]("bob")
+    alice, bob = scoped["as_user"]("alice"), scoped["as_user"]("bob")
+    app_id = _mkapp(alice, "alice-app")
+    assert alice.put(f"/api/apps/{app_id}/members", json={"login": "bob"}).status_code == 204
+
+    # A member may still save the rest of the settings form.
+    assert bob.patch(f"/api/apps/{app_id}",
+                     json={"branch": "dev", "auto_deploy": True}).status_code == 200
+    # Re-sending the current URL is not a change, so the form still saves.
+    assert bob.patch(f"/api/apps/{app_id}",
+                     json={"repo_url": "https://github.com/example/app",
+                           "branch": "dev"}).status_code == 200
+    # Changing it is refused, and nothing is written.
+    r = bob.patch(f"/api/apps/{app_id}", json={"repo_url": "https://github.com/example/other"})
+    assert r.status_code == 403
+    assert alice.get(f"/api/apps/{app_id}").json()["repo_url"] == "https://github.com/example/app"
+
+    # The owner can, and so can an admin.
+    assert alice.patch(f"/api/apps/{app_id}",
+                       json={"repo_url": "https://github.com/example/other"}).status_code == 200
+    assert scoped["as_user"]("operator").patch(
+        f"/api/apps/{app_id}", json={"repo_url": "https://github.com/example/third"}
+    ).status_code == 200
+
+
 def test_admin_can_add_members_to_any_app(scoped):
     scoped["invite"]("alice")
     scoped["invite"]("bob")
