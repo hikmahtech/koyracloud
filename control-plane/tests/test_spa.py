@@ -19,6 +19,19 @@ def test_client_route_falls_back_to_index(client):
     assert "<!doctype html>" in r.text.lower()
 
 
+@pytest.mark.skipif(not (WEB_DIST / "app.html").is_file(), reason="web/dist not prerendered")
+def test_dashboard_routes_get_the_bare_shell(client):
+    # Dashboard paths get app.html (no GA tag, #132), not the prerendered
+    # landing page that "/" serves.
+    shell = (WEB_DIST / "app.html").read_text()
+    for path in ("/apps/123", "/apps/new", "/team"):
+        r = client.get(path)
+        assert r.status_code == 200
+        assert r.text == shell
+        assert "googletagmanager" not in r.text
+    assert client.get("/").text != shell
+
+
 @pytest.mark.skipif(not WEB_DIST.is_dir(), reason="web/dist not built")
 def test_api_not_shadowed_by_spa(client):
     # /api routes still resolve even with the SPA catch-all registered

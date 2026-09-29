@@ -40,8 +40,13 @@ changing posts. `INDEXNOW_KEY` must equal the committed key file's basename.
 
 ## GA4
 
-The control plane bakes a GA4 gtag into `index.html` at build time only when
-`KOYRA_GA_MEASUREMENT_ID` is set (unset => no analytics, the self-host default).
+The control plane bakes a GA4 gtag into the prerendered marketing pages (`/`,
+`/docs`, `/blog`, `/blog/*`) at build time only when `KOYRA_GA_MEASUREMENT_ID` is
+set (unset => no analytics, the self-host default). The dashboard gets none: its
+routes are served `app.html`, the bare shell, and a signed-in browser is flagged
+(`localStorage.koyra_signed_in`) so the tag on `/` sends no hits for it (#132).
+This is only koyracloud.com's own pages; the analytics koyracloud injects into
+hosted apps is separate (`runtime-image/koyra_static.py`).
 CI passes it from the `KOYRA_GA_MEASUREMENT_ID` repository secret
 (`.github/workflows/ci.yml`, build job). To enable on koyracloud.com:
 
