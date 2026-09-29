@@ -5,7 +5,8 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json* ./
 RUN npm ci
 COPY web/ ./
-# Optional: bake a Google Analytics 4 gtag into index.html (empty => no analytics).
+# Optional: bake a Google Analytics 4 gtag into the prerendered marketing pages
+# (empty => no analytics; the dashboard never gets it).
 ARG KOYRA_GA_MEASUREMENT_ID=""
 ENV KOYRA_GA_MEASUREMENT_ID=$KOYRA_GA_MEASUREMENT_ID
 RUN npm run build

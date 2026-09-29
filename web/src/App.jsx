@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getMe, logout } from "./api";
@@ -37,8 +38,23 @@ function AppShell({ me, children }) {
   );
 }
 
+// The marketing pages carry the GA tag (prerender.js); the dashboard must send it
+// nothing (#132). A signed-in browser is flagged so the tag skips `config` on its
+// next page load, and ga-disable stops hits from a tag already running on this
+// one (a first sign-in lands on "/", or a client-side hop from /docs).
+function markSignedIn(signedIn) {
+  try {
+    if (signedIn) localStorage.setItem("koyra_signed_in", "1");
+    else localStorage.removeItem("koyra_signed_in");
+  } catch { /* storage blocked: the ga-disable below still applies */ }
+  if (signedIn && window.koyraGA) window[`ga-disable-${window.koyraGA}`] = true;
+}
+
 export default function Dashboard() {
   const { data: me, isLoading, isError } = useQuery({ queryKey: ["me"], queryFn: getMe });
+  useEffect(() => {
+    if (!isLoading) markSignedIn(!isError && !!me);
+  }, [isLoading, isError, me]);
 
   if (isLoading)
     return <div className="grid-bg min-h-screen flex items-center justify-center mono text-[var(--color-muted)]">loading…</div>;

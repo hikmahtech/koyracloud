@@ -128,6 +128,17 @@ services:
         - traefik.http.routers.koyracloud.entrypoints=${KOYRA_HTTPS_ENTRYPOINT:-websecure}
         - traefik.http.routers.koyracloud.tls.certresolver=${KOYRA_CERT_RESOLVER:-letsencrypt}
         - traefik.http.services.koyracloud.loadbalancer.server.port=8000
+        # www.<host> 301s to <host>, path and query kept (#131). Without it
+        # www fell through to Traefik's 404. Never matches if www has no DNS.
+        - "traefik.http.routers.koyracloud-www.rule=Host(`www.${KOYRA_HOST}`)"
+        - traefik.http.routers.koyracloud-www.entrypoints=${KOYRA_HTTPS_ENTRYPOINT:-websecure}
+        - traefik.http.routers.koyracloud-www.tls.certresolver=${KOYRA_CERT_RESOLVER:-letsencrypt}
+        - traefik.http.routers.koyracloud-www.middlewares=koyracloud-www-redirect
+        - traefik.http.routers.koyracloud-www.service=koyracloud
+        - traefik.http.routers.koyracloud.service=koyracloud
+        - "traefik.http.middlewares.koyracloud-www-redirect.redirectregex.regex=^https?://www\\.([^/]+)/(.*)"
+        - "traefik.http.middlewares.koyracloud-www-redirect.redirectregex.replacement=https://$${1}/$${2}"
+        - traefik.http.middlewares.koyracloud-www-redirect.redirectregex.permanent=true
       update_config:
         order: start-first
         failure_action: rollback

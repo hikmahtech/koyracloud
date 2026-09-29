@@ -36,6 +36,13 @@ track functional changes by theme rather than tagged semver releases. Newest fir
 
 ### Fixed
 
+- **The dashboard no longer loads the marketing GA tag** (#132). Our own use of `/apps/*`
+  was most of koyracloud.com's GA sessions. The tag now goes only into the prerendered
+  marketing pages; dashboard routes get a bare `app.html`, and a signed-in browser sends no
+  hits from `/` either.
+- **`www.<host>` 301s to `<host>`** (#131). It used to reach Traefik with no router and 404.
+  A Traefik label change: it takes effect on the next `./deploy/deploy.sh`, not on a CI
+  image roll.
 - **A webhook we reject no longer looks like a webhook that was never set up** (#82) — a
   repo hook configured with the wrong secret fails the HMAC check, and until now that left
   no trace anywhere: `webhook_seen_at` is only stamped *after* verification, so a

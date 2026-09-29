@@ -1160,7 +1160,14 @@ def create_app(
                     prerendered = candidate / "index.html"
                     if prerendered.is_file():
                         return FileResponse(prerendered)
-            return FileResponse(_web_root / "index.html")
+            # "/" is the prerendered landing page, which carries the GA tag.
+            # Everything else is the dashboard and gets app.html, the bare shell
+            # with no GA tag (#132). A build without the prerender step has only
+            # index.html.
+            shell = _web_root / "app.html"
+            if not full_path or not shell.is_file():
+                shell = _web_root / "index.html"
+            return FileResponse(shell)
 
     # Background uptime monitor (production only; run_async gates real bg work).
     if run_async and settings.uptime_enabled:

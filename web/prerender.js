@@ -20,6 +20,28 @@ const escXml = (s) =>
 // The pristine SPA shell, read once and used as the template for every route.
 const template = readFileSync(join(dist, "index.html"), "utf-8");
 
+// The control plane serves this copy for every non-prerendered path (/apps/*,
+// /team, ...), i.e. the dashboard. It must carry no analytics tag: our own
+// dashboard use was most of koyracloud.com's GA traffic (#132).
+writeFileSync(join(dist, "app.html"), template);
+
+// GA4 gtag, baked in at build time and only into the prerendered marketing pages
+// below, when KOYRA_GA_MEASUREMENT_ID is set (unset => no tag, the self-host
+// default). The loader stays static so Search Console's "Google Analytics"
+// verification can read it from the served HTML. `config` (what sends hits) is
+// skipped for a signed-in browser: "/" is also the dashboard's home, and the
+// dashboard sets the flag and ga-disable (see App.jsx).
+const GA_ID = process.env.KOYRA_GA_MEASUREMENT_ID || "";
+function injectGA(html) {
+  if (!GA_ID) return html;
+  const tag =
+    `    <script async src="https://www.googletagmanager.com/gtag/js?id=${GA_ID}"></script>\n` +
+    `    <script>window.koyraGA='${GA_ID}';window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}` +
+    `gtag('js',new Date());(function(){var s;try{s=localStorage.getItem('koyra_signed_in')}catch(e){}` +
+    `if(s==='1'){window['ga-disable-${GA_ID}']=true}else{gtag('config','${GA_ID}')}})();</script>\n  `;
+  return html.replace("</head>", tag + "</head>");
+}
+
 const escAttr = (s) => String(s).replace(/"/g, "&quot;");
 // Escape `<` in JSON-LD so a literal "</script>" in data can't break out of the tag.
 const escJson = (obj) => JSON.stringify(obj).replace(/</g, "\\u003c");
@@ -54,7 +76,7 @@ function buildHtml(route, appHtml) {
   html = setCanonical(html, route.canonical);
   if (route.jsonLd) html = injectJsonLd(html, route.jsonLd);
   html = html.replace('<div id="root"></div>', `<div id="root">${appHtml}</div>`);
-  return html;
+  return injectGA(html);
 }
 
 function outPath(routePath) {
