@@ -166,8 +166,10 @@ def render_stack(
             "restart_policy": {
                 "condition": "on-failure",
                 "delay": "5s",
-                "max_attempts": 3,
-                "window": "120s",
+                # 0 = retry forever, so apps self-heal after a dependency outage
+                # (e.g. Postgres on lam down). A bad deploy still fails fast via
+                # update_config failure_action: rollback.
+                "max_attempts": 0,
             },
             "resources": {
                 "limits": {
