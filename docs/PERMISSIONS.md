@@ -186,6 +186,20 @@ on the owner's side of the line. Anyone else gets 404, never 403,
 so app existence isn't leaked. Membership grants nothing platform-wide: a
 member still has to be on the allowlist to sign in at all.
 
+**Service tokens** (`api_tokens` table) let scripts call the API with
+`Authorization: Bearer koyra_…` instead of a session cookie. An admin signed in
+on the Team page creates one (`POST /api/tokens`) and sees its value once; only
+its sha256 is stored. `current_login` resolves a bearer token to the identity
+`token:<name>`, which acts as an admin for as long as the token is not revoked
+and the admin who created it is still in `KOYRA_ALLOWED_LOGINS`. A bad or
+revoked token is a 401, even with `KOYRA_DEV_LOGIN` set. Apps a token creates
+are owned by `token:<name>`; names are never reused, revoked tokens included.
+Tokens cannot create, list or revoke tokens, nor invite or remove members
+(only a signed-in admin can), so a leaked token cannot mint a replacement for
+itself or leave behind a login that outlives its revocation. The token is accepted only
+in the header, never in the query string, so it stays out of access logs; the
+control plane logs a token's name on create and revoke, never its value.
+
 ---
 
 The Docker secrets not covered above — `koyra_secret_key` (Fernet master key

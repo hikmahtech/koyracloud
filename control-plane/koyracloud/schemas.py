@@ -135,6 +135,20 @@ class AllowedUserIn(BaseModel):
         return v
 
 
+class ApiTokenIn(BaseModel):
+    """A new service token's name. The caller's identity becomes
+    ``token:<name>``, so the name is a plain slug."""
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def _vn(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not v or len(v) > 64 or not all(c.isalnum() or c in "-_" for c in v):
+            raise ValueError("name: letters, digits, '-' and '_' only (max 64)")
+        return v
+
+
 class WaitlistIn(BaseModel):
     """Public managed-koyracloud waitlist signup. ``site_count`` is the ICP
     qualifier; Literal makes a bad bucket a 422 with no extra code."""

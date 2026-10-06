@@ -6,6 +6,9 @@ allowlist and session encode/decode are pure and unit-tested. A dev-login bypass
 """
 from __future__ import annotations
 
+import hashlib
+import secrets
+
 import httpx
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
@@ -17,6 +20,11 @@ _SALT = "koyra-session"
 GITHUB_AUTHORIZE = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN = "https://github.com/login/oauth/access_token"
 GITHUB_USER = "https://api.github.com/user"
+
+# Service tokens: ``Authorization: Bearer koyra_...``. The prefix makes a
+# leaked token easy to recognise and grep for; only its sha256 is stored.
+API_TOKEN_PREFIX = "koyra_"
+TOKEN_IDENTITY_PREFIX = "token:"
 
 
 def is_allowed(login: str, allowed_logins: list[str]) -> bool:
@@ -94,3 +102,22 @@ def refresh_token(refresh: str, client_id: str, client_secret: str,
     finally:
         if owns:
             client.close()
+
+
+def new_api_token() -> str:
+    return API_TOKEN_PREFIX + secrets.token_urlsafe(32)
+
+
+def hash_api_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def bearer_token(authorization: str | None) -> str | None:
+    """The token from an ``Authorization: Bearer <token>`` header, else None.
+    Header only: a token in the query string would land in access logs."""
+    if not authorization:
+        return None
+    scheme, _, value = authorization.partition(" ")
+    if scheme.lower() != "bearer":
+        return None
+    return value.strip() or None

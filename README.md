@@ -170,6 +170,9 @@ apps can opt in to pinning — see [ARCHITECTURE.md](docs/ARCHITECTURE.md)).
   koyracloud clones with their read-only token (Vercel-style). Behind a login allowlist:
   logins in `KOYRA_ALLOWED_LOGINS` are admins and see every app; people invited from the
   Team page see the apps they own or were added to as **members**.
+- **API tokens for scripts** — admins create service tokens on the Team page and call
+  the API with `Authorization: Bearer <token>`; a token acts as an admin until revoked
+  ([`docs/PERMISSIONS.md`](docs/PERMISSIONS.md) §10).
 
 ## Set up your own koyracloud
 
