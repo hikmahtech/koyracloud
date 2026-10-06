@@ -41,6 +41,9 @@ services:
       # Cloudflare with a proxied *.<apps_domain> record over a tunnel): Traefik
       # then skips Let's Encrypt for auto-subdomains (the edge serves the cert).
       KOYRA_APPS_DOMAIN_PROXIED: ${KOYRA_APPS_DOMAIN_PROXIED:-}
+      # Other owned zones (proxied *.<zone> wildcard) whose hosts admins may
+      # attach directly, with no Cloudflare for SaaS registration.
+      KOYRA_EXTRA_ZONES: ${KOYRA_EXTRA_ZONES:-}
       KOYRA_BASE_URL: ${KOYRA_BASE_URL}
       KOYRA_PUBLIC_IP: ${KOYRA_PUBLIC_IP:-}
       KOYRA_WEB_DIST: /app/web/dist

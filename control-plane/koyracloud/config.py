@@ -121,6 +121,13 @@ class Settings:
     # Hosts a user may never attach (control-plane host + apps apex are reserved
     # automatically; this adds extras).
     reserved_hosts: list[str] = field(default_factory=lambda: _csv("KOYRA_RESERVED_HOSTS"))
+    # Other zones the operator owns, served like apps_domain (e.g.
+    # "auditeasepro.com"): a proxied ``*.<zone>`` wildcard routes every host
+    # under the zone to Traefik, so such a host needs no Cloudflare for SaaS
+    # registration. Only admins may attach one (any name under the zone); DNS
+    # for it is the caller's job. Members see these zones as reserved.
+    extra_zones: list[str] = field(default_factory=lambda: [
+        z.lower().strip(".") for z in _csv("KOYRA_EXTRA_ZONES")])
     # Uptime monitor
     uptime_enabled: bool = field(
         default_factory=lambda: os.environ.get("KOYRA_UPTIME_ENABLED", "1") != "0")

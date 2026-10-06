@@ -193,6 +193,25 @@ and the app's SaaS-host router carries no cert resolver.
 > transient TLS `handshake failure` right after adding a domain is just the edge
 > cert catching up; don't change anything.
 
+#### Extra zones you own (`KOYRA_EXTRA_ZONES`)
+For a product zone you own, such as `auditeasepro.com`, where each tenant gets a
+chosen host like `acme.auditeasepro.com`, list the zone in `KOYRA_EXTRA_ZONES`
+(comma-separated) and give it a **proxied** wildcard `*.<zone>` record that
+reaches your edge (on the homelab, a proxied CNAME into the tunnel). A host
+under a listed zone is then *in-zone*:
+
+- an **admin** (or an admin's API token) may attach any such host; it becomes
+  the app's primary domain, and the auto-subdomain keeps working as a fallback;
+- it is **not** registered with Cloudflare for SaaS, and Traefik does not mint a
+  cert for it: the edge serves the zone's cert;
+- its DNS badge checks that it resolves to the same edge IPs as the zone's
+  wildcard;
+- the DNS record itself is the caller's job (the wildcard already routes every
+  name, so most callers need none);
+- **members** cannot attach a host under a listed zone (it is reserved, like
+  `*.<KOYRA_APPS_DOMAIN>`). The zone apex is not under the zone and follows the
+  normal custom-domain rules.
+
 ## Deploy
 ```bash
 DOCKER_CONTEXT=<your swarm context> ./deploy/deploy.sh
