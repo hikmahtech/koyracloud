@@ -143,6 +143,11 @@ class Settings:
     # Empty = no placement constraint (apps schedule anywhere; image must be
     # pullable from a registry).
     app_node: str = field(default_factory=lambda: os.environ.get("KOYRA_APP_NODE", ""))
+    # Swarm placement constraints for every service of every app, e.g.
+    # "node.labels.power==a" (comma-separated). Keeps apps on a set of nodes
+    # without pinning them to one. A pin (per-app or KOYRA_APP_NODE) wins: a
+    # pinned service gets only its node.hostname constraint. Empty = none.
+    app_constraints: list[str] = field(default_factory=lambda: _csv("KOYRA_APP_CONSTRAINTS"))
     # Pass --resolve-image=never to `docker stack deploy` so swarm uses the
     # local image instead of resolving a digest from a registry.
     resolve_image_never: bool = field(

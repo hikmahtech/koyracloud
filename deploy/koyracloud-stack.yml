@@ -45,6 +45,8 @@ services:
       KOYRA_PUBLIC_IP: ${KOYRA_PUBLIC_IP:-}
       KOYRA_WEB_DIST: /app/web/dist
       KOYRA_APP_NODE: ${KOYRA_APP_NODE:-}
+      # Placement constraints for every app service (e.g. node.labels.power==a).
+      KOYRA_APP_CONSTRAINTS: ${KOYRA_APP_CONSTRAINTS:-}
       KOYRA_RESOLVE_IMAGE_NEVER: ${KOYRA_RESOLVE_IMAGE_NEVER:-}
       # Email alerts (Resend) — key from a Docker secret.
       RESEND_API_KEY_FILE: /run/secrets/koyra_resend_api_key

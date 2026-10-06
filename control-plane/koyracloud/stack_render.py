@@ -147,13 +147,22 @@ def render_stack(
             service_volumes.append(f"{device}:/app/{d}")
 
     # Per-app pin (this app is stateful, keep it on its recorded node) takes
-    # precedence over the operator-wide app_node pin. With neither set, swarm
-    # runs/reschedules the image-from-registry app on any node.
+    # precedence over the operator-wide app_node pin. A pin wins over the
+    # instance-wide app_constraints too: the pinned node was chosen once, and
+    # adding a constraint it does not meet would leave the app unschedulable.
+    # With none set, swarm runs/reschedules the image-from-registry app on any
+    # node.
     node = pin_node or settings.app_node
-    placement = {"constraints": [f"node.hostname == {node}"]} if node else None
+    if node:
+        placement = {"constraints": [f"node.hostname == {node}"]}
+    elif settings.app_constraints:
+        placement = {"constraints": list(settings.app_constraints)}
+    else:
+        placement = None
 
     def _deploy(replicas: int, cpu: str, memory: str,
-                labels: list[str] | None = None) -> dict:
+                labels: list[str] | None = None,
+                cpu_reserve: str = "", memory_reserve: str = "") -> dict:
         block: dict = {
             "replicas": replicas,
             "update_config": {
@@ -178,6 +187,10 @@ def render_stack(
                 },
             },
         }
+        reservations = {k: v for k, v in (("cpus", cpu_reserve),
+                                          ("memory", memory_reserve)) if v}
+        if reservations:
+            block["resources"]["reservations"] = reservations
         if labels is not None:
             block["labels"] = labels
         if placement is not None:
@@ -188,7 +201,9 @@ def render_stack(
         "image": image,
         "environment": web_env,
         "networks": [settings.traefik_network],
-        "deploy": _deploy(1, manifest.cpu, manifest.memory, labels=labels),
+        "deploy": _deploy(1, manifest.cpu, manifest.memory, labels=labels,
+                          cpu_reserve=manifest.cpu_reserve,
+                          memory_reserve=manifest.memory_reserve),
     }
     if service_volumes:
         web["volumes"] = service_volumes
@@ -214,7 +229,8 @@ def render_stack(
             "environment": base_env,
             "networks": [settings.traefik_network],
             "command": ["sh", "-c", w.start],
-            "deploy": _deploy(w.replicas, w.cpu, w.memory),
+            "deploy": _deploy(w.replicas, w.cpu, w.memory,
+                              cpu_reserve=w.cpu_reserve, memory_reserve=w.memory_reserve),
         }
         if service_volumes:
             wsvc["volumes"] = list(service_volumes)
