@@ -159,6 +159,13 @@ resolved node into `deploy.placement.constraints: [node.hostname == <node>]` on 
 the web service and its workers, since they share the app's persist volumes and must
 co-locate. A per-app pin takes precedence over the operator-wide `KOYRA_APP_NODE` env var.
 
+Unpinned apps get the instance-wide `KOYRA_APP_CONSTRAINTS` instead (comma-separated swarm
+constraints such as `node.labels.power==a`), on the web service and every worker. A pin
+wins over them: a pinned service carries only its `node.hostname` constraint, because a
+recorded node that fails an added constraint would leave the app unschedulable. The
+manifest's `cpu_reserve` / `memory_reserve` (top level for web, per worker) render as
+`deploy.resources.reservations`, so swarm counts them when it picks a node.
+
 Toggled via `PATCH /api/apps/{id}` (`pinned: bool`; `AppOut.pinned` / `pinned_node`
 mirror it back) from the dashboard's Settings tab. Turning it on only takes effect on the
 **next** deploy — it doesn't move or restart whatever's already running.

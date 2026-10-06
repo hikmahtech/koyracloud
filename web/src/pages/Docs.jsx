@@ -134,11 +134,12 @@ secrets:
                   <Field name="persist">Directories that survive redeploys (NFS-backed volumes, mounted into the container).</Field>
                   <Field name="cpu">CPU limit for the web service, e.g. <span className="mono">"0.5"</span>. Falls back to the instance default (capped so one app can't starve a node).</Field>
                   <Field name="memory">Memory limit for the web service, e.g. <span className="mono">256M</span>. Falls back to the instance default.</Field>
+                  <Field name="cpu_reserve / memory_reserve">What swarm sets aside for the web service on its node, e.g. <span className="mono">"0.25"</span> / <span className="mono">384M</span>, so the scheduler counts it when placing apps. None when blank.</Field>
                   <Field name="healthcheck">HTTP path probed for liveness, e.g. <span className="mono">/health</span>. The probe execs <span className="mono">python3</span> <i>inside your container</i> — with your own Dockerfile, an image without <span className="mono">python3</span> builds and starts fine, then swarm kills it when the probe fails (Alpine: <span className="mono">RUN apk add --no-cache python3</span>, or omit the field).</Field>
                   <Field name="env">Non-secret environment defaults baked into the deploy.</Field>
                   <Field name="secrets">Names of secrets to inject at deploy. Set their values in the UI — never commit them.</Field>
                   <Field name="redis"><span className="mono">true</span> provisions a scoped Redis and injects <span className="mono">REDIS_URL</span>. Namespace keys + channels as <span className="mono">&lt;name&gt;:</span> (see below).</Field>
-                  <Field name="workers">Always-on background processes off the same image — <span className="mono">[{`{name, start, replicas?, cpu?, memory?}`}]</span>. No HTTP port.</Field>
+                  <Field name="workers">Always-on background processes off the same image — <span className="mono">[{`{name, start, replicas?, cpu?, memory?, cpu_reserve?, memory_reserve?}`}]</span>. No HTTP port.</Field>
                   <Field name="cron">Scheduled jobs — <span className="mono">[{`{name, schedule, command}`}]</span>. 5-field cron, UTC, run to completion.</Field>
                   <Field name="notify">Deploy-failure webhook — <span className="mono">{`{on_failure: <https url>}`}</span>. On a failed deploy koyracloud POSTs JSON <span className="mono">{`{app, deploy_id, status, error, log_tail}`}</span> to it (best-effort). The old service keeps running.</Field>
                 </tbody>

@@ -95,7 +95,8 @@ redis: true                      # provision a scoped Redis, inject REDIS_URL
 workers:                         # always-on processes (queue consumers, bots…)
   - name: events
     start: python -m app.worker
-    replicas: 1                  # optional (default 1); cpu/memory optional too
+    replicas: 1                  # optional (default 1); cpu/memory optional too,
+                                 # and cpu_reserve/memory_reserve (swarm reservations)
 
 cron:                            # 5-field schedules, UTC
   - name: nightly

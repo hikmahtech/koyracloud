@@ -37,6 +37,8 @@ class Worker(BaseModel):
     replicas: int = 1
     cpu: str = ""                     # falls back to the instance default
     memory: str = ""
+    cpu_reserve: str = ""             # reserved for the scheduler; none when blank
+    memory_reserve: str = ""
 
     _v_name = field_validator("name")(_valid_proc_name)
 
@@ -115,6 +117,10 @@ class Manifest(BaseModel):
     persist: list[str] = Field(default_factory=list)
     cpu: str = ""                     # e.g. "0.5"; falls back to the instance default
     memory: str = ""                  # e.g. "256M"; falls back to the instance default
+    # Reservations: what swarm sets aside on a node before placing the service,
+    # so it counts them when choosing a node. Blank = no reservation.
+    cpu_reserve: str = ""             # e.g. "0.25"
+    memory_reserve: str = ""          # e.g. "384M"
     healthcheck: str = ""             # path, e.g. /health
     env: dict[str, str] = Field(default_factory=dict)
     secrets: list[str] = Field(default_factory=list)
