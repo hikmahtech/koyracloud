@@ -124,3 +124,15 @@ def test_token_never_logged_or_stored(scoped, caplog):
         row = s.query(ApiToken).one()
         assert token not in (row.token_sha256, row.name)
         assert len(row.token_sha256) == 64
+
+
+def test_token_cannot_change_who_may_sign_in(scoped):
+    # An invite made by a token would outlive the token's revocation.
+    scoped["invite"]("alice")
+    bot = _bearer(scoped, _mktoken(scoped)["token"])
+    assert bot.post("/api/allowed-users", json={"login": "mallory"}).status_code == 403
+    assert bot.delete("/api/allowed-users/alice").status_code == 403
+    members = scoped["as_user"]("operator").get("/api/allowed-users").json()["members"]
+    assert [m["login"] for m in members] == ["alice"]
+    # Reading the list is still fine for an admin token.
+    assert bot.get("/api/allowed-users").status_code == 200

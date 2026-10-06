@@ -226,10 +226,11 @@ def create_app(
         return login
 
     def current_human_admin(login: str = Depends(current_admin)) -> str:
-        """An admin signed in as a person. Tokens cannot mint or revoke tokens,
-        so one leaked token cannot outlive its own revocation."""
+        """An admin signed in as a person. Tokens cannot mint or revoke tokens
+        or change who may sign in, so nothing a leaked token grants outlives
+        its revocation."""
         if login.startswith(auth.TOKEN_IDENTITY_PREFIX):
-            raise HTTPException(status_code=403, detail="sign in to manage tokens")
+            raise HTTPException(status_code=403, detail="sign in to do that")
         return login
 
     Auth = Depends(current_login)
@@ -518,7 +519,7 @@ def create_app(
         return {"admins": sorted(settings.allowed_logins), "members": members}
 
     @app.post("/api/allowed-users", status_code=201)
-    def add_allowed_user(body: AllowedUserIn, login: str = AdminAuth):
+    def add_allowed_user(body: AllowedUserIn, login: str = HumanAdminAuth):
         target = body.login.lower()
         if auth.is_allowed(target, settings.allowed_logins):
             raise HTTPException(status_code=409, detail="already an admin")
@@ -530,7 +531,7 @@ def create_app(
         return {"login": target, "added_by": login}
 
     @app.delete("/api/allowed-users/{member}", status_code=204)
-    def remove_allowed_user(member: str, login: str = AdminAuth):
+    def remove_allowed_user(member: str, login: str = HumanAdminAuth):
         with db.session() as s:
             u = s.query(AllowedUser).filter_by(login=member.lower()).first()
             if u:
