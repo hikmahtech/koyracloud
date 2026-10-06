@@ -85,9 +85,9 @@ def test_cloudflare_for_saas_host_still_registered(env):
     body = c.post(f"/api/apps/{aid}/domains", json={"host": "audit.customer.com"}).json()
     assert cf.created == ["audit.customer.com"]
     assert body["records"] and body["is_primary"] is False
-    # The zone apex is not under the zone (the wildcard does not cover it):
-    # today's custom-domain rules apply.
-    c.post(f"/api/apps/{aid}/domains", json={"host": ZONE})
+    # The zone apex is not under the zone (the wildcard does not cover it), so
+    # an admin attaching it gets a Cloudflare for SaaS hostname as before.
+    assert c.post(f"/api/apps/{aid}/domains", json={"host": ZONE}).status_code == 201
     assert cf.created == ["audit.customer.com", ZONE]
 
 
@@ -118,8 +118,9 @@ def test_member_cannot_attach_extra_zone_host(env):
     alice = TestClient(app)
     alice.cookies.set(auth.SESSION_COOKIE, auth.make_session("alice", s.session_secret))
     aid = _mkapp(alice)
-    r = alice.post(f"/api/apps/{aid}/domains", json={"host": "acme.auditeasepro.com"})
-    assert r.status_code == 400 and r.json()["detail"] == "that host is reserved"
+    for host in ["acme.auditeasepro.com", ZONE]:   # the apex too: it is the product site
+        r = alice.post(f"/api/apps/{aid}/domains", json={"host": host})
+        assert r.status_code == 400 and r.json()["detail"] == "that host is reserved", host
     # A member's own external domain keeps working as before.
     assert alice.post(f"/api/apps/{aid}/domains",
                       json={"host": "audit.customer.com"}).status_code == 201

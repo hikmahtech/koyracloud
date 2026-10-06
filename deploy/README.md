@@ -208,9 +208,10 @@ under a listed zone is then *in-zone*:
   wildcard;
 - the DNS record itself is the caller's job (the wildcard already routes every
   name, so most callers need none);
-- **members** cannot attach a host under a listed zone (it is reserved, like
-  `*.<KOYRA_APPS_DOMAIN>`). The zone apex is not under the zone and follows the
-  normal custom-domain rules.
+- **members** cannot attach a listed zone's apex or any host under it (they
+  are reserved, like `*.<KOYRA_APPS_DOMAIN>`). An admin may attach the apex;
+  the wildcard does not cover it, so it is registered with Cloudflare for SaaS
+  like any other custom domain.
 
 ## Deploy
 ```bash

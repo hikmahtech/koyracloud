@@ -552,8 +552,8 @@ def create_app(
         """Block claiming the control-plane host, the apps-domain apex, or any
         in-zone subdomain other than this app's own auto-subdomain (``own_auto``).
         The whole apps_domain is the platform's namespace, so a custom domain a
-        user attaches must be external. Hosts under an extra zone are the
-        platform's too: only an admin may attach one."""
+        user attaches must be external. An extra zone and every host under it
+        are the platform's too: only an admin may attach one."""
         host = host.lower()
         apps = settings.apps_domain.lower()
         reserved = {apps, _control_host, *(h.lower() for h in settings.reserved_hosts)}
@@ -561,7 +561,7 @@ def create_app(
             return True
         if host.endswith("." + apps):
             return host != own_auto.lower()
-        if _extra_zone_of(host):
+        if host in settings.extra_zones or _extra_zone_of(host):
             return not admin
         return False
 
