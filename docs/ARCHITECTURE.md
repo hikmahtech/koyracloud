@@ -23,7 +23,9 @@ is. It complements the [README](../README.md) (what it is) and
                 (credentials, most specific first: the app's KOYRA_GIT_TOKEN secret,
                  else the owner's GitHub App token, else the platform PAT — one retry
                  on the PAT when the owner's token cannot see the repo)
-2. manifest     read .paas/app.yaml (or synthesize one for a static repo)
+2. manifest     read .paas/app.yaml (or synthesize one for a static repo); an app env
+                var KOYRA_MANIFEST names another file in the repo instead, which must
+                exist (no fallback). Read by the deployer only, never passed on
 3. dockerfile   use the repo's own Dockerfile, or generate one from the manifest
 4. build        docker build  → koyra-app-<name>:<commit>-<argshash>  (app env as build args)
                 (SKIPPED when this exact image — same <commit> AND same build-args —

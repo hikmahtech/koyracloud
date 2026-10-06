@@ -76,6 +76,12 @@ def _git(args: list[str], cwd: Path, check: bool = True) -> subprocess.Completed
 # the platform PAT can't see (the PAT owner isn't a collaborator).
 GIT_TOKEN_SECRET = "KOYRA_GIT_TOKEN"
 
+# Reserved app env var: the manifest to read, relative to the repo root, in
+# place of .paas/app.yaml. Lets several apps deploy one repo with different
+# manifests (a public demo and its customers' copies). Read by the deployer
+# only, never passed to the build or the container.
+MANIFEST_ENV = "KOYRA_MANIFEST"
+
 _STATIC_DIRS = ("dist", "build", "public", "out", "_site")
 
 
@@ -87,10 +93,23 @@ def is_static_repo(repo: Path) -> bool:
     return any((repo / d / "index.html").is_file() for d in _STATIC_DIRS)
 
 
-def resolve_manifest(dest: Path, app_name: str) -> tuple[Manifest, bool]:
+def resolve_manifest(dest: Path, app_name: str,
+                     path: str = "") -> tuple[Manifest, bool]:
     """Read .paas/app.yaml, or — if absent and the repo looks static —
     synthesize a static manifest on the volume. Returns (manifest, synthesized).
-    Raises FileNotFoundError with guidance if neither applies."""
+    Raises FileNotFoundError with guidance if neither applies.
+
+    ``path`` (the app's KOYRA_MANIFEST) names another manifest in the repo. It
+    must exist: falling back to .paas/app.yaml would silently deploy the
+    settings the app chose not to have."""
+    if path:
+        mp = (dest / path).resolve()
+        dest_real = dest.resolve()
+        if path.startswith("/") or not str(mp).startswith(str(dest_real) + os.sep):
+            raise ValueError(f"{MANIFEST_ENV} '{path}' is not a path inside the repo")
+        if not mp.is_file():
+            raise FileNotFoundError(f"{MANIFEST_ENV} names {path}, which is not in the repo")
+        return parse_manifest(mp.read_text()), False
     mp = dest / ".paas" / "app.yaml"
     if mp.is_file():
         return parse_manifest(mp.read_text()), False
@@ -380,6 +399,7 @@ class Deployer:
             app_id = app.id
             app_name, repo_url, ref = app.name, app.repo_url, deploy.ref
             env_overrides = {e.key: e.value for e in app.env_vars}
+            manifest_path = env_overrides.pop(MANIFEST_ENV, "").strip()
             secret_values = {sec.key: self.crypto.decrypt(sec.value_encrypted)
                              for sec in app.secrets}
             git_token = secret_values.pop(GIT_TOKEN_SECRET, "")
@@ -432,10 +452,11 @@ class Deployer:
                 s.commit()
             emit(f"[koyra] checked out {commit[:12]}")
 
-            manifest, synthesized = resolve_manifest(dest, app_name)
+            manifest, synthesized = resolve_manifest(dest, app_name, manifest_path)
             if synthesized:
                 emit("[koyra] no manifest found; repo looks static → runtime: static")
-            emit(f"[koyra] manifest ok: {manifest.name} (runtime={manifest.runtime})")
+            emit(f"[koyra] manifest ok: {manifest.name} (runtime={manifest.runtime})"
+                 + (f" from {manifest_path}" if manifest_path else ""))
 
             # Build context: the repo root, or a subdirectory for monorepo apps
             # (manifest.root). The Dockerfile path and any generated Dockerfile are

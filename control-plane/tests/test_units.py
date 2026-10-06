@@ -176,6 +176,68 @@ def test_resolve_manifest_errors_when_not_static(tmp_path):
         resolve_manifest(tmp_path, "a")
 
 
+def test_resolve_manifest_reads_chosen_path(tmp_path):
+    from koyracloud.deployer import resolve_manifest
+    (tmp_path / ".paas").mkdir()
+    (tmp_path / ".paas" / "app.yaml").write_text("name: a\nruntime: python\nstart: x\npersist: [media]\n")
+    (tmp_path / ".paas" / "tenant.yaml").write_text("name: a\nruntime: python\nstart: x\n")
+    m, synthesized = resolve_manifest(tmp_path, "a", ".paas/tenant.yaml")
+    assert synthesized is False and m.persist == []
+
+
+def test_resolve_manifest_chosen_path_must_exist(tmp_path):
+    """No fallback to .paas/app.yaml: that would deploy what the app opted out of."""
+    import pytest as _pytest
+    from koyracloud.deployer import resolve_manifest
+    (tmp_path / ".paas").mkdir()
+    (tmp_path / ".paas" / "app.yaml").write_text("name: a\nruntime: python\nstart: x\n")
+    with _pytest.raises(FileNotFoundError, match="tenant.yaml"):
+        resolve_manifest(tmp_path, "a", ".paas/tenant.yaml")
+
+
+def test_resolve_manifest_chosen_path_stays_in_repo(tmp_path):
+    import pytest as _pytest
+    from koyracloud.deployer import resolve_manifest
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (tmp_path / "outside.yaml").write_text("name: a\nruntime: python\nstart: x\n")
+    (repo / "link.yaml").symlink_to(tmp_path / "outside.yaml")
+    for bad in ("../outside.yaml", str(tmp_path / "outside.yaml"), "link.yaml"):
+        with _pytest.raises(ValueError, match="inside the repo"):
+            resolve_manifest(repo, "a", bad)
+
+
+def test_deploy_uses_koyra_manifest_and_hides_it(env):
+    """KOYRA_MANIFEST picks the manifest (no persist, no cron here) and is
+    neither a build arg nor in the container's environment."""
+    from koyracloud.models import CronJob, Deploy, EnvVar
+
+    def cloner(repo_url, ref, token, dest: Path) -> str:
+        (dest / ".paas").mkdir(parents=True, exist_ok=True)
+        (dest / ".paas" / "app.yaml").write_text(
+            "name: lens-inventory\nruntime: python\nstart: x\npersist: [media]\n"
+            "cron:\n  - name: reset\n    schedule: '0 0 * * *'\n    command: y\n")
+        (dest / ".paas" / "tenant.yaml").write_text(
+            "name: lens-inventory\nruntime: python\nstart: x\n")
+        return "deadbeefcafef00dba5eba11c0ffee0011223344"
+
+    env["deployer"].cloner = cloner
+    app_id, deploy_id = _make_deploy(env)
+    with env["db"].session() as s:
+        s.add(EnvVar(app_id=app_id, key="KOYRA_MANIFEST", value=".paas/tenant.yaml"))
+        s.commit()
+    env["deployer"].run_deploy(env["db"], deploy_id)
+    with env["db"].session() as s:
+        d = s.get(Deploy, deploy_id)
+        assert d.status == "live", d.log
+        assert "from .paas/tenant.yaml" in d.log
+        assert s.query(CronJob).filter_by(app_id=app_id).count() == 0
+    _, stack = env["docker"].deployed[-1]
+    assert "volumes" not in stack or not stack["volumes"]
+    assert "KOYRA_MANIFEST" not in json.dumps(stack)
+    assert all("KOYRA_MANIFEST" not in args for _, _, args, _ in env["docker"].builds)
+
+
 # --- notifier ---------------------------------------------------------------
 def test_render_event():
     from koyracloud import notifier

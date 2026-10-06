@@ -252,6 +252,13 @@ CNAME  _acme-challenge.yourdomain   <shown in the Domains tab>`}</Code>
               to the repo (fine-grained, Contents: read-only). It is used only to clone and is never
               injected into your app.
             </p>
+            <p className="text-[var(--color-muted)] mt-3">
+              <b>Several apps from one repo?</b> Set an env var
+              <span className="mono"> KOYRA_MANIFEST</span> to another manifest in the repo, such as
+              <span className="mono"> .paas/tenant.yaml</span>, and that app deploys from it instead of
+              <span className="mono"> .paas/app.yaml</span>. The file must exist at the deployed ref. The
+              variable is read by the deployer only and is not passed to your app.
+            </p>
           </Section>
 
           <Section id="analytics" title="Analytics & uptime">

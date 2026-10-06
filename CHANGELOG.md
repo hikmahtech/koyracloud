@@ -3,6 +3,17 @@
 Notable changes to koyracloud. The project is in **alpha** (`0.1.0`); these notes
 track functional changes by theme rather than tagged semver releases. Newest first.
 
+## 2026-10
+
+### Added
+
+- **Choose an app's manifest** — an app env var `KOYRA_MANIFEST` (for example
+  `.paas/tenant.yaml`) makes the deployer read that file instead of `.paas/app.yaml`. Several
+  apps can then deploy one repo with different manifests: a public demo with a persisted
+  volume and a nightly reset, and customer copies without either. The file must exist in the
+  repo at the deployed ref; there is no fallback to `.paas/app.yaml`, which would deploy the
+  settings the app opted out of. The variable is not passed to the build or the container.
+
 ## 2026-09
 
 ### Added
