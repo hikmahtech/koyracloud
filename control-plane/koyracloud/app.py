@@ -41,6 +41,9 @@ import re as _re
 WEB_DIST = Path(os.environ.get(
     "KOYRA_WEB_DIST", str(Path(__file__).resolve().parents[2] / "web" / "dist")))
 TERMINAL = {"live", "failed", "rolled_back", "superseded"}
+# A label nobody creates, so ``<probe>.<zone>`` resolves through the zone's
+# wildcard record: the edge IPs every proxied host in that zone shares.
+_WILDCARD_PROBE = "koyra-wildcard-probe"
 _EMAIL_RE = _re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -631,11 +634,12 @@ def create_app(
     from urllib.parse import urlparse
     _control_host = urlparse(settings.base_url).netloc.lower().split(":")[0]
 
-    def _is_reserved_host(host: str, own_auto: str) -> bool:
+    def _is_reserved_host(host: str, own_auto: str, admin: bool = False) -> bool:
         """Block claiming the control-plane host, the apps-domain apex, or any
         in-zone subdomain other than this app's own auto-subdomain (``own_auto``).
         The whole apps_domain is the platform's namespace, so a custom domain a
-        user attaches must be external."""
+        user attaches must be external. An extra zone and every host under it
+        are the platform's too: only an admin may attach one."""
         host = host.lower()
         apps = settings.apps_domain.lower()
         reserved = {apps, _control_host, *(h.lower() for h in settings.reserved_hosts)}
@@ -643,6 +647,8 @@ def create_app(
             return True
         if host.endswith("." + apps):
             return host != own_auto.lower()
+        if host in settings.extra_zones or _extra_zone_of(host):
+            return not admin
         return False
 
     def _new_subdomain_token(s) -> str:
@@ -653,9 +659,24 @@ def create_app(
             if not s.query(App).filter_by(subdomain_token=token).first():
                 return token
 
+    def _resolve(host: str) -> set[str]:
+        try:
+            return set(socket.gethostbyname_ex(host)[2])
+        except OSError:
+            return set()
+
     def _dns_ok(host: str) -> bool | None:
         """True if host resolves to the homelab IP, False if it resolves
-        elsewhere, None if unknown (no configured IP or resolution failed)."""
+        elsewhere, None if unknown (no configured IP or resolution failed).
+        A host under an extra zone is proxied like the zone's wildcard, so it
+        must resolve to the same edge IPs as the wildcard does (None when the
+        wildcard itself does not resolve)."""
+        zone = _extra_zone_of(host)
+        if zone:
+            wildcard = _resolve(f"{_WILDCARD_PROBE}.{zone}")
+            if not wildcard:
+                return None
+            return bool(_resolve(host) & wildcard)
         if not settings.public_ip:
             return None
         try:
@@ -669,6 +690,17 @@ def create_app(
         apps = settings.apps_domain.lower()
         h = host.lower()
         return h == apps or h.endswith("." + apps)
+
+    def _extra_zone_of(host: str) -> str | None:
+        """The KOYRA_EXTRA_ZONES zone a host sits under, if any. The zone apex
+        is not under it: a ``*.<zone>`` wildcard does not cover the apex."""
+        h = host.lower()
+        return next((z for z in settings.extra_zones if h.endswith("." + z)), None)
+
+    def _in_zone(host: str) -> bool:
+        """In-zone hosts are routed by the zone's own proxied wildcard: no
+        Cloudflare for SaaS custom hostname."""
+        return _in_apps_zone(host) or _extra_zone_of(host) is not None
 
     def _domain_out(d: Domain) -> DomainOut:
         """Serialize a Domain, layering in DNS + Cloudflare custom-hostname
@@ -699,7 +731,7 @@ def create_app(
         is safe to call repeatedly and as a backfill for pre-existing domains."""
         if d.cert is not None:
             return d.cert
-        if not cloudflare.configured or _in_apps_zone(d.host):
+        if not cloudflare.configured or _in_zone(d.host):
             return None
         created = cloudflare.create_custom_hostname(d.host)
         if not created or not created.get("id"):  # guard against a malformed/empty result
@@ -726,7 +758,7 @@ def create_app(
         try:
             with db.session() as s:
                 for d in s.query(Domain).all():
-                    if d.cert is None and not _in_apps_zone(d.host):
+                    if d.cert is None and not _in_zone(d.host):
                         _ensure_cert(s, d)
                 s.commit()
         except Exception as e:  # noqa: BLE001 — best-effort; never block startup
@@ -909,12 +941,18 @@ def create_app(
         with db.session() as s:
             obj = get_app_or_404(app_id, s, login)
             own_auto = auto_subdomain(obj.name, obj.subdomain_token, settings)
-            if _is_reserved_host(body.host, own_auto):
+            if _is_reserved_host(body.host, own_auto, admin=is_admin(login)):
                 raise HTTPException(status_code=400, detail="that host is reserved")
             if s.query(Domain).filter_by(host=body.host).first():
                 raise HTTPException(status_code=409, detail="domain already in use")
+            # A chosen host under an extra zone becomes the app's primary
+            # domain; the auto-subdomain stays routed as a fallback.
+            chosen = _extra_zone_of(body.host) is not None
+            if chosen:
+                for other in obj.domains:
+                    other.is_primary = False
             d = Domain(app_id=obj.id, host=body.host,
-                       is_primary=len(obj.domains) == 0)
+                       is_primary=chosen or len(obj.domains) == 0)
             # Register external custom domains with Cloudflare for SaaS so the
             # edge mints + renews their cert (adopts an existing hostname if one
             # is already there). The app's own in-zone auto-subdomain needs none.
