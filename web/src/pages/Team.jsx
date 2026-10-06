@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listAllowedUsers, addAllowedUser, removeAllowedUser } from "../api";
+import {
+  listAllowedUsers, addAllowedUser, removeAllowedUser,
+  listApiTokens, createApiToken, revokeApiToken,
+} from "../api";
 
 export default function Team() {
   const qc = useQueryClient();
@@ -72,6 +75,71 @@ export default function Team() {
         </form>
         {addMut.isError && <p className="text-[var(--color-danger)] text-sm mt-2">{addMut.error?.response?.data?.detail || "Failed"}</p>}
       </section>
+
+      <ApiTokens />
     </div>
+  );
+}
+
+// A 422's detail is a list of field errors; a 409's is a string.
+const errorText = (err) => {
+  const d = err?.response?.data?.detail;
+  return (Array.isArray(d) ? d[0]?.msg : d) || "Failed";
+};
+
+// Service tokens for scripts (Authorization: Bearer <token>). A token acts as
+// the admin who made it; the server shows its value once, at creation.
+function ApiTokens() {
+  const qc = useQueryClient();
+  const { data: tokens = [] } = useQuery({ queryKey: ["api-tokens"], queryFn: listApiTokens });
+  const [name, setName] = useState("");
+  const [created, setCreated] = useState(null);
+  const inval = () => qc.invalidateQueries({ queryKey: ["api-tokens"] });
+  const addMut = useMutation({
+    mutationFn: () => createApiToken(name),
+    onSuccess: (t) => { setName(""); setCreated(t); inval(); },
+  });
+  const revokeMut = useMutation({ mutationFn: (id) => revokeApiToken(id), onSuccess: inval });
+
+  return (
+    <section className="mt-8">
+      <h2 className="font-display text-lg mb-3">API tokens</h2>
+      {created && (
+        <div className="card px-4 py-3 mb-3">
+          <p className="text-sm mb-2">
+            Token <span className="mono">{created.name}</span> — copy it now, it won't be shown again:
+          </p>
+          <code className="mono text-xs break-all text-acid">{created.token}</code>
+          <div className="mt-2">
+            <button onClick={() => setCreated(null)} className="text-xs hover:underline linkbtn">done</button>
+          </div>
+        </div>
+      )}
+      <div className="card divide-y divide-[var(--color-line)]">
+        {tokens.map((t) => (
+          <div key={t.id} className="flex items-center justify-between px-4 py-3">
+            <span className={`mono text-sm ${t.revoked_at ? "line-through text-[var(--color-muted)]" : ""}`}>{t.name}</span>
+            <div className="flex items-center gap-3">
+              <span className="mono text-xs text-[var(--color-muted)]">
+                by @{t.created_by} · {t.last_used_at ? `used ${new Date(t.last_used_at).toLocaleDateString()}` : "never used"}
+              </span>
+              {t.revoked_at
+                ? <span className="mono text-xs text-[var(--color-muted)]">revoked</span>
+                : <button onClick={() => revokeMut.mutate(t.id)} className="text-xs text-[var(--color-danger)] hover:underline linkbtn">revoke</button>}
+            </div>
+          </div>
+        ))}
+        {tokens.length === 0 && <div className="px-4 py-3 mono text-sm text-[var(--color-muted)]">No tokens yet.</div>}
+      </div>
+      <p className="mono text-[11px] text-[var(--color-muted)] mt-2">
+        For scripts: send <span className="text-acid">Authorization: Bearer &lt;token&gt;</span>. A token
+        acts as an admin until revoked, or until the admin who made it leaves KOYRA_ALLOWED_LOGINS.
+      </p>
+      <form onSubmit={(e) => { e.preventDefault(); addMut.mutate(); }} className="flex gap-2 mt-4">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="token-name" className="input mono" />
+        <button disabled={!name || addMut.isPending} className="btn btn-primary shrink-0">Create token</button>
+      </form>
+      {addMut.isError && <p className="text-[var(--color-danger)] text-sm mt-2">{errorText(addMut.error)}</p>}
+    </section>
   );
 }

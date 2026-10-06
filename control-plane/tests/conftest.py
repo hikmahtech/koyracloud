@@ -202,4 +202,5 @@ def scoped(tmp_path):
             s.add(AllowedUser(login=login.lower(), added_by="operator"))
             s.commit()
 
-    return {"as_user": as_user, "invite": invite, "db": db, "settings": settings}
+    return {"as_user": as_user, "invite": invite, "db": db, "settings": settings,
+            "app": app}

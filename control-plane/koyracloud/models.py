@@ -311,3 +311,20 @@ class AppPin(Base):
 
     app_id: Mapped[int] = mapped_column(ForeignKey("apps.id"), primary_key=True)
     node: Mapped[str] = mapped_column(String(255), default="")
+
+
+class ApiToken(Base):
+    """A service token for the control-plane API (``Authorization: Bearer``).
+    Only the sha256 of the token is stored; the token itself is shown once, at
+    creation. The caller's identity is ``token:<name>``, so ``name`` is unique
+    for good, revoked rows included. Created and revoked by admins on the Team
+    page; a token created by an admin acts as an admin."""
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    token_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_by: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_used_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))

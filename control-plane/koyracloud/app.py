@@ -26,11 +26,11 @@ from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
 from koyracloud.deployer import Deployer
 from koyracloud.docker_ctl import CLIDockerControl, DockerControl
-from koyracloud.models import (AllowedUser, App, AppAnalytics, AppMember, AppNotify,
-                                AppPin, AppRedis, CronJob, CronRun, Deploy,
+from koyracloud.models import (AllowedUser, ApiToken, App, AppAnalytics, AppMember,
+                                AppNotify, AppPin, AppRedis, CronJob, CronRun, Deploy,
                                 Domain, DomainCert, EnvVar, Hit, Secret, User,
                                 Waitlist)
-from koyracloud.schemas import (AllowedUserIn, AppCreate, AppOut, AppUpdate,
+from koyracloud.schemas import (AllowedUserIn, ApiTokenIn, AppCreate, AppOut, AppUpdate,
                                 DeployOut, DeployTrigger, DnsRecord, DomainIn,
                                 DomainOut, EnvVarIn, RollbackRequest, SecretIn,
                                 WaitlistIn)
@@ -162,9 +162,40 @@ def create_app(
 
     # ----- auth -----------------------------------------------------------
     def is_admin(login: str) -> bool:
+        if login.startswith(auth.TOKEN_IDENTITY_PREFIX):
+            return _token_is_admin(login[len(auth.TOKEN_IDENTITY_PREFIX):])
         if settings.dev_login and login == settings.dev_login:
             return True
         return auth.is_allowed(login, settings.allowed_logins)
+
+    def _token_is_admin(name: str) -> bool:
+        """A live token acts as an admin while the admin who made it still is
+        one: dropping someone from KOYRA_ALLOWED_LOGINS also cuts off their
+        tokens."""
+        with db.session() as s:
+            t = s.query(ApiToken).filter_by(name=name, revoked_at=None).first()
+            creator = t.created_by if t else ""
+        return bool(creator) and is_admin(creator)
+
+    def _token_login(token: str) -> str:
+        """Resolve a bearer token to ``token:<name>``. Never log ``token``."""
+        now = dt.datetime.now(dt.timezone.utc)
+        with db.session() as s:
+            t = s.query(ApiToken).filter_by(token_sha256=auth.hash_api_token(token)).first()
+            if t is None or t.revoked_at is not None:
+                raise HTTPException(status_code=401, detail="invalid or revoked token")
+            login = auth.TOKEN_IDENTITY_PREFIX + t.name
+            last = t.last_used_at
+            if last is not None and last.tzinfo is None:  # SQLite drops the zone
+                last = last.replace(tzinfo=dt.timezone.utc)
+            # At most one write a minute per token: every write takes SQLite's
+            # write lock (#127), and a script polling a deploy calls often.
+            if last is None or now - last > dt.timedelta(minutes=1):
+                t.last_used_at = now
+                s.commit()
+        if not is_admin(login):
+            raise HTTPException(status_code=403, detail="not allowed")
+        return login
 
     def is_member(login: str) -> bool:
         with db.session() as s:
@@ -174,6 +205,11 @@ def create_app(
         return is_admin(login) or is_member(login)
 
     def current_login(request: Request) -> str:
+        # A bearer token wins over the dev-login bypass and the cookie, so a
+        # bad token is always a 401, never someone else's session.
+        token = auth.bearer_token(request.headers.get("authorization"))
+        if token is not None:
+            return _token_login(token)
         if settings.dev_login:
             return settings.dev_login
         token = request.cookies.get(auth.SESSION_COOKIE)
@@ -189,8 +225,16 @@ def create_app(
             raise HTTPException(status_code=403, detail="admin only")
         return login
 
+    def current_human_admin(login: str = Depends(current_admin)) -> str:
+        """An admin signed in as a person. Tokens cannot mint or revoke tokens,
+        so one leaked token cannot outlive its own revocation."""
+        if login.startswith(auth.TOKEN_IDENTITY_PREFIX):
+            raise HTTPException(status_code=403, detail="sign in to manage tokens")
+        return login
+
     Auth = Depends(current_login)
     AdminAuth = Depends(current_admin)
+    HumanAdminAuth = Depends(current_human_admin)
 
     def can_see(obj: App, login: str) -> bool:
         """Owner, admin, or a member (teammate) of the app."""
@@ -492,6 +536,47 @@ def create_app(
             if u:
                 s.delete(u)
                 s.commit()
+        return Response(status_code=204)
+
+    # ----- service tokens (admin-managed; the token is shown once) ---------
+    def _token_out(t: ApiToken) -> dict:
+        def iso(v):
+            return v.isoformat() if v else None
+        return {"id": t.id, "name": t.name, "created_by": t.created_by,
+                "created_at": iso(t.created_at), "last_used_at": iso(t.last_used_at),
+                "revoked_at": iso(t.revoked_at)}
+
+    @app.get("/api/tokens")
+    def list_tokens(login: str = HumanAdminAuth):
+        with db.session() as s:
+            return [_token_out(t) for t in s.query(ApiToken).order_by(ApiToken.id).all()]
+
+    @app.post("/api/tokens", status_code=201)
+    def create_token(body: ApiTokenIn, login: str = HumanAdminAuth):
+        token = auth.new_api_token()
+        with db.session() as s:
+            # Unique for good, revoked rows included: the name is the identity
+            # that owns the apps the token creates.
+            if s.query(ApiToken).filter_by(name=body.name).first():
+                raise HTTPException(status_code=409, detail="token name already used")
+            t = ApiToken(name=body.name, token_sha256=auth.hash_api_token(token),
+                         created_by=login)
+            s.add(t)
+            s.commit()
+            out = _token_out(t)
+        logging.warning("api token %s created by %s", body.name, login)
+        return {**out, "token": token}
+
+    @app.delete("/api/tokens/{token_id}", status_code=204)
+    def revoke_token(token_id: int, login: str = HumanAdminAuth):
+        with db.session() as s:
+            t = s.get(ApiToken, token_id)
+            if t is None:
+                raise HTTPException(status_code=404, detail="token not found")
+            if t.revoked_at is None:
+                t.revoked_at = dt.datetime.now(dt.timezone.utc)
+                s.commit()
+                logging.warning("api token %s revoked by %s", t.name, login)
         return Response(status_code=204)
 
     # ----- managed-koyracloud waitlist (public demand validation) ---------
