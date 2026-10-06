@@ -18,6 +18,7 @@ from koyracloud import redisbus
 from koyracloud.config import Settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
+from koyracloud.deployer import GIT_TOKEN_SECRET, MANIFEST_ENV
 from koyracloud.docker_ctl import DockerControl
 from koyracloud.models import App, AppRedis, BuiltImage, CronJob, CronRun, Deploy
 
@@ -85,6 +86,8 @@ def launch(db: Database, docker: DockerControl, settings: Settings,
         command = job.command
         env = {e.key: e.value for e in app.env_vars}
         env.update({sec.key: crypto.decrypt(sec.value_encrypted) for sec in app.secrets})
+        for k in (MANIFEST_ENV, GIT_TOKEN_SECRET):   # deployer-only, never in the app
+            env.pop(k, None)
         ar = s.get(AppRedis, app.id)
         if ar is not None:
             env["REDIS_URL"] = redisbus.redis_url(

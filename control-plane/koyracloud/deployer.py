@@ -399,10 +399,11 @@ class Deployer:
             app_id = app.id
             app_name, repo_url, ref = app.name, app.repo_url, deploy.ref
             env_overrides = {e.key: e.value for e in app.env_vars}
-            manifest_path = env_overrides.pop(MANIFEST_ENV, "").strip()
+            manifest_path = env_overrides.pop(MANIFEST_ENV, None)
             secret_values = {sec.key: self.crypto.decrypt(sec.value_encrypted)
                              for sec in app.secrets}
             git_token = secret_values.pop(GIT_TOKEN_SECRET, "")
+            manifest_secret = secret_values.pop(MANIFEST_ENV, None) is not None
             owner_login = app.owner_login
             # Primary host first, so it's the canonical one in the router rule.
             hosts = [d.host for d in sorted(
@@ -425,6 +426,14 @@ class Deployer:
         owner_token = ""
         try:
             emit(f"[koyra] deploy #{deploy_id} for {app_name} @ {ref}", "building")
+            # Refuse rather than quietly deploy .paas/app.yaml: an app that set
+            # KOYRA_MANIFEST meant to opt out of something in it.
+            if manifest_secret:
+                raise ValueError(f"{MANIFEST_ENV} is set as a secret; set it as an env var")
+            if manifest_path is not None:
+                manifest_path = manifest_path.strip()
+                if not manifest_path:
+                    raise ValueError(f"{MANIFEST_ENV} is blank; set a path or remove it")
             # Clone to LOCAL disk (build_dir), never NFS: the build runs here and
             # its result goes into an image, so NFS small-file I/O never touches a
             # build (that's what made npm ci glacial and stalled the control plane).
@@ -452,7 +461,7 @@ class Deployer:
                 s.commit()
             emit(f"[koyra] checked out {commit[:12]}")
 
-            manifest, synthesized = resolve_manifest(dest, app_name, manifest_path)
+            manifest, synthesized = resolve_manifest(dest, app_name, manifest_path or "")
             if synthesized:
                 emit("[koyra] no manifest found; repo looks static → runtime: static")
             emit(f"[koyra] manifest ok: {manifest.name} (runtime={manifest.runtime})"
