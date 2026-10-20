@@ -1268,6 +1268,8 @@ def create_app(
     # ----- SPA ------------------------------------------------------------
     if WEB_DIST.is_dir():
         _web_root = WEB_DIST.resolve()
+        _STATIC_EXTS = {".xml", ".txt", ".json", ".map", ".js", ".css", ".ico",
+                        ".png", ".jpg", ".svg", ".webp", ".gz"}
 
         @app.get("/{full_path:path}")
         def spa(full_path: str):
@@ -1284,6 +1286,11 @@ def create_app(
                     prerendered = candidate / "index.html"
                     if prerendered.is_file():
                         return FileResponse(prerendered)
+            # A missing file-like path (sitemap-index.xml, foo.js, ...) is a
+            # real 404, not the HTML shell: crawlers treat a 200 text/html at a
+            # sitemap URL as an invalid sitemap. Client routes have no extension.
+            if os.path.splitext(full_path)[1].lower() in _STATIC_EXTS:
+                raise HTTPException(status_code=404, detail="not found")
             # "/" is the prerendered landing page, which carries the GA tag.
             # Everything else is the dashboard and gets app.html, the bare shell
             # with no GA tag (#132). A build without the prerender step has only

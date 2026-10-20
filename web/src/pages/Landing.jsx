@@ -77,13 +77,16 @@ function WaitlistSection() {
           <p className="mt-7 text-acid font-medium">You're on the list — we'll be in touch. 🎉</p>
         ) : (
           <form onSubmit={submit} className="mt-7 flex flex-wrap gap-3 items-center max-w-xl">
+            <label htmlFor="waitlist-email" className="sr-only">Email address</label>
             <input
-              type="email" required aria-label="Email address" autoComplete="email" value={email}
+              id="waitlist-email"
+              type="email" required autoComplete="email" value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@agency.com"
               className="input flex-1 min-w-[220px]"
             />
-            <select required aria-label="How many sites?" value={siteCount} onChange={(e) => setSiteCount(e.target.value)}
+            <label htmlFor="waitlist-sites" className="sr-only">How many sites?</label>
+            <select id="waitlist-sites" required value={siteCount} onChange={(e) => setSiteCount(e.target.value)}
                     className="input">
               <option value="" disabled>How many sites?</option>
               <option value="1-2">1–2 sites</option>
