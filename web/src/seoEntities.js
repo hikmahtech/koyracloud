@@ -6,12 +6,10 @@
 export const SITE = "https://koyracloud.com";
 export const PERSON_ID = `${SITE}/#arshad-ansari`;
 
-export const HIKMAH_ORG = {
-  "@type": "Organization",
-  "@id": `${SITE}/#hikmah-technologies`,
-  name: "Hikmah Technologies",
-  url: "https://hikmahtechnologies.com",
-};
+// Hikmah Technologies is declared in full in web/index.html (id #organization,
+// on every page), so the blog JSON-LD only references it — keep the id in sync.
+export const HIKMAH_ORG_ID = `${SITE}/#organization`;
+export const HIKMAH_ORG = { "@id": HIKMAH_ORG_ID };
 
 export const KOYRACLOUD_ORG = {
   "@type": "Organization",
