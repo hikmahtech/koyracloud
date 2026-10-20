@@ -39,6 +39,29 @@
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://koyracloud.com/#organization",
+          "name": "Hikmah Technologies",
+          "url": "https://hikmahtechnologies.com",
+          "logo": "https://koyracloud.com/og.png",
+          "sameAs": ["https://github.com/hikmahtech", "https://github.com/hikmahtech/koyracloud"]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://koyracloud.com/#website",
+          "name": "koyracloud",
+          "url": "https://koyracloud.com/",
+          "inLanguage": "en",
+          "publisher": { "@id": "https://koyracloud.com/#organization" }
+        }
+      ]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "koyracloud",
       "applicationCategory": "DeveloperApplication",

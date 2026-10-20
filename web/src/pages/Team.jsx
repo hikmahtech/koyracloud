@@ -70,7 +70,7 @@ export default function Team() {
           Members get a private workspace: they only see and manage the apps they create, never each other's.
         </p>
         <form onSubmit={(e) => { e.preventDefault(); addMut.mutate(); }} className="flex gap-2 mt-4">
-          <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder="github-login" className="input mono" />
+          <input aria-label="GitHub login" value={login} onChange={(e) => setLogin(e.target.value)} placeholder="github-login" className="input mono" />
           <button disabled={!login || addMut.isPending} className="btn btn-primary shrink-0">Invite</button>
         </form>
         {addMut.isError && <p className="text-[var(--color-danger)] text-sm mt-2">{addMut.error?.response?.data?.detail || "Failed"}</p>}
@@ -136,7 +136,7 @@ function ApiTokens() {
         acts as an admin until revoked, or until the admin who made it leaves KOYRA_ALLOWED_LOGINS.
       </p>
       <form onSubmit={(e) => { e.preventDefault(); addMut.mutate(); }} className="flex gap-2 mt-4">
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="token-name" className="input mono" />
+        <input aria-label="Token name" value={name} onChange={(e) => setName(e.target.value)} placeholder="token-name" className="input mono" />
         <button disabled={!name || addMut.isPending} className="btn btn-primary shrink-0">Create token</button>
       </form>
       {addMut.isError && <p className="text-[var(--color-danger)] text-sm mt-2">{errorText(addMut.error)}</p>}

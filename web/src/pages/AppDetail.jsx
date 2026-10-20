@@ -540,7 +540,7 @@ function DomainsTab({ id }) {
         {domains.length === 0 && <div className="px-4 py-3 mono text-sm text-[var(--color-muted)]">No domains.</div>}
       </div>
       <form onSubmit={(e) => { e.preventDefault(); addMut.mutate(); }} className="flex gap-2">
-        <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="app.example.com" className="input mono" />
+        <input aria-label="Custom domain" value={host} onChange={(e) => setHost(e.target.value)} placeholder="app.example.com" className="input mono" />
         <button disabled={!host || addMut.isPending} className="btn btn-primary shrink-0">Add</button>
       </form>
       {addMut.isError && <p className="text-[var(--color-danger)] text-sm">{addMut.error?.response?.data?.detail || "Failed"}</p>}
@@ -604,8 +604,8 @@ function EnvEditor({ id }) {
       <p className="text-sm text-[var(--color-muted)]">Non-secret environment variables. Redeploy to apply.</p>
       {list.map((r, i) => (
         <div key={i} className="flex gap-2">
-          <input className="input mono" value={r.key} placeholder="KEY" onChange={(e) => upd(i, "key", e.target.value)} />
-          <input className="input mono" value={r.value} placeholder="value" onChange={(e) => upd(i, "value", e.target.value)} />
+          <input aria-label="Variable name" className="input mono" value={r.key} placeholder="KEY" onChange={(e) => upd(i, "key", e.target.value)} />
+          <input aria-label="Variable value" className="input mono" value={r.value} placeholder="value" onChange={(e) => upd(i, "value", e.target.value)} />
         </div>
       ))}
       <div className="flex gap-3 items-center">
@@ -635,8 +635,8 @@ function SecretsEditor({ id }) {
         {keys.length === 0 && <div className="px-4 py-3 mono text-sm text-[var(--color-muted)]">No secrets.</div>}
       </div>
       <form onSubmit={(e) => { e.preventDefault(); addMut.mutate(); }} className="flex gap-2">
-        <input className="input mono" value={k} placeholder="SECRET_KEY" onChange={(e) => setK(e.target.value)} />
-        <input className="input mono" type="password" value={v} placeholder="value" onChange={(e) => setV(e.target.value)} />
+        <input aria-label="Secret name" className="input mono" value={k} placeholder="SECRET_KEY" onChange={(e) => setK(e.target.value)} />
+        <input aria-label="Secret value" className="input mono" type="password" value={v} placeholder="value" onChange={(e) => setV(e.target.value)} />
         <button disabled={!k || !v} className="btn btn-primary shrink-0">Set</button>
       </form>
     </div>
@@ -662,7 +662,7 @@ function NotifyCard({ id }) {
         )}
       </p>
       <div className="flex gap-2">
-        <input className="input mono" type="email" placeholder="you@example.com" value={val}
+        <input aria-label="Email address" className="input mono" type="email" placeholder="you@example.com" value={val}
                onChange={(e) => setEmail(e.target.value)} />
         <button onClick={() => save.mutate()} className="btn btn-primary text-sm shrink-0">
           {save.isPending ? "Saving…" : "Save"}
@@ -703,7 +703,7 @@ function MembersCard({ id }) {
         )}
       </ul>
       <form onSubmit={(e) => { e.preventDefault(); if (login.trim()) add.mutate(); }} className="flex gap-2">
-        <input className="input mono" placeholder="github-login" value={login} onChange={(e) => setLogin(e.target.value)} />
+        <input aria-label="GitHub login" className="input mono" placeholder="github-login" value={login} onChange={(e) => setLogin(e.target.value)} />
         <button className="btn btn-primary text-sm shrink-0" disabled={add.isPending}>{add.isPending ? "Adding…" : "Add"}</button>
       </form>
       {err && <p className="text-[var(--color-danger)] text-xs">{err}</p>}

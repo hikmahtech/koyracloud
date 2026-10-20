@@ -42,13 +42,13 @@ export default function NewApp() {
 
       <form onSubmit={(e) => { e.preventDefault(); mut.mutate(); }} className="card p-6 space-y-5">
         <Field label="Name" hint="lowercase, used for the subdomain & stack">
-          <input required value={form.name} onChange={set("name")} placeholder="lens-inventory" className="input mono" />
+          <input required aria-label="Name" value={form.name} onChange={set("name")} placeholder="lens-inventory" className="input mono" />
         </Field>
         {gh?.enabled && (
           <Field label="GitHub repository" hint={gh.connected ? "read-only via the GitHub App" : ""}>
             {gh.connected ? (
               <>
-                <select defaultValue="" onChange={pickRepo} className="input mono">
+                <select aria-label="Pick a GitHub repository" defaultValue="" onChange={pickRepo} className="input mono">
                   <option value="">{gh.repos.length ? "Pick a repo…" : "No repos yet — install the app below"}</option>
                   {gh.repos.map((r) => (
                     <option key={r.full_name} value={r.full_name}>{r.full_name}{r.private ? "  (private)" : ""}</option>
@@ -67,10 +67,10 @@ export default function NewApp() {
           </Field>
         )}
         <Field label="Repository URL">
-          <input required value={form.repo_url} onChange={set("repo_url")} placeholder="https://github.com/owner/repo" className="input mono" />
+          <input required aria-label="Repository URL" value={form.repo_url} onChange={set("repo_url")} placeholder="https://github.com/owner/repo" className="input mono" />
         </Field>
         <Field label="Branch">
-          <input value={form.branch} onChange={set("branch")} className="input mono" />
+          <input aria-label="Branch" value={form.branch} onChange={set("branch")} className="input mono" />
         </Field>
         <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
           <input type="checkbox" checked={form.auto_deploy} onChange={set("auto_deploy")} className="accent-[var(--color-acid)]" />

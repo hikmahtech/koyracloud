@@ -103,7 +103,7 @@ const sitemap =
   routes
     .map((r) => {
       const slug = r.path.startsWith("/blog/") ? r.path.slice(6) : null;
-      const lastmod = slug && dateBySlug[slug] ? `\n    <lastmod>${dateBySlug[slug]}</lastmod>` : "";
+      const lastmod = slug && dateBySlug[slug] ? `\n    <lastmod>${String(dateBySlug[slug]).slice(0, 10)}</lastmod>` : "";
       const priority = r.path === "/" ? "1.0" : r.path === "/docs" ? "0.9" : slug ? "0.8" : "0.7";
       return `  <url>\n    <loc>${r.canonical}</loc>${lastmod}\n    <changefreq>${slug ? "monthly" : "weekly"}</changefreq>\n    <priority>${priority}</priority>\n  </url>`;
     })
