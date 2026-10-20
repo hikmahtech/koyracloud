@@ -49,3 +49,16 @@ def test_prerendered_route_serves_directory_index(client):
     assert r.status_code == 200
     assert "<title>Self-hosting a PaaS on your Docker Swarm" in r.text
     assert '"@type":"BlogPosting"' in r.text
+
+
+@pytest.mark.skipif(not WEB_DIST.is_dir(), reason="web/dist not built")
+def test_unknown_xml_paths_are_404_not_the_shell(client):
+    for path in ("/sitemap-index.xml", "/page-sitemap.xml", "/no-such-file.xml"):
+        assert client.get(path).status_code == 404
+
+
+@pytest.mark.skipif(not (WEB_DIST / "sitemap.xml").is_file(), reason="sitemap not generated")
+def test_real_sitemap_still_served(client):
+    r = client.get("/sitemap.xml")
+    assert r.status_code == 200
+    assert "xml" in r.headers["content-type"]

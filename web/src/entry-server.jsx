@@ -10,6 +10,7 @@ import Docs from "./pages/Docs.jsx";
 import Blog from "./pages/Blog.jsx";
 import BlogPost from "./pages/BlogPost.jsx";
 import { POSTS } from "./posts/index.js";
+import { HIKMAH_ORG, KOYRACLOUD_ORG } from "./seoEntities.js";
 
 // Re-exported so the prerenderer can build the sitemap + RSS feed from the same
 // post list, instead of a hand-maintained sitemap that drifts when posts change.
@@ -89,8 +90,8 @@ export function getRoutes() {
         description: p.description,
         datePublished: p.date,
         dateModified: p.date,
-        author: { "@type": "Organization", name: "Hikmah Technologies", url: "https://hikmahtechnologies.com" },
-        publisher: { "@type": "Organization", name: "koyracloud", url: SITE },
+        author: HIKMAH_ORG,
+        publisher: KOYRACLOUD_ORG,
         mainEntityOfPage: `${SITE}/blog/${p.slug}`,
         url: `${SITE}/blog/${p.slug}`,
         inLanguage: "en",

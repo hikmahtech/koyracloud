@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import { PublicNav, Footer } from "../components/Chrome.jsx";
 import { getPost, readingTime } from "../posts/index.js";
 import { useSeo } from "../seo.js";
+import { HIKMAH_ORG, KOYRACLOUD_ORG } from "../seoEntities.js";
 
 const SITE = "https://koyracloud.com";
 
@@ -32,8 +33,8 @@ export default function BlogPost() {
     description: post.description,
     datePublished: post.date,
     dateModified: post.date,
-    author: { "@type": "Organization", name: "Hikmah Technologies", url: "https://hikmahtechnologies.com" },
-    publisher: { "@type": "Organization", name: "koyracloud" },
+    author: HIKMAH_ORG,
+    publisher: KOYRACLOUD_ORG,
     mainEntityOfPage: url,
     url,
   };
