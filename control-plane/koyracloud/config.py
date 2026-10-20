@@ -98,6 +98,11 @@ class Settings:
     # regardless of this ceiling.
     deploy_converge_timeout: int = field(default_factory=lambda: _int(
         "KOYRA_DEPLOY_CONVERGE_TIMEOUT", 660))
+    # A pending/building/deploying deploy older than this is treated as dead:
+    # it no longer counts as in flight for webhook dedup, and the startup sweep
+    # only re-schedules orphans younger than this.
+    build_timeout: int = field(default_factory=lambda: _int(
+        "KOYRA_BUILD_TIMEOUT", 1800))
     deploy_converge_poll: int = field(default_factory=lambda: _int(
         "KOYRA_DEPLOY_CONVERGE_POLL", 3))
     apps_domain: str = field(default_factory=lambda: os.environ.get(

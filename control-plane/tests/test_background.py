@@ -490,3 +490,62 @@ def test_deploy_failure_no_webhook_without_notify(env, monkeypatch):
     did = _mk_deploy(env["db"], app_id)
     deployer.run_deploy(env["db"], did)
     assert calls == []  # BG_MANIFEST has no notify block
+
+
+# --- startup sweep of orphaned deploys (#148) -------------------------------
+def _add_deploy(db, app_id, status, age_s=60, ref="main"):
+    with db.session() as s:
+        d = Deploy(app_id=app_id, ref=ref, status=status,
+                   created_at=_now() - dt.timedelta(seconds=age_s))
+        s.add(d)
+        s.commit()
+        return d.id
+
+
+def test_sweep_fails_orphans_and_resumes_auto_deploy_once(env):
+    from koyracloud.deployer import fail_orphaned_deploys
+    db = env["db"]
+    a = _make_app(db, "auto")
+    b = _make_app(db, "manual")
+    with db.session() as s:
+        s.get(App, a).auto_deploy = True
+        s.commit()
+    o1 = _add_deploy(db, a, "building")
+    o2 = _add_deploy(db, a, "pending")
+    ob = _add_deploy(db, b, "deploying")
+    live = _add_deploy(db, b, "live")
+    assert fail_orphaned_deploys(db, 1800) == [(a, "main")]
+    with db.session() as s:
+        for i in (o1, o2, ob):
+            d = s.get(Deploy, i)
+            assert d.status == "failed" and d.finished_at is not None
+            assert "control plane restarted during the build" in d.log
+        assert s.get(Deploy, live).status == "live"
+
+
+def test_sweep_does_not_resume_old_or_superseded_orphans(env):
+    from koyracloud.deployer import fail_orphaned_deploys
+    db = env["db"]
+    a = _make_app(db, "auto")
+    c = _make_app(db, "superseded")
+    with db.session() as s:
+        s.get(App, a).auto_deploy = True
+        s.get(App, c).auto_deploy = True
+        s.commit()
+    _add_deploy(db, a, "building", age_s=7200)
+    _add_deploy(db, c, "building")
+    _add_deploy(db, c, "live", age_s=10)
+    assert fail_orphaned_deploys(db, 1800) == []
+
+
+def test_is_in_flight_respects_build_timeout(env):
+    from koyracloud.deployer import is_in_flight
+    db = env["db"]
+    a = _make_app(db)
+    fresh = _add_deploy(db, a, "building", age_s=60)
+    stale = _add_deploy(db, a, "building", age_s=7200)
+    done = _add_deploy(db, a, "live", age_s=10)
+    with db.session() as s:
+        assert is_in_flight(s.get(Deploy, fresh), 1800)
+        assert not is_in_flight(s.get(Deploy, stale), 1800)
+        assert not is_in_flight(s.get(Deploy, done), 1800)

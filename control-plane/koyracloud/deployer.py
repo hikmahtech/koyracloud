@@ -33,7 +33,7 @@ from koyracloud.docker_ctl import DockerControl
 from koyracloud.dockerfile import render_dockerfile
 from koyracloud.healthcheck_preflight import detect_healthcheck_hint
 from koyracloud.manifest import Manifest, parse_manifest
-from koyracloud.models import AppAnalytics, AppPin, BuiltImage, CronJob, Deploy
+from koyracloud.models import App, AppAnalytics, AppPin, BuiltImage, CronJob, Deploy
 from koyracloud.stack_render import render_stack, worker_service_name
 
 
@@ -191,6 +191,53 @@ class _DeployLog:
                     "WHERE id = :i"),
                     {"l": chunk, "i": self.deploy_id})
             s.commit()
+
+
+ACTIVE_STATUSES = ("pending", "building", "deploying")
+ORPHAN_REASON = "control plane restarted during the build"
+
+
+def _aware(t: dt.datetime) -> dt.datetime:
+    return t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
+
+
+def is_in_flight(deploy: Deploy, build_timeout: int, now: dt.datetime | None = None) -> bool:
+    """Non-terminal and younger than the build timeout (older ones are dead)."""
+    if deploy.status not in ACTIVE_STATUSES:
+        return False
+    now = now or dt.datetime.now(dt.timezone.utc)
+    return (now - _aware(deploy.created_at)).total_seconds() <= build_timeout
+
+
+def fail_orphaned_deploys(db: Database, build_timeout: int) -> list[tuple[int, str]]:
+    """Startup sweep: build threads die with the process, so any deploy still
+    pending/building/deploying belongs to a previous process. Mark each failed
+    and return one (app_id, ref) per app worth re-deploying: auto_deploy on, the
+    orphan younger than build_timeout, and no later deploy for the app."""
+    now = dt.datetime.now(dt.timezone.utc)
+    resume: dict[int, str] = {}
+    with db.session() as s:
+        rows = (s.query(Deploy).filter(Deploy.status.in_(ACTIVE_STATUSES))
+                .order_by(Deploy.id).all())
+        orphan_ids = {d.id for d in rows}
+        for d in rows:
+            d.log = (d.log or "") + f"\n[koyra] FAILED: {ORPHAN_REASON}\n"
+            d.status = "failed"
+            d.finished_at = now
+        s.flush()
+        for d in rows:
+            app = s.get(App, d.app_id)
+            if app is None or not app.auto_deploy:
+                continue
+            if (now - _aware(d.created_at)).total_seconds() > build_timeout:
+                continue
+            later = (s.query(Deploy)
+                     .filter(Deploy.app_id == d.app_id, Deploy.id > d.id,
+                             ~Deploy.id.in_(orphan_ids)).first())
+            if later is None:
+                resume[d.app_id] = d.ref
+        s.commit()
+    return list(resume.items())
 
 
 @dataclass
