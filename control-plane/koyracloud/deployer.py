@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Callable
 
 import httpx
-from sqlalchemy import text
+from sqlalchemy import func, text
 
 from koyracloud import github, redisbus
 from koyracloud.build_hints import detect_log_hints
@@ -209,16 +209,31 @@ def is_in_flight(deploy: Deploy, build_timeout: int, now: dt.datetime | None = N
     return (now - _aware(deploy.created_at)).total_seconds() <= build_timeout
 
 
-def fail_orphaned_deploys(db: Database, build_timeout: int) -> list[tuple[int, str]]:
-    """Startup sweep: build threads die with the process, so any deploy still
-    pending/building/deploying belongs to a previous process. Mark each failed
-    and return one (app_id, ref) per app worth re-deploying: auto_deploy on, the
-    orphan younger than build_timeout, and no later deploy for the app."""
+def snapshot_active_deploys(db: Database, started_at: dt.datetime) -> dict[int, int]:
+    """Candidates for the orphan sweep: non-terminal deploys created before this
+    process started, as {deploy_id: len(log)}. Taken at startup and compared
+    again by fail_orphaned_deploys: a log that grew means another process (the
+    old task during a start-first update) is still writing it."""
+    with db.session() as s:
+        rows = (s.query(Deploy.id, Deploy.created_at, func.length(Deploy.log))
+                .filter(Deploy.status.in_(ACTIVE_STATUSES)).all())
+    return {i: n or 0 for i, created, n in rows if _aware(created) < started_at}
+
+
+def fail_orphaned_deploys(db: Database, build_timeout: int,
+                          snapshot: dict[int, int]) -> list[tuple[int, str]]:
+    """Startup sweep: build threads die with their process. Mark failed every
+    snapshot deploy that is still non-terminal and whose log has not grown since
+    the snapshot, and return one (app_id, ref) per app worth re-deploying:
+    auto_deploy on, the orphan younger than build_timeout, and no later deploy
+    for the app that was not itself swept."""
     now = dt.datetime.now(dt.timezone.utc)
     resume: dict[int, str] = {}
     with db.session() as s:
-        rows = (s.query(Deploy).filter(Deploy.status.in_(ACTIVE_STATUSES))
+        rows = (s.query(Deploy).filter(Deploy.id.in_(list(snapshot)),
+                                       Deploy.status.in_(ACTIVE_STATUSES))
                 .order_by(Deploy.id).all())
+        rows = [d for d in rows if len(d.log or "") == snapshot[d.id]]
         orphan_ids = {d.id for d in rows}
         for d in rows:
             d.log = (d.log or "") + f"\n[koyra] FAILED: {ORPHAN_REASON}\n"

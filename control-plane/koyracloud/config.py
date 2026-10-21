@@ -103,6 +103,11 @@ class Settings:
     # only re-schedules orphans younger than this.
     build_timeout: int = field(default_factory=lambda: _int(
         "KOYRA_BUILD_TIMEOUT", 1800))
+    # Seconds after boot before the orphan sweep runs. The control plane updates
+    # start-first, so the old task may still be building when this one starts;
+    # the delay lets the sweep see whether those builds are still writing logs.
+    orphan_sweep_delay: int = field(default_factory=lambda: _int(
+        "KOYRA_ORPHAN_SWEEP_DELAY", 120))
     deploy_converge_poll: int = field(default_factory=lambda: _int(
         "KOYRA_DEPLOY_CONVERGE_POLL", 3))
     apps_domain: str = field(default_factory=lambda: os.environ.get(

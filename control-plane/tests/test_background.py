@@ -493,17 +493,22 @@ def test_deploy_failure_no_webhook_without_notify(env, monkeypatch):
 
 
 # --- startup sweep of orphaned deploys (#148) -------------------------------
-def _add_deploy(db, app_id, status, age_s=60, ref="main"):
+def _add_deploy(db, app_id, status, age_s=60, ref="main", log=""):
     with db.session() as s:
-        d = Deploy(app_id=app_id, ref=ref, status=status,
+        d = Deploy(app_id=app_id, ref=ref, status=status, log=log,
                    created_at=_now() - dt.timedelta(seconds=age_s))
         s.add(d)
         s.commit()
         return d.id
 
 
+def _sweep(db, build_timeout=1800):
+    from koyracloud.deployer import fail_orphaned_deploys, snapshot_active_deploys
+    snap = snapshot_active_deploys(db, _now())
+    return fail_orphaned_deploys(db, build_timeout, snap)
+
+
 def test_sweep_fails_orphans_and_resumes_auto_deploy_once(env):
-    from koyracloud.deployer import fail_orphaned_deploys
     db = env["db"]
     a = _make_app(db, "auto")
     b = _make_app(db, "manual")
@@ -514,7 +519,7 @@ def test_sweep_fails_orphans_and_resumes_auto_deploy_once(env):
     o2 = _add_deploy(db, a, "pending")
     ob = _add_deploy(db, b, "deploying")
     live = _add_deploy(db, b, "live")
-    assert fail_orphaned_deploys(db, 1800) == [(a, "main")]
+    assert _sweep(db) == [(a, "main")]
     with db.session() as s:
         for i in (o1, o2, ob):
             d = s.get(Deploy, i)
@@ -524,7 +529,6 @@ def test_sweep_fails_orphans_and_resumes_auto_deploy_once(env):
 
 
 def test_sweep_does_not_resume_old_or_superseded_orphans(env):
-    from koyracloud.deployer import fail_orphaned_deploys
     db = env["db"]
     a = _make_app(db, "auto")
     c = _make_app(db, "superseded")
@@ -535,7 +539,38 @@ def test_sweep_does_not_resume_old_or_superseded_orphans(env):
     _add_deploy(db, a, "building", age_s=7200)
     _add_deploy(db, c, "building")
     _add_deploy(db, c, "live", age_s=10)
-    assert fail_orphaned_deploys(db, 1800) == []
+    assert _sweep(db) == []
+
+
+def test_sweep_skips_rows_created_after_process_start(env):
+    from koyracloud.deployer import snapshot_active_deploys
+    db = env["db"]
+    a = _make_app(db)
+    old = _add_deploy(db, a, "building", age_s=60)
+    new = _add_deploy(db, a, "building", age_s=-60)   # created "after" start
+    assert set(snapshot_active_deploys(db, _now())) == {old}
+    assert new not in snapshot_active_deploys(db, _now())
+
+
+def test_sweep_leaves_deploy_whose_log_is_still_growing(env):
+    from koyracloud.deployer import fail_orphaned_deploys, snapshot_active_deploys
+    db = env["db"]
+    a = _make_app(db)
+    with db.session() as s:
+        s.get(App, a).auto_deploy = True
+        s.commit()
+    dead = _add_deploy(db, a, "building", log="step 1\n")
+    live = _add_deploy(db, a, "building", log="step 1\n")
+    snap = snapshot_active_deploys(db, _now())
+    with db.session() as s:   # another process keeps writing one of them
+        s.get(Deploy, live).log += "step 2\n"
+        s.commit()
+    resumed = fail_orphaned_deploys(db, 1800, snap)
+    with db.session() as s:
+        assert s.get(Deploy, live).status == "building"
+        assert s.get(Deploy, live).finished_at is None
+        assert s.get(Deploy, dead).status == "failed"
+    assert resumed == []   # the still-running deploy is a later one for the app
 
 
 def test_is_in_flight_respects_build_timeout(env):
