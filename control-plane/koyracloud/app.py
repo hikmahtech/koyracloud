@@ -24,7 +24,7 @@ from koyracloud.cloudflare import Cloudflare
 from koyracloud.config import DEV_SESSION_SECRET as _DEV_SESSION_SECRET, Settings, get_settings
 from koyracloud.crypto import CryptoBox
 from koyracloud.db import Database
-from koyracloud.deployer import Deployer
+from koyracloud.deployer import ACTIVE_STATUSES, Deployer, fail_orphaned_deploys, is_in_flight, snapshot_active_deploys
 from koyracloud.docker_ctl import CLIDockerControl, DockerControl
 from koyracloud.models import (AllowedUser, ApiToken, App, AppAnalytics, AppMember,
                                 AppNotify, AppPin, AppRedis, CronJob, CronRun, Deploy,
@@ -425,7 +425,9 @@ def create_app(
                 # ends up sending both push and workflow_run for the same sha).
                 latest = (s.query(Deploy).filter_by(app_id=a.id)
                           .order_by(Deploy.id.desc()).first())
-                if latest and sha and latest.commit == sha and latest.status != "failed":
+                if (latest and sha and latest.commit == sha and latest.status != "failed"
+                        and (latest.status not in ACTIVE_STATUSES
+                             or is_in_flight(latest, settings.build_timeout))):
                     continue
                 d = Deploy(app_id=a.id, ref=a.branch, status="pending")
                 s.add(d)
@@ -1325,6 +1327,31 @@ def create_app(
             backup.BackupLoop(dbf, backup.backup_dir_for(dbf, settings.backup_dir),
                               settings.backup_interval_hours * 3600,
                               settings.backup_keep).start()
+
+    if run_async:
+        # Build threads die with their process. Snapshot the non-terminal deploys
+        # that predate this process now, then sweep after a delay: the old task
+        # may still be running them (start-first update), which shows as a
+        # growing log. Fail the dead ones and re-deploy apps that had a recent
+        # build in flight.
+        sweep_snapshot = snapshot_active_deploys(db, dt.datetime.now(dt.timezone.utc))
+
+        def _orphan_sweep() -> None:
+            time.sleep(settings.orphan_sweep_delay)
+            try:
+                for app_id, ref in fail_orphaned_deploys(
+                        db, settings.build_timeout, sweep_snapshot):
+                    with db.session() as s:
+                        d = Deploy(app_id=app_id, ref=ref, status="pending")
+                        s.add(d)
+                        s.commit()
+                        new_id = d.id
+                    schedule(new_id)
+            except Exception as e:  # noqa: BLE001 — best-effort; never block startup
+                print(f"[koyra] orphan sweep failed: {e}", flush=True)
+
+        if sweep_snapshot:
+            threading.Thread(target=_orphan_sweep, daemon=True).start()
 
     app.state.db = db
     app.state.settings = settings
