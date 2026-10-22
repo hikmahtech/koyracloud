@@ -22,7 +22,7 @@ does_not:
 links:
   home: https://koyracloud.com/
   docs: https://koyracloud.com/docs                  # manifest reference
-  repo: https://github.com/hikmahtech/koyracloud     # main link on devto, bluesky and medium; home on linkedin and linkedin-page
+  repo: https://github.com/hikmahtech/koyracloud     # main link on devto, bluesky and medium; home on linkedin-page and facebook
 disclosure: I built this.
 link_wanted: true                                    # open source and free to self-host; the goal is GitHub stars
 voice: plain and technical, like an engineer's build log; name the trade-offs and non-goals openly; problem first, koyracloud last; never "enterprise" or "cloud-scale"
@@ -39,7 +39,10 @@ content:
     Opinion, Guide, Comparison, Feature, Engineering, Essay. The sitemap and
     /blog/rss.xml are generated from POSTS at build (web/prerender.js); the
     "Writing" list in web/public/llms.txt is by hand, so add the post there too.
-channels: [devto, linkedin, bluesky, linkedin-page, medium]   # developer and homelab audience
+channels: [linkedin-page, facebook, bluesky, devto, medium]   # developer and homelab audience
+# Company accounts only (owner, 2026-10-22): never the personal LinkedIn (`linkedin`) or a personal
+# Facebook profile. devto and medium are personal-name accounts: how-to articles only, with the
+# product only as the canonical link.
 ---
 
 ## Positioning
@@ -51,7 +54,7 @@ pushes it to a built-in registry and runs it as a Swarm service behind Traefik w
 
 The ask in every post is: self-host it, and star the repo. A post that promotes a blog post
 links the post on koyracloud.com; otherwise dev.to, Bluesky and Medium link the repo, and
-LinkedIn and the company page link the site.
+the LinkedIn and Facebook pages link the site.
 
 What it does today (code: `control-plane/koyracloud/`):
 
