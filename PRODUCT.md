@@ -23,7 +23,7 @@ links:
   home: https://koyracloud.com/
   docs: https://koyracloud.com/docs                  # manifest reference
   repo: https://github.com/hikmahtech/koyracloud     # main link on devto, bluesky and medium; home on linkedin-page and facebook
-disclosure: I built this.
+disclosure: Built by Hikmah Technologies.
 link_wanted: true                                    # open source and free to self-host; the goal is GitHub stars
 voice: plain and technical, like an engineer's build log; name the trade-offs and non-goals openly; problem first, koyracloud last; never "enterprise" or "cloud-scale"
 content:
