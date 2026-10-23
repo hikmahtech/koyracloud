@@ -38,6 +38,10 @@ jobs:
         working-directory: control-plane
         run: uvx ruff@0.15.16 check .
 
+  # Push only: the image tag is the only hand-off. homelab-gitops rolls
+  # koyracloud_control-plane to main's tag from its own runner
+  # (.github/workflows/deploy-koyracloud.yml there). This repo is public, so it
+  # gets no self-hosted runner and no secret that reaches the swarm.
   build:
     name: Build & Push
     needs: [backend, web, lint]
@@ -79,37 +83,3 @@ jobs:
             KOYRA_GA_MEASUREMENT_ID=${{ secrets.KOYRA_GA_MEASUREMENT_ID }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  deploy:
-    name: Deploy to Swarm
-    needs: [build]
-    runs-on: [self-hosted, swarm, linux, x64]
-    steps:
-      - name: Update koyracloud_control-plane service
-        env:
-          SHORT_SHA: ${{ needs.build.outputs.short_sha }}
-          SWARM_MANAGER_HOST: ${{ secrets.SWARM_MANAGER_HOST }}
-          SWARM_MANAGER_USER: ${{ secrets.SWARM_MANAGER_USER }}
-          SSH_PRIVATE_KEY: ${{ secrets.SWARM_SSH_PRIVATE_KEY }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/swarm_key
-          chmod 600 ~/.ssh/swarm_key
-          ssh-keyscan -H "$SWARM_MANAGER_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-          ssh -i ~/.ssh/swarm_key -o StrictHostKeyChecking=no \
-            "${SWARM_MANAGER_USER}@${SWARM_MANAGER_HOST}" \
-            "echo '${DOCKERHUB_TOKEN}' | docker login -u '${DOCKERHUB_USERNAME}' --password-stdin && \
-             docker pull arshadansari27/koyracloud:${SHORT_SHA} && \
-             docker service update --with-registry-auth \
-               --image arshadansari27/koyracloud:${SHORT_SHA} \
-               --force koyracloud_control-plane"
-
-      # Its own step with if: always(). Inline, a failing ssh ends the run at
-      # that line and leaves the private key on the runner — and this runner is
-      # self-hosted, so the file outlives the job.
-      - name: Remove the deploy key
-        if: always()
-        run: rm -f ~/.ssh/swarm_key
