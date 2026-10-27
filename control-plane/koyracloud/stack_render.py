@@ -88,7 +88,10 @@ def render_stack(
     # is no inbound HTTP-01 path, so it would only fail and burn Let's Encrypt
     # rate limits. The in-zone auto-subdomain gets a Traefik Let's Encrypt cert
     # UNLESS apps_domain itself sits behind the same proxy (apps_domain_proxied),
-    # in which case the edge serves its cert too and Traefik must skip ACME.
+    # in which case the edge serves its cert too and the app router skips ACME.
+    # Traefik then serves whatever stored cert matches the SNI: its default
+    # cert, or the *.apps_domain wildcard if KOYRA_WILDCARD_CERT=1 adds one
+    # (deploy/koyracloud-wildcard-cert.yml, #159).
     apps_domain = settings.apps_domain.lower()
     zone_cert = not settings.apps_domain_proxied
 

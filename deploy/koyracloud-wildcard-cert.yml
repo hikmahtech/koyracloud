@@ -1,0 +1,18 @@
+# Wildcard-cert overlay — OPTIONAL; applied by deploy.sh (as an extra -c file)
+# when KOYRA_WILDCARD_CERT=1. Asks the control-plane router's cert resolver for
+# one <apps domain> + *.<apps domain> cert. Traefik picks a stored cert by SNI,
+# so every app auto-subdomain (whose router sets tls=true but no resolver when
+# KOYRA_APPS_DOMAIN_PROXIED=1) is served this cert instead of Traefik's default.
+# That lets a proxy in front (e.g. a Cloudflare Tunnel with matchSNItoHost)
+# verify the origin cert instead of skipping verification (#159).
+#
+# Needs a DNS-01 resolver: Let's Encrypt only issues wildcards over DNS-01, so
+# leave this off with an HTTP-01/TLS-ALPN resolver.
+version: "3.8"
+
+services:
+  control-plane:
+    deploy:
+      labels:
+        - traefik.http.routers.koyracloud.tls.domains[0].main=${KOYRA_APPS_DOMAIN}
+        - traefik.http.routers.koyracloud.tls.domains[0].sans=*.${KOYRA_APPS_DOMAIN}
