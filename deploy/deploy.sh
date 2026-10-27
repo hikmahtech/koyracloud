@@ -62,6 +62,9 @@ fi
 if [ "${KOYRA_MONITORING:-}" = "1" ]; then
   STACK_FILES+=(-c deploy/koyracloud-monitoring.yml)
 fi
+if [ "${KOYRA_WILDCARD_CERT:-}" = "1" ]; then
+  STACK_FILES+=(-c deploy/koyracloud-wildcard-cert.yml)
+fi
 docker --context "$CTX" stack deploy --resolve-image=never \
   "${STACK_FILES[@]}" koyracloud
 # Same image tag + unchanged spec won't recreate the task, so force a roll to

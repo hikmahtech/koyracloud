@@ -225,7 +225,9 @@ set (takes Redis back off NFS onto a host path and pins it — recommended
 whenever the NFS server can reboot, see the file), and
 `koyracloud-monitoring.yml` when `KOYRA_MONITORING=1` (joins an existing
 `monitoring` overlay so Prometheus can scrape `/metrics` — see
-`docs/MONITORING.md`).
+`docs/MONITORING.md`), and `koyracloud-wildcard-cert.yml` when
+`KOYRA_WILDCARD_CERT=1` (one `*.<apps domain>` cert for all app subdomains, so a
+proxy in front can verify the origin cert; needs a DNS-01 resolver).
 
 ## Verify
 ```bash
