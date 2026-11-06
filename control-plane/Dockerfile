@@ -9,6 +9,10 @@ COPY web/ ./
 # (empty => no analytics; the dashboard never gets it).
 ARG KOYRA_GA_MEASUREMENT_ID=""
 ENV KOYRA_GA_MEASUREMENT_ID=$KOYRA_GA_MEASUREMENT_ID
+# Optional: Payload CMS base URL for blog posts at build time (empty => local
+# web/src/posts only; Payload down at build time falls back to local too).
+ARG PAYLOAD_URL=""
+ENV PAYLOAD_URL=$PAYLOAD_URL
 RUN npm run build
 
 FROM python:3.12-slim

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "./index.css";
 import Dashboard from "./App.jsx";
 import Docs from "./pages/Docs.jsx";
+import { PostsProvider, readEmbeddedPosts } from "./posts/context.jsx";
 import Blog from "./pages/Blog.jsx";
 // Code-split: react-markdown only loads when a post page is opened, keeping it
 // out of the landing/index bundle.
@@ -16,6 +17,7 @@ const queryClient = new QueryClient({
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
+    <PostsProvider value={readEmbeddedPosts()}>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
@@ -28,5 +30,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
+    </PostsProvider>
   </React.StrictMode>
 );

@@ -1,9 +1,11 @@
 import { Link } from "react-router-dom";
 import { PublicNav, Footer } from "../components/Chrome.jsx";
-import { POSTS, readingTime } from "../posts/index.js";
+import { readingTime } from "../posts/index.js";
+import { usePosts } from "../posts/context.jsx";
 import { useSeo } from "../seo.js";
 
 export default function Blog() {
+  const POSTS = usePosts();
   useSeo({
     title: "Blog — koyracloud",
     description:

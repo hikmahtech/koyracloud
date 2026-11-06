@@ -30,14 +30,16 @@ content:
   blog_dir: web/src/posts
   format: md                                         # plain Markdown, no front matter and no H1; sections start at "##"
   url: https://koyracloud.com/blog/{slug}
-  front_matter: []                                   # none in the file; metadata lives in web/src/posts/index.js
+  front_matter: []                                   # none in the file; metadata lives in web/src/posts/index.js (or Payload, below)
   example: web/src/posts/deploy-fastapi-react-homelab.md
   register: >-
     Add `import x from "./<slug>.md?raw";` and a POSTS entry
     {slug, title, description, date (YYYY-MM-DD), tag, body} at the top of
     web/src/posts/index.js (newest first). Tags in use: Build log, Tutorial,
     Opinion, Guide, Comparison, Feature, Engineering, Essay. The sitemap and
-    /blog/rss.xml are generated from POSTS at build (web/prerender.js); the
+    /blog/rss.xml are generated at build (web/prerender.js) from the merged list:
+    Payload posts_koyracloud (when PAYLOAD_URL is set) over POSTS, local filling
+    in and serving alone if Payload is unset/down (web/src/posts/source.js); the
     "Writing" list in web/public/llms.txt is by hand, so add the post there too.
 channels: [linkedin-page, facebook, bluesky, devto, medium]   # developer and homelab audience
 # Company accounts only (owner, 2026-10-22): never the personal LinkedIn (`linkedin`) or a personal

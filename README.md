@@ -274,3 +274,14 @@ business. A commercial license (no copyleft obligations) is available from the
 copyright holder — see [LICENSING.md](LICENSING.md).
 
 © [Hikmah Technologies](https://hikmahtechnologies.com) / Arshad Ansari.
+
+## Blog content from Payload
+
+The koyracloud.com blog is prerendered at image-build time (`web/prerender.js`). If the
+`PAYLOAD_URL` Docker build arg is set (GitHub repo variable `PAYLOAD_URL`, passed by
+`.github/workflows/ci.yml`), published docs from `${PAYLOAD_URL}/api/posts_koyracloud` are
+merged over the files in `web/src/posts` (Payload wins by slug). Unset or unreachable
+Payload means the local posts alone, so the build never fails on it. Because the pages are
+baked into the image, a Payload publish goes live only after a rebuild: trigger `ci.yml`
+(`workflow_dispatch` / `repository_dispatch`), whose success auto-deploys. Comments on post
+pages are lazy-loaded Artalk from comments.hikmahtech.in (site `koyracloud`).

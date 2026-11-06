@@ -62,3 +62,18 @@ def test_real_sitemap_still_served(client):
     r = client.get("/sitemap.xml")
     assert r.status_code == 200
     assert "xml" in r.headers["content-type"]
+
+
+@pytest.mark.skipif(not (WEB_DIST / "blog" / "rss.xml").is_file(), reason="feed not generated")
+def test_sitemap_and_feed_list_every_local_slug(client):
+    import re
+    from pathlib import Path
+
+    index = (Path(__file__).resolve().parents[2] / "web" / "src" / "posts" / "index.js").read_text()
+    slugs = re.findall(r'^\s*slug:\s*"([^"]+)"', index, re.M)
+    assert slugs
+    sitemap = client.get("/sitemap.xml").text
+    feed = client.get("/blog/rss.xml").text
+    for s in slugs:
+        assert f"https://koyracloud.com/blog/{s}" in sitemap
+        assert f"https://koyracloud.com/blog/{s}" in feed

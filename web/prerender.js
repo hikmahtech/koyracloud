@@ -11,7 +11,9 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dist = join(__dirname, "dist");
 
-const { render, getRoutes, POSTS } = await import("./dist-server/entry-server.js");
+const { render, getRoutes, loadPosts } = await import("./dist-server/entry-server.js");
+// Payload first (when PAYLOAD_URL is set), local files fill in / serve alone.
+const { posts: POSTS, fromPayload } = await loadPosts();
 
 const SITE = "https://koyracloud.com";
 const escXml = (s) =>
@@ -42,20 +44,21 @@ function injectGA(html) {
   return html.replace("</head>", tag + "</head>");
 }
 
-const escAttr = (s) => String(s).replace(/"/g, "&quot;");
+const escAttr = (s) =>
+  String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 // Escape `<` in JSON-LD so a literal "</script>" in data can't break out of the tag.
 const escJson = (obj) => JSON.stringify(obj).replace(/</g, "\\u003c");
 
 function setTitle(html, v) {
-  return html.replace(/<title>[\s\S]*?<\/title>/, `<title>${v}</title>`);
+  return html.replace(/<title>[\s\S]*?<\/title>/, () => `<title>${escAttr(v)}</title>`);
 }
 function setAttrContent(html, sel, value) {
   // sel like 'name="description"' or 'property="og:title"'. Replaces the content="" of the matching meta.
   const re = new RegExp(`(<meta\\s+${sel}\\s+content=")[^"]*(")`, "i");
-  return html.replace(re, `$1${escAttr(value)}$2`);
+  return html.replace(re, (_, a, b) => a + escAttr(value) + b);
 }
 function setCanonical(html, href) {
-  return html.replace(/(<link\s+rel="canonical"\s+href=")[^"]*(")/i, `$1${escAttr(href)}$2`);
+  return html.replace(/(<link\s+rel="canonical"\s+href=")[^"]*(")/i, (_, a, b) => a + escAttr(href) + b);
 }
 function injectJsonLd(html, blocks) {
   const tags = (Array.isArray(blocks) ? blocks : [blocks])
@@ -75,7 +78,12 @@ function buildHtml(route, appHtml) {
   html = setAttrContent(html, 'name="twitter:description"', route.description);
   html = setCanonical(html, route.canonical);
   if (route.jsonLd) html = injectJsonLd(html, route.jsonLd);
-  html = html.replace('<div id="root"></div>', `<div id="root">${appHtml}</div>`);
+  html = html.replace('<div id="root"></div>', () => `<div id="root">${appHtml}</div>`);
+  // Hydration must see the same list SSR used; only needed when Payload contributed.
+  if (fromPayload && route.path.startsWith("/blog")) {
+    const json = JSON.stringify(POSTS).replace(/</g, "\\u003c").replace(/\u2028|\u2029/g, " ");
+    html = html.replace("</body>", () => `<script id="__POSTS__" type="application/json">${json}</script>\n  </body>`);
+  }
   return injectGA(html);
 }
 
@@ -84,9 +92,9 @@ function outPath(routePath) {
   return join(dist, routePath, "index.html");
 }
 
-const routes = getRoutes();
+const routes = getRoutes(POSTS);
 for (const route of routes) {
-  const appHtml = render(route.path);
+  const appHtml = render(route.path, POSTS);
   const html = buildHtml(route, appHtml);
   const out = outPath(route.path);
   mkdirSync(dirname(out), { recursive: true });

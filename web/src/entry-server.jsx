@@ -9,18 +9,19 @@ import Landing from "./pages/Landing.jsx";
 import Docs from "./pages/Docs.jsx";
 import Blog from "./pages/Blog.jsx";
 import BlogPost from "./pages/BlogPost.jsx";
-import { POSTS } from "./posts/index.js";
+import { PostsProvider } from "./posts/context.jsx";
 import { HIKMAH_ORG, KOYRACLOUD_ORG } from "./seoEntities.js";
 
-// Re-exported so the prerenderer can build the sitemap + RSS feed from the same
-// post list, instead of a hand-maintained sitemap that drifts when posts change.
-export { POSTS };
+// The prerenderer loads the (Payload + file) post list once and builds pages,
+// sitemap and feed from that same list.
+export { loadPosts } from "./posts/source.js";
 
 const SITE = "https://koyracloud.com";
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-export function render(url) {
+export function render(url, posts) {
   return renderToString(
+    <PostsProvider value={posts}>
     <QueryClientProvider client={queryClient}>
       <StaticRouter location={url}>
         <Routes>
@@ -31,13 +32,14 @@ export function render(url) {
         </Routes>
       </StaticRouter>
     </QueryClientProvider>
+    </PostsProvider>
   );
 }
 
 // Per-route <head> data the prerenderer injects into the static HTML, so crawlers
 // and AI agents see correct titles/descriptions/canonicals/structured data without
 // running JavaScript.
-export function getRoutes() {
+export function getRoutes(POSTS) {
   const staticRoutes = [
     {
       path: "/",
@@ -89,13 +91,19 @@ export function getRoutes() {
         headline: p.title,
         description: p.description,
         datePublished: p.date,
-        dateModified: p.date,
-        author: HIKMAH_ORG,
+        dateModified: p.updated || p.date,
+        author: p.author ? { "@type": "Person", name: p.author } : HIKMAH_ORG,
         publisher: KOYRACLOUD_ORG,
         mainEntityOfPage: `${SITE}/blog/${p.slug}`,
         url: `${SITE}/blog/${p.slug}`,
         inLanguage: "en",
       },
+      ...(p.faq ? [{
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        mainEntity: p.faq.map((f) => ({ "@type": "Question", name: f.question,
+          acceptedAnswer: { "@type": "Answer", text: f.answer } })),
+      }] : []),
       {
         "@context": "https://schema.org",
         "@type": "BreadcrumbList",

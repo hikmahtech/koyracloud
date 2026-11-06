@@ -2,15 +2,25 @@ import { Link, useParams } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PublicNav, Footer } from "../components/Chrome.jsx";
-import { getPost, readingTime } from "../posts/index.js";
+import { readingTime } from "../posts/index.js";
+import { usePosts } from "../posts/context.jsx";
+import Comments from "../components/Comments.jsx";
 import { useSeo } from "../seo.js";
 import { HIKMAH_ORG, KOYRACLOUD_ORG } from "../seoEntities.js";
 
 const SITE = "https://koyracloud.com";
 
+// Payload bodies are untrusted markdown. react-markdown never renders raw HTML
+// (no rehype-raw); on top of that only http(s)/mailto/relative/anchor URLs pass,
+// and images must be https.
+const safeUrl = (u) => (/^(https?:|mailto:|\/(?!\/)|#)/i.test(u) ? u : "");
+function SafeImg({ src, alt }) {
+  return /^https:\/\//i.test(src || "") ? <img src={src} alt={alt || ""} loading="lazy" /> : null;
+}
+
 export default function BlogPost() {
   const { slug } = useParams();
-  const post = getPost(slug);
+  const post = usePosts().find((p) => p.slug === slug);
 
   if (!post) {
     return (
@@ -32,17 +42,22 @@ export default function BlogPost() {
     headline: post.title,
     description: post.description,
     datePublished: post.date,
-    dateModified: post.date,
-    author: HIKMAH_ORG,
+    dateModified: post.updated || post.date,
+    author: post.author ? { "@type": "Person", name: post.author } : HIKMAH_ORG,
     publisher: KOYRACLOUD_ORG,
     mainEntityOfPage: url,
     url,
   };
+  const jsonLdAll = post.faq
+    ? [jsonLd, { "@context": "https://schema.org", "@type": "FAQPage",
+        mainEntity: post.faq.map((f) => ({ "@type": "Question", name: f.question,
+          acceptedAnswer: { "@type": "Answer", text: f.answer } })) }]
+    : jsonLd;
 
   return (
     <div className="grid-bg min-h-screen">
       <PublicNav />
-      <SeoHead post={post} url={url} jsonLd={jsonLd} />
+      <SeoHead post={post} url={url} jsonLd={jsonLdAll} />
       <article className="max-w-3xl mx-auto px-6 py-16">
         <Link to="/blog" className="mono text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] no-underline">
           ← Blog
@@ -54,8 +69,9 @@ export default function BlogPost() {
         </div>
         <h1 className="font-display text-4xl leading-tight mb-8">{post.title}</h1>
         <div className="prose">
-          <Markdown remarkPlugins={[remarkGfm]}>{post.body}</Markdown>
+          <Markdown remarkPlugins={[remarkGfm]} urlTransform={safeUrl} components={{ img: SafeImg }}>{post.body}</Markdown>
         </div>
+        <Comments pageKey={url} pageTitle={post.title} />
         <PostFooter />
         <Link to="/blog" className="text-acid no-underline hover:underline mono text-xs">← All posts</Link>
       </article>

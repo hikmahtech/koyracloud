@@ -81,5 +81,6 @@ jobs:
           # empty => no analytics tag (the self-host-friendly default).
           build-args: |
             KOYRA_GA_MEASUREMENT_ID=${{ secrets.KOYRA_GA_MEASUREMENT_ID }}
+            PAYLOAD_URL=${{ vars.PAYLOAD_URL }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
